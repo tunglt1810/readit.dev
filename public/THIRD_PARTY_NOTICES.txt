@@ -1,0 +1,31 @@
+readit.dev Third-Party Notices
+=============================
+
+readit.dev is licensed under the GNU AGPL v3.0 or later. The following
+third-party software and model assets are used by the extension.
+
+Supertonic 3
+------------
+readit.dev uses the Supertonic 3 text-to-speech model and its preset voice
+styles for on-device speech synthesis.
+
+- Project and sample code: MIT License
+- Model weights: OpenRAIL-M License
+- Project: https://github.com/supertone-inc/supertonic
+- Model: https://huggingface.co/Supertone/supertonic-3
+- Model license: https://huggingface.co/Supertone/supertonic-3/blob/main/LICENSE
+
+The Supertonic 3 model weights are subject to the OpenRAIL-M terms, including
+their use restrictions and attribution requirements. The model license is
+separate from the AGPL license for readit.dev.
+
+Runtime dependencies
+--------------------
+- @mozilla/readability 0.6.0: Apache License 2.0
+  https://github.com/mozilla/readability
+- fft.js 4.0.4: MIT License
+  https://github.com/indutny/fft.js
+- onnxruntime-web 1.26.0: MIT License
+  https://github.com/microsoft/onnxruntime
+- React 19.2.6 and React DOM 19.2.6: MIT License
+  https://github.com/facebook/react

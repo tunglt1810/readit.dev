@@ -1,0 +1,13 @@
+name = "readit-backend"
+main = "src/index.ts"
+compatibility_date = "2024-11-12"
+
+# Local environment variables
+[vars]
+# Webhook secret to verify LemonSqueezy payload (set real values in wrangler secrets)
+LEMONSQUEEZY_WEBHOOK_SECRET = "local_dev_secret"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "readit-db"
+database_id = "local-db-placeholder-uuid"

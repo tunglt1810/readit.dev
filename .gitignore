@@ -1,0 +1,40 @@
+# Dependency directories
+node_modules/
+**/node_modules
+
+# Build outputs
+dist/
+build/
+
+# Local spike tests (contains large ONNX models)
+spike/
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# IDE settings
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# Cloudflare Wrangler (Backend)
+.wrangler/
+.dev.vars
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+CONTEXT.md
+
+scratch/
+/.tmp/
+/.superpowers/
+playwright-report/
+test-results/
+tests/e2e/.user-data-*

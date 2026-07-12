@@ -1,0 +1,22 @@
+{
+	"name": "readit-backend",
+	"version": "1.0.0",
+	"license": "AGPL-3.0-or-later",
+	"description": "Backend Cloudflare Workers + D1 for readit.dev license validation",
+	"main": "src/index.ts",
+	"type": "module",
+	"scripts": {
+		"dev": "wrangler dev",
+		"deploy": "wrangler deploy",
+		"typecheck": "tsc --noEmit",
+		"smoke": "node --experimental-strip-types scripts/activation-fallback-smoke.mjs"
+	},
+	"dependencies": {
+		"hono": "4.12.22"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "4.20260522.1",
+		"typescript": "6.0.3",
+		"wrangler": "4.94.0"
+	}
+}
