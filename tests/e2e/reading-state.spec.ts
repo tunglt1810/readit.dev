@@ -137,7 +137,49 @@ async function waitForBackgroundSessionClear(page: Page): Promise<void> {
 	});
 }
 
+async function getBadgeText(page: Page): Promise<string> {
+	return page.evaluate(() => chrome.action.getBadgeText({}));
+}
+
 test.describe('Reading state lifecycle', () => {
+	test('toolbar badge follows hydrated playback state and clears on stop', async ({ context, extensionId }) => {
+		const targetPage = await createTargetPage(context);
+		const { controlPage, session } = await seedCoordinatorSession(context, extensionId, targetPage, {
+			status: 'loading',
+		});
+		await expect.poll(() => getBadgeText(controlPage)).toBe('…');
+
+		await sendBackgroundMessage(controlPage, {
+			action: 'PLAYBACK_PROGRESS_UPDATE',
+			sessionId: session.sessionId,
+			progress: { status: 'playing', currentParagraphIndex: 0, totalParagraphs: 8, progressPercentage: 10 },
+		});
+		await expect.poll(() => getBadgeText(controlPage)).toBe('▶');
+
+		await sendBackgroundMessage(controlPage, {
+			action: 'PLAYBACK_PROGRESS_UPDATE',
+			sessionId: session.sessionId,
+			progress: { status: 'paused', currentParagraphIndex: 0, totalParagraphs: 8, progressPercentage: 10 },
+		});
+		await expect.poll(() => getBadgeText(controlPage)).toBe('Ⅱ');
+
+		await sendBackgroundMessage(controlPage, {
+			action: 'PLAYBACK_PROGRESS_UPDATE',
+			sessionId: session.sessionId,
+			progress: {
+				status: 'error',
+				currentParagraphIndex: 0,
+				totalParagraphs: 8,
+				progressPercentage: 10,
+				error: 'Expected test error',
+			},
+		});
+		await expect.poll(() => getBadgeText(controlPage)).toBe('!');
+
+		await sendBackgroundMessage(controlPage, { action: 'STOP_READING' });
+		await expect.poll(() => getBadgeText(controlPage)).toBe('');
+	});
+
 	test('start and stop remain responsive while offscreen model loading is pending', async ({ context, extensionId }) => {
 		const targetPage = await createTargetPage(context);
 		const controlPage = await context.newPage();
@@ -214,13 +256,14 @@ test.describe('Reading state lifecycle', () => {
 		await installPopupRuntimeMock(page, { session: activeSession, currentTabId: 22 });
 		await openPopup(page);
 
-		const playPauseButton = page.locator('.btn-playpause');
+		const playPauseButton = page.getByRole('button', { name: 'Tạm dừng' });
 		await expect(page.locator('.session-context')).toContainText('Đang đọc ở tab khác');
 		await playPauseButton.click();
 
 		await broadcastCoordinatorState(page, { ...activeSession, status: 'paused' });
-		await expect(playPauseButton).toHaveText('▶️ Tiếp tục');
-		await playPauseButton.click();
+		const resumeButton = page.getByRole('button', { name: 'Tiếp tục' });
+		await expect(resumeButton).toHaveText('');
+		await resumeButton.click();
 
 		await page.locator('.btn-read').click();
 

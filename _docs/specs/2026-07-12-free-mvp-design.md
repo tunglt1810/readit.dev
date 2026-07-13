@@ -23,12 +23,15 @@ and must not change the Free runtime or release artifact.
 The release must let a user:
 
 1. Open a supported web page and start reading the current article.
-2. Hear locally generated audio without sending the article to readit.dev or
+2. Read a text selection from the supported page's context menu.
+3. Hear locally generated audio without sending the article to readit.dev or
    another application service.
-3. Pause, resume, stop, select one of ten voice styles, and adjust playback
+4. Pause, resume, stop, select one of ten voice styles, and adjust playback
    speed.
-4. Use the popup in English or Vietnamese.
-5. Understand what the extension accesses, where model files come from, and
+5. Understand playback state from the popup and extension toolbar badge.
+6. Use the popup in English or Vietnamese.
+7. See the installed extension version and open a privacy-safe Feedback link.
+8. Understand what the extension accesses, where model files come from, and
    what is not collected.
 
 ## 3. Non-goals
@@ -65,18 +68,34 @@ The popup exposes a primary action to read the current page. On activation:
 The article is held only in extension memory for the active reading session.
 It is not persisted in `chrome.storage`.
 
-### 4.2 Controls and settings
+### 4.2 Read selected text
+
+When the user selects text on a supported HTTP or HTTPS page, the extension
+offers one context-menu action to read that selection. The background worker
+trims and validates the selection, reads and normalizes the page language, and
+constructs the normal `Article` contract without running Readability.
+
+A whitespace-only selection is ignored and does not interrupt active playback.
+A valid selection replaces the current single session through the same
+background/offscreen playback pipeline used by full-page reading. Selected text
+and generated audio remain in memory and are not persisted.
+
+### 4.3 Controls, status, and settings
 
 The popup must provide:
 
-- read current page / stop reading;
-- play, pause, and resume while a session is active;
+- icon-only read, stop, pause, and resume controls with localized tooltips and
+  explicit accessibility labels;
+- a Stop control that remains available while playback is loading;
 - ten voice styles: stable IDs `M1`–`M5` and `F1`–`F5`;
 - playback speed from `0.70x` through `1.80x` in `0.05x` steps;
 - visible loading and paragraph progress states;
+- a toolbar badge for loading, playing, paused, error, and stopped states;
 - translated error states;
 - a language selector for the popup UI;
-- a privacy disclosure link.
+- a privacy disclosure link;
+- one combined Feedback link for bug reports and feature requests;
+- the standalone extension version in `v<version>` format.
 
 Voice IDs are stable configuration values. Display names and gender labels are
 translatable and must not be used as identifiers.
@@ -84,7 +103,7 @@ translatable and must not be used as identifiers.
 Voice and speed preferences may be persisted locally. The currently extracted
 article and generated audio may not be persisted as product data.
 
-### 4.3 UI internationalization
+### 4.4 UI internationalization
 
 The popup supports English (`en`) and Vietnamese (`vi`). UI locale selection is
 independent from article-language detection.
@@ -94,13 +113,13 @@ independent from article-language detection.
 - The user can change the locale in the popup.
 - The selected locale is persisted in `chrome.storage.local`.
 - Every visible label, button, status, error, tooltip, disclosure, link label,
-  and accessibility label uses a translation key.
+  context-menu label, and accessibility label uses a translation key.
 - English is the fallback for a missing key or invalid stored locale.
 - Translation keys must have English and Vietnamese entries before release.
 - Changing the UI locale must not change the voice language used for the
   current or next article.
 
-### 4.4 Article language behavior
+### 4.5 Article language behavior
 
 The content script starts with `document.documentElement.lang` and normalizes
 regional values such as `en-US` to `en`.
@@ -150,6 +169,12 @@ The background worker owns message orchestration and offscreen-document
 lifecycle. It must remain Free-only: no license checks, activation calls,
 backend URLs, or Pro state machine.
 
+It also owns context-menu registration, selected-text playback coordination,
+and the global toolbar badge. Full-page and selected-text inputs must converge
+on one session-start pipeline after producing a valid `Article`. Badge updates
+must follow the serialized playback state so stale asynchronous updates cannot
+overwrite the latest state.
+
 ### 5.3 Offscreen TTS
 
 The offscreen document owns model loading, text chunking, synthesis, audio
@@ -180,16 +205,18 @@ to stable translation keys rather than exposing raw exception text.
 
 Required cases:
 
-| Case | Required behavior |
-| --- | --- |
-| Browser-restricted or unavailable page | Explain that the current page cannot be accessed and stop the session. |
-| Readability returns no article | Show a clear “could not find a readable article” message; do not read raw page text. |
-| Article text is empty | Treat as extraction failure. |
-| Model download fails | Show a translated retryable model-download error; do not send article data elsewhere. |
-| WebGPU unavailable or fails | Fall back to WASM and continue when possible. |
-| TTS/playback failure | Stop safely, show a translated playback error, and allow retry. |
-| Unsupported/missing article language | Use the documented fallback; do not claim translation. |
-| Stop requested during loading/playback | Cancel the active session and return to the stopped state. |
+| Case                                   | Required behavior                                                                     |
+| -------------------------------------- | ------------------------------------------------------------------------------------- |
+| Browser-restricted or unavailable page | Explain that the current page cannot be accessed and stop the session.                |
+| Readability returns no article         | Show a clear “could not find a readable article” message; do not read raw page text.  |
+| Article text is empty                  | Treat as extraction failure.                                                          |
+| Selected text is empty after trimming  | Ignore it and preserve the active session.                                            |
+| Selected-page language is unavailable  | Use the documented `na` fallback and continue.                                        |
+| Model download fails                   | Show a translated retryable model-download error; do not send article data elsewhere. |
+| WebGPU unavailable or fails            | Fall back to WASM and continue when possible.                                         |
+| TTS/playback failure                   | Stop safely, show a translated playback error, and allow retry.                       |
+| Unsupported/missing article language   | Use the documented fallback; do not claim translation.                                |
+| Stop requested during loading/playback | Cancel the active session and return to the stopped state.                            |
 
 No error event is sent to a remote service. Local developer diagnostics may be
 used during development but must not ship as telemetry.
@@ -211,9 +238,13 @@ identifiers, or advertising profiles.
 ### 7.2 External services
 
 The only runtime asset service is Hugging Face, used to download Supertonic 3
-model/runtime files. GitHub Pages hosts the privacy policy. An explicit
-support link may open Buy Me a Coffee; opening that link is a user-initiated
-navigation, not an extension data transfer.
+model/runtime files. GitHub Pages hosts the privacy policy. Explicit support
+links may open Buy Me a Coffee and GitHub Issues; opening either link is a
+user-initiated navigation.
+
+The GitHub Feedback link may include the extension version and neutral bug or
+feature-request prompts. It must not automatically include the current page
+URL, page title, selected text, article content, or browsing history.
 
 The privacy policy and Chrome Web Store disclosure must describe these
 services, local article processing, model caching, and the absence of
@@ -224,6 +255,8 @@ telemetry.
 The release must justify and periodically review the permissions used for:
 
 - active-tab/page extraction;
+- reading user-selected text through one context-menu action on supported
+  pages;
 - one-time content-script recovery after the user starts reading;
 - local settings storage;
 - the MV3 offscreen document and audio playback;
@@ -262,17 +295,21 @@ for a Free release.
 
 The implementation is ready for release only when the following are verified:
 
-| Area | Acceptance criteria |
-| --- | --- |
-| Extraction | A readable article starts; an unreadable/empty page shows a localized error and never falls back to raw text. |
-| Playback | Play, pause, resume, stop, speed, voice selection, progress, and retry work in the popup. |
-| Runtime | WebGPU is preferred and WASM fallback works. Model download failure is recoverable. |
-| Language | EN/VI/ZH article handling follows the documented detection/fallback contract. |
-| UI i18n | EN/VI labels, errors, accessibility text, locale selection, persistence, and English fallback work. |
-| Privacy | No article data leaves the browser; no telemetry or crash-reporting request exists. |
-| Free boundary | No Pro UI, license flow, API client, or backend dependency exists in the built extension. |
-| Packaging | `dist/` and the release ZIP contain the notices file and only Free extension artifacts. |
-| Documentation | README, PRD, privacy policy, release/deployment docs, and ADR links agree with this spec. |
+| Area               | Acceptance criteria                                                                                                                   |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Extraction         | A readable article starts; an unreadable/empty page shows a localized error and never falls back to raw text.                         |
+| Playback           | Play, pause, resume, stop, speed, voice selection, progress, and retry work in the popup.                                             |
+| Selection          | Valid selected text uses the shared playback pipeline; whitespace-only input preserves the active session.                            |
+| Toolbar badge      | Loading, playing, paused, and error states map deterministically; stopped or no session clears the badge.                             |
+| Popup interactions | Controls are icon-only and accessible, Stop works during loading, the footer shows `v<version>`, and Feedback supports bugs/features. |
+| Runtime            | WebGPU is preferred and WASM fallback works. Model download failure is recoverable.                                                   |
+| Language           | EN/VI/ZH article handling follows the documented detection/fallback contract.                                                         |
+| UI i18n            | EN/VI labels, errors, accessibility text, locale selection, persistence, and English fallback work.                                   |
+| Privacy            | No article data leaves the browser; no telemetry or crash-reporting request exists.                                                   |
+| Feedback privacy   | GitHub receives no page URL, title, selected text, or article content from the generated Feedback link.                               |
+| Free boundary      | No Pro UI, license flow, API client, or backend dependency exists in the built extension.                                             |
+| Packaging          | `dist/` and the release ZIP contain the notices file and only Free extension artifacts.                                               |
+| Documentation      | README, PRD, privacy policy, release/deployment docs, and ADR links agree with this spec.                                             |
 
 ## 10. Implementation delta from the current repository
 

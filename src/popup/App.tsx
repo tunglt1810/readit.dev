@@ -2,8 +2,52 @@ import { useEffect, useState } from 'react';
 
 import { BUY_ME_A_COFFEE_URL, PRIVACY_POLICY_URL, STORAGE_KEYS, VOICE_STYLES } from '../shared/constants';
 import type { PlaybackStateResponse, PlaybackSessionSnapshot, PlaybackStatus } from '../shared/types';
+import { buildFeedbackUrl } from './feedback';
 
 type CommandResponse = { success: boolean; error?: string };
+type PlaybackIconName = 'read' | 'stop' | 'pause' | 'resume';
+
+function PlaybackIcon({ name }: { name: PlaybackIconName }) {
+	const commonProps = {
+		viewBox: '0 0 24 24',
+		'aria-hidden': true,
+		focusable: false,
+		fill: 'none',
+		stroke: 'currentColor',
+		strokeWidth: 2,
+		strokeLinecap: 'round' as const,
+		strokeLinejoin: 'round' as const,
+	};
+
+	switch (name) {
+		case 'stop':
+			return (
+				<svg {...commonProps}>
+					<rect x="7" y="7" width="10" height="10" rx="1" />
+				</svg>
+			);
+		case 'pause':
+			return (
+				<svg {...commonProps}>
+					<line x1="9" y1="6" x2="9" y2="18" />
+					<line x1="15" y1="6" x2="15" y2="18" />
+				</svg>
+			);
+		case 'resume':
+			return (
+				<svg {...commonProps}>
+					<polygon points="8 5 19 12 8 19 8 5" />
+				</svg>
+			);
+		default:
+			return (
+				<svg {...commonProps}>
+					<path d="M5 9v6h4l5 4V5L9 9H5z" />
+					<path d="M17 9a4 4 0 0 1 0 6" />
+				</svg>
+			);
+	}
+}
 
 export default function App() {
 	// Playback state is owned by the background coordinator.
@@ -24,6 +68,8 @@ export default function App() {
 	const isSessionOnAnotherTab = session?.tabId !== currentTabId;
 	const errorMsg = commandError || session?.error || modelError;
 	const sessionHost = session ? getHost(session.url) : '';
+	const manifestVersion = chrome.runtime.getManifest().version;
+	const feedbackUrl = buildFeedbackUrl(manifestVersion);
 
 	// Fetch initial states on mount
 	useEffect(() => {
@@ -208,27 +254,27 @@ export default function App() {
 
 				{/* CTA Controls */}
 				<div className="controls-group">
-					<button
-						className={`btn btn-primary btn-large btn-read ${status !== 'stopped' && status !== 'error' ? 'active' : ''}`}
-						onClick={handleReadPage}
-						disabled={status === 'loading' && !modelLoading}
-					>
-						{status === 'stopped' || status === 'error' ? (
-							<>
-								<span className="btn-icon">⚡</span> Đọc trang hiện tại
-							</>
-						) : (
-							<>
-								<span className="btn-icon">⏹️</span> Dừng đọc bài
-							</>
+					<div className="playback-controls">
+						{(status === 'playing' || status === 'paused') && (
+							<button
+								className="btn btn-secondary btn-icon-only btn-playpause"
+								onClick={handlePlayPause}
+								aria-label={status === 'playing' ? 'Tạm dừng' : 'Tiếp tục'}
+								title={status === 'playing' ? 'Tạm dừng' : 'Tiếp tục'}
+							>
+								<PlaybackIcon name={status === 'playing' ? 'pause' : 'resume'} />
+							</button>
 						)}
-					</button>
 
-					{(status === 'playing' || status === 'paused') && (
-						<button className="btn btn-secondary btn-large btn-playpause" onClick={handlePlayPause}>
-							{status === 'playing' ? '⏸️ Tạm dừng' : '▶️ Tiếp tục'}
+						<button
+							className={`btn btn-primary btn-icon-only btn-read ${status !== 'stopped' && status !== 'error' ? 'active' : ''}`}
+							onClick={handleReadPage}
+							aria-label={status === 'stopped' || status === 'error' ? 'Đọc trang hiện tại' : 'Dừng đọc bài'}
+							title={status === 'stopped' || status === 'error' ? 'Đọc trang hiện tại' : 'Dừng đọc bài'}
+						>
+							<PlaybackIcon name={status === 'stopped' || status === 'error' ? 'read' : 'stop'} />
 						</button>
-					)}
+					</div>
 
 					{session && isSessionOnAnotherTab && (
 						<button className="btn btn-secondary btn-read-current-page" onClick={handleReadCurrentPage}>
@@ -290,13 +336,18 @@ export default function App() {
 
 			{/* Footer */}
 			<footer className="app-footer">
-				<a className="support-link" href={BUY_ME_A_COFFEE_URL} target="_blank" rel="noreferrer">
-					<span aria-hidden="true">☕</span> Buy me a coffee
-				</a>
-				<a className="privacy-link" href={PRIVACY_POLICY_URL} target="_blank" rel="noreferrer">
-					Privacy Policy
-				</a>
-				<span className="copyright">© 2026 readit.dev • On-device Audio</span>
+				<div className="footer-links">
+					<a className="support-link" href={BUY_ME_A_COFFEE_URL} target="_blank" rel="noreferrer">
+						<span aria-hidden="true">☕</span> Buy me a coffee
+					</a>
+					<a className="support-link feedback-link" href={feedbackUrl} target="_blank" rel="noreferrer">
+						Feedback
+					</a>
+					<a className="privacy-link" href={PRIVACY_POLICY_URL} target="_blank" rel="noreferrer">
+						Privacy Policy
+					</a>
+				</div>
+				<span className="extension-version">v{manifestVersion}</span>
 			</footer>
 		</div>
 	);

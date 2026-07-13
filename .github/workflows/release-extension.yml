@@ -63,6 +63,9 @@ jobs:
       - name: Build extension
         run: pnpm build
 
+      - name: Validate Free extension manifest
+        run: pnpm validate:manifest
+
       - name: Validate third-party notices
         run: |
           set -euo pipefail

@@ -1,7 +1,9 @@
 import { STORAGE_KEYS } from '../shared/constants';
 import type { Article, PlaybackProgress, PlaybackSessionSnapshot, PlaybackStatus } from '../shared/types';
 import { requestArticleFromTab } from './article_request';
+import { syncPlaybackBadge } from './badge';
 import { applyPlaybackProgress, createPlaybackErrorSession, createPlaybackSession, ownsTab } from './playback_state';
+import { createSelectedTextArticle } from './selected_text';
 
 const DEFAULT_VOICE_STYLE_ID = 'M1';
 const DEFAULT_SPEED = 1.05;
@@ -106,9 +108,20 @@ async function ensureHydrated(): Promise<void> {
 	if (storedSession !== undefined && activeSession === null) {
 		await chrome.storage.session.remove(STORAGE_KEYS.PLAYBACK_SESSION);
 	}
+
+	await updateBadge(activeSession);
+}
+
+async function updateBadge(session: PlaybackSessionSnapshot | null): Promise<void> {
+	try {
+		await syncPlaybackBadge(session?.status ?? null, chrome.action);
+	} catch (_error) {
+		// Badge rendering must not corrupt playback state or suppress popup updates.
+	}
 }
 
 async function broadcastSession(session: PlaybackSessionSnapshot | null): Promise<void> {
+	await updateBadge(session);
 	try {
 		await chrome.runtime.sendMessage({ action: 'PLAYBACK_STATE_UPDATE', session });
 	} catch (_error) {
@@ -261,6 +274,48 @@ function isRestrictedUrl(url: string): boolean {
 	);
 }
 
+async function startArticlePlayback(
+	tabId: number,
+	fallbackTitle: string,
+	fallbackUrl: string,
+	article: Article,
+): Promise<CommandResponse> {
+	await ensureHydrated();
+	await stopActiveSession('session-replaced');
+
+	const preferences = (await chrome.storage.local.get([STORAGE_KEYS.ACTIVE_VOICE, STORAGE_KEYS.SPEED])) as Record<string, unknown>;
+	const storedVoiceStyleId = preferences[STORAGE_KEYS.ACTIVE_VOICE];
+	const storedSpeed = preferences[STORAGE_KEYS.SPEED];
+	const voiceStyleId = typeof storedVoiceStyleId === 'string' ? storedVoiceStyleId : DEFAULT_VOICE_STYLE_ID;
+	const speed = isFiniteNumber(storedSpeed) ? storedSpeed : DEFAULT_SPEED;
+	const session = createPlaybackSession({
+		sessionId: crypto.randomUUID(),
+		tabId,
+		title: article.title || fallbackTitle || fallbackUrl,
+		url: article.url || fallbackUrl,
+		lang: article.lang,
+		voiceStyleId,
+		speed,
+		now: Date.now(),
+	});
+
+	activeSession = session;
+	await publishSession(session);
+
+	try {
+		await setupOffscreen();
+		observeOffscreenPlay(session.sessionId, {
+			action: 'PLAY',
+			payload: { sessionId: session.sessionId, article, voiceStyleId, speed },
+		});
+		return { success: true };
+	} catch (_error) {
+		await failSession(ERROR_MESSAGES.setup);
+		await closeOffscreen();
+		return { success: false, error: ERROR_MESSAGES.setup };
+	}
+}
+
 async function startCurrentPage(): Promise<CommandResponse> {
 	await ensureHydrated();
 	const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -274,8 +329,6 @@ async function startCurrentPage(): Promise<CommandResponse> {
 		return { success: false, error: ERROR_MESSAGES.restrictedPage };
 	}
 
-	await stopActiveSession('session-replaced');
-
 	let articleResponse;
 	try {
 		articleResponse = await requestArticleFromTab(activeTab.id, {
@@ -283,47 +336,18 @@ async function startCurrentPage(): Promise<CommandResponse> {
 			executeScript: (options) => chrome.scripting.executeScript(options),
 		});
 	} catch (_error) {
+		await stopActiveSession('session-replaced');
 		await publishExtractionFailure(activeTab.id, activeTab.title, url);
 		return { success: false, error: ERROR_MESSAGES.extraction };
 	}
 
 	if (!articleResponse.success || !isArticle(articleResponse.article)) {
+		await stopActiveSession('session-replaced');
 		await publishExtractionFailure(activeTab.id, activeTab.title, url);
 		return { success: false, error: ERROR_MESSAGES.extraction };
 	}
 
-	const voiceResult = (await chrome.storage.local.get(STORAGE_KEYS.ACTIVE_VOICE)) as Record<string, unknown>;
-	const speedResult = (await chrome.storage.local.get(STORAGE_KEYS.SPEED)) as Record<string, unknown>;
-	const storedVoiceStyleId = voiceResult[STORAGE_KEYS.ACTIVE_VOICE];
-	const storedSpeed = speedResult[STORAGE_KEYS.SPEED];
-	const voiceStyleId = typeof storedVoiceStyleId === 'string' ? storedVoiceStyleId : DEFAULT_VOICE_STYLE_ID;
-	const speed = isFiniteNumber(storedSpeed) ? storedSpeed : DEFAULT_SPEED;
-	const session = createPlaybackSession({
-		sessionId: crypto.randomUUID(),
-		tabId: activeTab.id,
-		title: articleResponse.article.title || activeTab.title || url,
-		url: articleResponse.article.url || url,
-		lang: articleResponse.article.lang,
-		voiceStyleId,
-		speed,
-		now: Date.now(),
-	});
-
-	activeSession = session;
-	await publishSession(session);
-
-	try {
-		await setupOffscreen();
-		observeOffscreenPlay(session.sessionId, {
-			action: 'PLAY',
-			payload: { sessionId: session.sessionId, article: articleResponse.article, voiceStyleId, speed },
-		});
-		return { success: true };
-	} catch (_error) {
-		await failSession(ERROR_MESSAGES.setup);
-		await closeOffscreen();
-		return { success: false, error: ERROR_MESSAGES.setup };
-	}
+	return startArticlePlayback(activeTab.id, activeTab.title || url, url, articleResponse.article);
 }
 
 function observeOffscreenPlay(sessionId: string, command: OffscreenCommand): void {
@@ -485,4 +509,39 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 	if (changeInfo.status === 'loading' || changeInfo.url !== undefined) {
 		void enqueue(() => stopIfOwner(tabId, 'tab-navigation'));
 	}
+});
+
+chrome.runtime.onInstalled.addListener(() => {
+	chrome.contextMenus.create({
+		id: 'read-selected-text',
+		title: 'Đọc phần văn bản đã chọn',
+		contexts: ['selection'],
+		documentUrlPatterns: ['http://*/*', 'https://*/*'],
+	});
+});
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+	if (info.menuItemId !== 'read-selected-text' || typeof tab?.id !== 'number') {
+		return;
+	}
+
+	void enqueue(async () => {
+		const [{ result: pageLanguage } = { result: undefined }] = await chrome.scripting
+			.executeScript({
+				target: { tabId: tab.id as number },
+				func: () => document.documentElement.lang,
+			})
+			.catch(() => []);
+		const url = info.pageUrl || tab.url || '';
+		const article = createSelectedTextArticle({
+			selectionText: info.selectionText,
+			title: tab.title || url,
+			url,
+			pageLanguage,
+		});
+		if (!article) {
+			return { success: true };
+		}
+		return startArticlePlayback(tab.id as number, tab.title || url, url, article);
+	});
 });

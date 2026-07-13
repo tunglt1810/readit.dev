@@ -1,9 +1,32 @@
-import { expect, test } from './fixtures';
+import { expect, installPopupRuntimeMock, test } from './fixtures';
 
-test('shows the Buy Me a Coffee support link', async ({ page, openPopup }) => {
+test('shows privacy-safe support links and the exact extension version', async ({ page, openPopup }) => {
+	await installPopupRuntimeMock(page, {
+		session: {
+			sessionId: 'private-session',
+			tabId: 7,
+			title: 'Private page title',
+			url: 'https://private.example.test/article',
+			lang: 'en',
+			status: 'paused',
+			currentParagraphIndex: 1,
+			totalParagraphs: 3,
+			progressPercentage: 33,
+			voiceStyleId: 'M1',
+			speed: 1.05,
+			updatedAt: 1000,
+		},
+		currentTabId: 7,
+	});
 	await openPopup(page);
 
-	const supportLink = page.locator('.support-link');
-	await expect(supportLink).toHaveAttribute('href', 'https://buymeacoffee.com/bbeeezzzzz');
-	await expect(supportLink).toHaveAttribute('target', '_blank');
+	await expect(page.getByRole('link', { name: 'Buy me a coffee' })).toHaveAttribute('target', '_blank');
+	const feedback = page.getByRole('link', { name: 'Feedback' });
+	await expect(feedback).toHaveAttribute('target', '_blank');
+	await expect(page.getByRole('link', { name: 'Privacy Policy', exact: true })).toHaveAttribute('target', '_blank');
+	await expect(page.locator('.extension-version')).toHaveText('v1.0.0');
+	const href = (await feedback.getAttribute('href')) || '';
+	const feedbackBody = new URL(href).searchParams.get('body') || '';
+	expect(feedbackBody).toContain('Extension version: v1.0.0');
+	expect(feedbackBody).not.toContain('private.example.test');
 });

@@ -8,8 +8,11 @@ git push origin v1.0.0
 ```
 
 `.github/workflows/release-extension.yml` builds the extension with the tag
-version, runs tests, creates `readit.dev-VERSION.zip`, creates a GitHub
-Release, uploads the package to Chrome Web Store, and submits it for review.
+version, enforces the exact Free manifest permission and host boundary
+(`activeTab`, `contextMenus`, `offscreen`, `scripting`, `storage`, and only the
+Hugging Face model host), runs tests, creates `readit.dev-VERSION.zip`, creates
+a GitHub Release, uploads the package to Chrome Web Store, and submits it for
+review.
 
 The Free release does not require `api.readit.dev`, Cloudflare Workers, D1,
 license secrets, analytics, or crash-reporting services. The `backend/` folder
@@ -30,7 +33,7 @@ required attribution and license links for Supertonic 3 and the runtime
 dependencies. The workflow validates that this file is present before it
 creates the release archive.
 
-Before submitting a Free release, verify the [Free MVP Design Specification](./superpowers/specs/2026-07-12-free-mvp-design.md),
+Before submitting a Free release, verify the [Free MVP Design Specification](./specs/2026-07-12-free-mvp-design.md),
 the [Privacy Policy](./privacy-policy.md), and the Chrome Web Store privacy
 disclosures describe the same local-processing and no-telemetry behavior.
 

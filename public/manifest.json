@@ -13,7 +13,8 @@
 		"activeTab",
 		"scripting",
 		"storage",
-		"offscreen"
+		"offscreen",
+		"contextMenus"
 	],
 	"host_permissions": [
 		"https://huggingface.co/*"

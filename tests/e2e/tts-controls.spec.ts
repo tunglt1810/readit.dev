@@ -77,7 +77,9 @@ test.describe('Kịch bản 3: Điều khiển TTS (TTS Controls)', () => {
 		await expect(statusText).toHaveText('Sẵn sàng đọc trang web');
 
 		// 2. Click nút "Đọc trang hiện tại"
-		const readBtn = page.locator('.btn-read');
+		const readBtn = page.getByRole('button', { name: 'Đọc trang hiện tại' });
+		await expect(readBtn).toHaveText('');
+		await expect(readBtn.locator('svg[aria-hidden="true"]')).toHaveCount(1);
 		await readBtn.click();
 
 		// Kiểm tra xem message START_CURRENT_PAGE đã được gửi đi chưa
@@ -87,6 +89,12 @@ test.describe('Kịch bản 3: Điều khiển TTS (TTS Controls)', () => {
 		await page.evaluate((nextSession) => {
 			(window as any).mockReceiveMessage({ action: 'PLAYBACK_STATE_UPDATE', session: nextSession });
 		}, session);
+		const loadingStopButton = page.getByRole('button', { name: 'Dừng đọc bài' });
+		await expect(loadingStopButton).toBeEnabled();
+		await expect(loadingStopButton).toHaveText('');
+		await expect(loadingStopButton.locator('svg[aria-hidden="true"]')).toHaveCount(1);
+		await loadingStopButton.click();
+		expect(await page.evaluate(() => (window as any).sentMessages.map((message: any) => message.action))).toContain('STOP_READING');
 
 		// Giả lập trạng thái Model Loading gửi về popup
 		await page.evaluate(() => {
@@ -119,12 +127,13 @@ test.describe('Kịch bản 3: Điều khiển TTS (TTS Controls)', () => {
 		await expect(progressBar).toBeVisible();
 		await expect(progressBar).toHaveAttribute('style', 'width: 20%;');
 
-		const playPauseBtn = page.locator('.btn-playpause');
-		await expect(playPauseBtn).toBeVisible();
-		await expect(playPauseBtn).toHaveText('⏸️ Tạm dừng');
+		const pauseButton = page.getByRole('button', { name: 'Tạm dừng' });
+		await expect(pauseButton).toBeVisible();
+		await expect(pauseButton).toHaveText('');
+		await expect(pauseButton.locator('svg[aria-hidden="true"]')).toHaveCount(1);
 
 		// 3. Click nút "Tạm dừng"
-		await playPauseBtn.click();
+		await pauseButton.click();
 
 		// Kiểm tra xem message PAUSE_READING đã được gửi đi chưa
 		const sentActionsAfterPause = await page.evaluate(() => (window as any).sentMessages.map((m: any) => m.action));
@@ -138,10 +147,12 @@ test.describe('Kịch bản 3: Điều khiển TTS (TTS Controls)', () => {
 			});
 		}, { ...session, status: 'paused', progressPercentage: 20 });
 		await expect(statusText).toHaveText('Tạm dừng');
-		await expect(playPauseBtn).toHaveText('▶️ Tiếp tục');
+		const resumeButton = page.getByRole('button', { name: 'Tiếp tục' });
+		await expect(resumeButton).toHaveText('');
+		await expect(resumeButton.locator('svg[aria-hidden="true"]')).toHaveCount(1);
 
 		// 4. Click nút "Tiếp tục"
-		await playPauseBtn.click();
+		await resumeButton.click();
 		const sentActionsAfterResume = await page.evaluate(() => (window as any).sentMessages.map((m: any) => m.action));
 		expect(sentActionsAfterResume).toContain('RESUME_READING');
 
@@ -153,7 +164,7 @@ test.describe('Kịch bản 3: Điều khiển TTS (TTS Controls)', () => {
 		}, { ...session, status: 'playing', progressPercentage: 20 });
 
 		// 5. Click nút "Dừng đọc bài" (Stop)
-		await readBtn.click();
+		await page.getByRole('button', { name: 'Dừng đọc bài' }).click();
 
 		// Kiểm tra xem message STOP_READING đã được gửi đi chưa
 		const sentActionsAfterStop = await page.evaluate(() => (window as any).sentMessages.map((m: any) => m.action));
@@ -165,6 +176,6 @@ test.describe('Kịch bản 3: Điều khiển TTS (TTS Controls)', () => {
 		// Khi dừng đọc, trạng thái quay về sẵn sàng, ẩn progress bar và ẩn nút play/pause
 		await expect(statusText).toHaveText('Sẵn sàng đọc trang web');
 		await expect(progressBar).not.toBeVisible();
-		await expect(playPauseBtn).not.toBeVisible();
+		await expect(page.locator('.btn-playpause')).not.toBeVisible();
 	});
 });

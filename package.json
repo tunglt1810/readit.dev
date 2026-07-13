@@ -7,6 +7,7 @@
 	"scripts": {
 		"dev": "rsbuild dev",
 		"build": "tsc && rsbuild build",
+		"validate:manifest": "node scripts/validate-free-manifest.mjs dist/manifest.json",
 		"test:unit": "node --experimental-strip-types --test tests/unit/*.test.ts",
 		"preview": "rsbuild preview",
 		"test:e2e": "playwright test"
