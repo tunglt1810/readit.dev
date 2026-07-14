@@ -1,3 +1,4 @@
+import { type BoundaryCandidate, planTextSegments, type SegmentationPolicy } from '../segmentation.ts';
 import type { SpeechUnit } from './types.ts';
 
 export const VI_PAUSE_MS = Object.freeze({
@@ -7,15 +8,30 @@ export const VI_PAUSE_MS = Object.freeze({
 	sentenceEnd: 165,
 	paragraphEnd: 260,
 });
-export const VI_PREFERRED_UNIT_LENGTH = 200;
+export const VI_PREFERRED_MIN_LENGTH = 140;
+export const VI_PREFERRED_CENTER_LENGTH = 190;
+export const VI_PREFERRED_MAX_LENGTH = 240;
 export const VI_MAX_UNIT_LENGTH = 300;
-export const VI_MIN_FRAGMENT_LENGTH = 20;
 
-interface Boundary {
-	end: number;
-	pauseAfterMs: number;
-	strong: boolean;
-}
+type VietnameseBoundaryKind = 'sentence' | 'semicolon' | 'colon' | 'spacedDash' | 'comma';
+
+const VI_SEGMENTATION_POLICY: SegmentationPolicy<VietnameseBoundaryKind> = Object.freeze({
+	preferredMin: VI_PREFERRED_MIN_LENGTH,
+	preferredCenter: VI_PREFERRED_CENTER_LENGTH,
+	preferredMax: VI_PREFERRED_MAX_LENGTH,
+	hardMax: VI_MAX_UNIT_LENGTH,
+	outsidePreferredPenalty: 10,
+	shortRemainderLength: 80,
+	shortRemainderPenalty: 30,
+	minimumScore: 0,
+	boundaryWeights: Object.freeze({
+		sentence: 40,
+		semicolon: 30,
+		colon: 28,
+		spacedDash: 24,
+		comma: 20,
+	}),
+});
 
 const PROTECTED_PATTERNS = [
 	/https?:\/\/[^\s<>"'“”‘’]+/giu,
@@ -44,80 +60,42 @@ function protectedPositions(text: string): Uint8Array {
 	return positions;
 }
 
-function scanBoundaries(text: string): Boundary[] {
+function scanBoundaries(text: string): BoundaryCandidate<VietnameseBoundaryKind>[] {
 	const protectedAt = protectedPositions(text);
-	const boundaries: Boundary[] = [];
+	const boundaries: BoundaryCandidate<VietnameseBoundaryKind>[] = [];
 	for (let index = 0; index < text.length; index++) {
 		if (protectedAt[index]) {
 			continue;
 		}
 		const character = text[index];
 		if (character === ',' && !(/\d/u.test(text[index - 1] ?? '') && /\d/u.test(text[index + 1] ?? ''))) {
-			boundaries.push({ end: index + 1, pauseAfterMs: VI_PAUSE_MS.comma, strong: false });
-		} else if ((character === ':' || character === ';') && !(/\d/u.test(text[index - 1] ?? '') && /\d/u.test(text[index + 1] ?? ''))) {
-			boundaries.push({ end: index + 1, pauseAfterMs: VI_PAUSE_MS.colonOrSemicolon, strong: false });
+			boundaries.push({ end: index + 1, kind: 'comma', pauseAfterMs: VI_PAUSE_MS.comma });
+		} else if (character === ':' && !(/\d/u.test(text[index - 1] ?? '') && /\d/u.test(text[index + 1] ?? ''))) {
+			boundaries.push({ end: index + 1, kind: 'colon', pauseAfterMs: VI_PAUSE_MS.colonOrSemicolon });
+		} else if (character === ';' && !(/\d/u.test(text[index - 1] ?? '') && /\d/u.test(text[index + 1] ?? ''))) {
+			boundaries.push({ end: index + 1, kind: 'semicolon', pauseAfterMs: VI_PAUSE_MS.colonOrSemicolon });
 		} else if ('-–—'.includes(character) && /\s/u.test(text[index - 1] ?? '') && /\s/u.test(text[index + 1] ?? '')) {
-			boundaries.push({ end: index + 1, pauseAfterMs: VI_PAUSE_MS.spacedDash, strong: false });
-		} else if (/[.!?…]/u.test(character)) {
+			boundaries.push({ end: index + 1, kind: 'spacedDash', pauseAfterMs: VI_PAUSE_MS.spacedDash });
+		} else if (
+			/[.!?…]/u.test(character) &&
+			!(character === '.' && /\d/u.test(text[index - 1] ?? '') && /\d/u.test(text[index + 1] ?? ''))
+		) {
 			let end = index + 1;
 			while (text[end] === '.') {
 				end++;
 			}
-			boundaries.push({ end, pauseAfterMs: VI_PAUSE_MS.sentenceEnd, strong: true });
+			boundaries.push({ end, kind: 'sentence', pauseAfterMs: VI_PAUSE_MS.sentenceEnd });
 			index = end - 1;
 		}
 	}
 	return boundaries;
 }
 
-function nearestSplit(text: string): number {
-	let best = -1;
-	let distance = Number.POSITIVE_INFINITY;
-	for (let index = 1; index <= Math.min(text.length - 1, VI_MAX_UNIT_LENGTH); index++) {
-		if (!/\s/u.test(text[index])) {
-			continue;
-		}
-		const currentDistance = Math.abs(index - VI_PREFERRED_UNIT_LENGTH);
-		if (currentDistance < distance) {
-			best = index;
-			distance = currentDistance;
-		}
-	}
-	return best > 0 ? best : VI_MAX_UNIT_LENGTH;
-}
-
-function enforceMaximum(text: string, pauseAfterMs: number): SpeechUnit[] {
-	const units: SpeechUnit[] = [];
-	let remaining = text.trim();
-	while (remaining.length > VI_MAX_UNIT_LENGTH) {
-		const split = nearestSplit(remaining);
-		units.push({ text: remaining.slice(0, split).trim(), pauseAfterMs: 0 });
-		remaining = remaining.slice(split).trimStart();
-	}
-	if (remaining) {
-		units.push({ text: remaining, pauseAfterMs });
-	}
-	return units;
-}
-
-function planParagraph(text: string): SpeechUnit[] {
-	const units: SpeechUnit[] = [];
-	let start = 0;
-	for (const boundary of scanBoundaries(text)) {
-		const candidate = text.slice(start, boundary.end).trim();
-		const remainder = text.slice(boundary.end).trim();
-		const shouldSplit = boundary.strong || (candidate.length >= VI_MIN_FRAGMENT_LENGTH && remainder.length >= VI_MIN_FRAGMENT_LENGTH);
-		if (!shouldSplit) {
-			continue;
-		}
-		units.push(...enforceMaximum(candidate, boundary.pauseAfterMs));
-		start = boundary.end;
-	}
-	const trailing = text.slice(start).trim();
-	if (trailing) {
-		units.push(...enforceMaximum(trailing, 0));
-	}
-	return units;
+function planParagraph(text: string, paragraphPauseAfterMs: number): SpeechUnit[] {
+	const boundaries = scanBoundaries(text);
+	const trailingBoundary = boundaries.at(-1);
+	const trailingPauseAfterMs = trailingBoundary?.end === text.length ? trailingBoundary.pauseAfterMs : 0;
+	return planTextSegments(text, boundaries, VI_SEGMENTATION_POLICY, Math.max(trailingPauseAfterMs, paragraphPauseAfterMs));
 }
 
 export function planSpeechUnits(text: string): SpeechUnit[] {
@@ -128,15 +106,7 @@ export function planSpeechUnits(text: string): SpeechUnit[] {
 		.filter(Boolean);
 	const units: SpeechUnit[] = [];
 	for (let index = 0; index < paragraphs.length; index++) {
-		const paragraphUnits = planParagraph(paragraphs[index]);
-		if (paragraphUnits.length === 0) {
-			continue;
-		}
-		if (index < paragraphs.length - 1) {
-			const last = paragraphUnits[paragraphUnits.length - 1];
-			last.pauseAfterMs = Math.max(last.pauseAfterMs, VI_PAUSE_MS.paragraphEnd);
-		}
-		units.push(...paragraphUnits);
+		units.push(...planParagraph(paragraphs[index], index < paragraphs.length - 1 ? VI_PAUSE_MS.paragraphEnd : 0));
 	}
 	return units;
 }

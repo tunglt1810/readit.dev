@@ -30,6 +30,19 @@ creating a release tag. Automated tests must not fill reviewer judgments.
 | VI-19 | identifier and phone preservation | pending  | pending   | pending        | pending     | pending          | pending      |
 | VI-20 | invalid-date preservation         | pending  | pending   | pending        | pending     | pending          | pending      |
 
+## Weighted segmentation and replay follow-up
+
+All four follow-up cases must have no semantic error, repeated/skipped unit, or
+unacceptable TTFA regression. A repeated sound inside one buffer must be marked
+as an acoustic issue; a whole unit played twice is a queue failure.
+
+| ID    | Target                                      | Reviewer | Semantic error | Pause issue | Repeated/skipped | Acoustic repeat | TTFA concern |
+| ----- | ------------------------------------------- | -------- | -------------- | ----------- | ---------------- | --------------- | ------------ |
+| VI-21 | consecutive short sentences in one unit     | pending  | pending        | pending     | pending          | pending         | pending      |
+| VI-22 | long sentence with mixed punctuation        | pending  | pending        | pending     | pending          | pending         | pending      |
+| VI-23 | punctuation-sparse paragraph over 300 chars | pending  | pending        | pending     | pending          | pending         | pending      |
+| VI-24 | speed change while next unit is synthesizing | pending  | pending        | pending     | pending          | pending         | pending      |
+
 Reviewer signature: pending
 
 Review date: pending

@@ -4,6 +4,7 @@ import { synthesizeSpeechUnitSamples } from './audio';
 import { preparePlaybackUnits, VietnameseTextNormalizer } from './playback_preparation';
 import { createSingleFlight } from './single_flight';
 import { loadTextToSpeech, loadVoiceStyle, Style, TextToSpeech, writeWavFile } from './supertonic_helper';
+import { IndexedSynthesisCoordinator, type SynthesisKey } from './synthesis_coordinator';
 import { loadVietnameseNormalizerAssets } from './vietnamese/assets';
 import { normalizeVietnameseText } from './vietnamese/normalizer';
 import { SpeechUnit } from './vietnamese/types';
@@ -25,8 +26,6 @@ let speedVersion = 0;
 // Pipelining Queue state
 let speechUnits: SpeechUnit[] = [];
 let currentUnitIndex = 0;
-let nextChunkBuffer: AudioBuffer | null = null;
-let isPreFetching = false;
 let currentSourceNode: AudioBufferSourceNode | null = null;
 
 // Initialize Storage Persistence
@@ -173,35 +172,46 @@ async function synthesizeUnit(unit: SpeechUnit, lang: string, style: Style, spee
 	return await audioCtx.decodeAudioData(wavBuffer);
 }
 
-/**
- * Pre-fetch and synthesize the next chunk in the background
- */
-async function preFetchNextChunk(lang: string, style: Style, session: number) {
-	if (isPreFetching || currentUnitIndex + 1 >= speechUnits.length) {
+interface SynthesisInput {
+	unit: SpeechUnit;
+	lang: string;
+	style: Style;
+	speed: number;
+}
+
+const synthesisCoordinator = new IndexedSynthesisCoordinator<SynthesisInput, AudioBuffer>(({ unit, lang, style, speed }) =>
+	synthesizeUnit(unit, lang, style, speed),
+);
+
+function synthesisKey(session: number, unitIndex: number): SynthesisKey {
+	return { session, unitIndex, speedVersion };
+}
+
+function isCurrentSynthesisKey(key: SynthesisKey): boolean {
+	return key.session === playbackSession && key.unitIndex === currentUnitIndex && key.speedVersion === speedVersion;
+}
+
+function retainedSynthesisKeys(session: number): SynthesisKey[] {
+	const keys = [synthesisKey(session, currentUnitIndex)];
+	if (currentUnitIndex + 1 < speechUnits.length) {
+		keys.push(synthesisKey(session, currentUnitIndex + 1));
+	}
+	return keys;
+}
+
+function prefetchNextUnit(lang: string, style: Style, session: number): void {
+	const unitIndex = currentUnitIndex + 1;
+	if (unitIndex >= speechUnits.length) {
 		return;
 	}
-	const requestSpeed = currentSpeed;
-	const requestSpeedVersion = speedVersion;
-	isPreFetching = true;
-
-	try {
-		const nextIndex = currentUnitIndex + 1;
-		const unit = speechUnits[nextIndex];
-
-		const buffer = await synthesizeUnit(unit, lang, style, requestSpeed);
-		if (session !== playbackSession || requestSpeedVersion !== speedVersion) {
-			return;
-		}
-		nextChunkBuffer = buffer;
-	} catch (_error) {
-		if (session === playbackSession && requestSpeedVersion === speedVersion) {
-			nextChunkBuffer = null;
-		}
-	} finally {
-		if (session === playbackSession && requestSpeedVersion === speedVersion) {
-			isPreFetching = false;
-		}
-	}
+	const key = synthesisKey(session, unitIndex);
+	synthesisCoordinator.retain(retainedSynthesisKeys(session));
+	synthesisCoordinator.prefetch(key, {
+		unit: speechUnits[unitIndex],
+		lang,
+		style,
+		speed: currentSpeed,
+	});
 }
 
 function stopCurrentSource() {
@@ -225,8 +235,7 @@ function stopCurrentSource() {
 function stopAudio() {
 	stopCurrentSource();
 	isPaused = false;
-	nextChunkBuffer = null;
-	isPreFetching = false;
+	synthesisCoordinator.clear();
 	reportProgress('stopped');
 	speechUnits = [];
 	currentUnitIndex = 0;
@@ -236,14 +245,11 @@ function stopAudio() {
 /**
  * Play a synthesized AudioBuffer
  */
-function playAudioBuffer(buffer: AudioBuffer, lang: string, style: Style, session: number) {
-	if (!audioCtx || session !== playbackSession) {
+function playAudioBuffer(buffer: AudioBuffer, lang: string, style: Style, session: number, unitIndex: number) {
+	if (!audioCtx || currentSourceNode !== null || session !== playbackSession || unitIndex !== currentUnitIndex) {
 		return;
 	}
 
-	stopCurrentSource();
-
-	// Create AudioBufferSourceNode
 	const source = audioCtx.createBufferSource();
 	source.buffer = buffer;
 	source.connect(audioCtx.destination);
@@ -251,16 +257,21 @@ function playAudioBuffer(buffer: AudioBuffer, lang: string, style: Style, sessio
 
 	reportProgress('playing');
 
-	// When current chunk ends, trigger next chunk
 	source.onended = () => {
-		if (currentSourceNode !== source || session !== playbackSession || playbackStatus === 'stopped' || isPaused) {
+		if (
+			currentSourceNode !== source ||
+			session !== playbackSession ||
+			unitIndex !== currentUnitIndex ||
+			playbackStatus === 'stopped' ||
+			isPaused
+		) {
 			return;
 		}
 
 		currentSourceNode = null;
-		currentUnitIndex++;
+		currentUnitIndex = unitIndex + 1;
 		if (currentUnitIndex < speechUnits.length) {
-			playNextChunk(lang, style, session);
+			void playNextUnit(lang, style, session);
 		} else {
 			stopAudio();
 		}
@@ -269,10 +280,7 @@ function playAudioBuffer(buffer: AudioBuffer, lang: string, style: Style, sessio
 	source.start(0);
 }
 
-/**
- * Plays the current chunk index, using pre-fetched buffer if available
- */
-async function playNextChunk(lang: string, style: Style, session: number) {
+async function playNextUnit(lang: string, style: Style, session: number) {
 	if (session !== playbackSession) {
 		return;
 	}
@@ -282,38 +290,34 @@ async function playNextChunk(lang: string, style: Style, session: number) {
 		return;
 	}
 
-	const unit = speechUnits[currentUnitIndex];
+	const unitIndex = currentUnitIndex;
+	const key = synthesisKey(session, unitIndex);
+	const input: SynthesisInput = {
+		unit: speechUnits[unitIndex],
+		lang,
+		style,
+		speed: currentSpeed,
+	};
+	synthesisCoordinator.retain(retainedSynthesisKeys(session));
+	reportProgress('loading');
 
-	// Check if we have pre-fetched buffer
-	if (nextChunkBuffer) {
-		const buffer = nextChunkBuffer;
-		nextChunkBuffer = null;
-		playAudioBuffer(buffer, lang, style, session);
-
-		// Start pre-fetching the one after
-		preFetchNextChunk(lang, style, session);
-	} else {
-		// If no pre-fetch, show loading state and synthesize on the fly
-		reportProgress('loading');
-		const requestSpeed = currentSpeed;
-		const requestSpeedVersion = speedVersion;
-		try {
-			const buffer = await synthesizeUnit(unit, lang, style, requestSpeed);
-			if (session !== playbackSession || requestSpeedVersion !== speedVersion) {
-				if (session === playbackSession && requestSpeedVersion !== speedVersion) {
-					playNextChunk(lang, style, session);
-				}
-				return;
+	try {
+		const buffer = await synthesisCoordinator.get(key, input);
+		if (!isCurrentSynthesisKey(key)) {
+			if (key.session === playbackSession && key.unitIndex === currentUnitIndex && key.speedVersion !== speedVersion) {
+				void playNextUnit(lang, style, session);
 			}
-			playAudioBuffer(buffer, lang, style, session);
-
-			// Start pre-fetching next
-			preFetchNextChunk(lang, style, session);
-		} catch (error) {
-			const err = error as Error;
-			if (session === playbackSession && requestSpeedVersion === speedVersion) {
-				reportProgress('error', { error: err.message });
-			}
+			return;
+		}
+		playAudioBuffer(buffer, lang, style, session, unitIndex);
+		prefetchNextUnit(lang, style, session);
+	} catch (error) {
+		if (key.session === playbackSession && key.unitIndex === currentUnitIndex && key.speedVersion !== speedVersion) {
+			void playNextUnit(lang, style, session);
+			return;
+		}
+		if (isCurrentSynthesisKey(key)) {
+			reportProgress('error', { error: (error as Error).message });
 		}
 	}
 }
@@ -341,14 +345,16 @@ chrome.runtime.onMessage.addListener(
 
 				const isResume = isPaused && audioCtx && playbackStatus === 'paused';
 				if (!isResume) {
+					const data = payload as { article: { content: string; lang: string }; voiceStyleId: string; speed: number };
+					const { article, voiceStyleId, speed } = data;
 					const session = ++playbackSession;
 					stopAudio();
 					currentExtensionSessionId = sessionId;
+					currentSpeed = speed;
+					reportProgress('loading');
 
 					(async () => {
 						try {
-							const data = payload as { article: { content: string; lang: string }; voiceStyleId: string; speed: number };
-							const { article, voiceStyleId, speed } = data;
 							let normalizer: VietnameseTextNormalizer | null = null;
 							if (article.lang === 'vi') {
 								const assets = await loadVietnameseNormalizerAssets();
@@ -363,10 +369,8 @@ chrome.runtime.onMessage.addListener(
 								return;
 							}
 
-							currentSpeed = speed;
 							speechUnits = preparedUnits;
 							currentUnitIndex = 0;
-							nextChunkBuffer = null;
 							isPaused = false;
 
 							if (speechUnits.length === 0) {
@@ -401,7 +405,7 @@ chrome.runtime.onMessage.addListener(
 							sendResponse({ success: true });
 
 							// Trigger first chunk playback
-							playNextChunk(article.lang, style, session);
+							void playNextUnit(article.lang, style, session);
 						} catch (err) {
 							const error = err as Error;
 							if (session === playbackSession) {
@@ -454,8 +458,7 @@ chrome.runtime.onMessage.addListener(
 				}
 				currentSpeed = speed;
 				speedVersion++;
-				nextChunkBuffer = null;
-				isPreFetching = false;
+				synthesisCoordinator.clear();
 				reportProgress(playbackStatus);
 				sendResponse({ success: true });
 				break;

@@ -203,6 +203,31 @@ test.describe('Reading state lifecycle', () => {
 		await expect.poll(async () => (await getBackgroundState(controlPage)).session).toBeNull();
 	});
 
+	test('speed change during pending model loading keeps the same loading session', async ({ context, extensionId }) => {
+		const targetPage = await createTargetPage(context);
+		const controlPage = await context.newPage();
+		await controlPage.goto(`chrome-extension://${extensionId}/src/popup/popup.html`);
+		await targetPage.bringToFront();
+
+		const loadingSession = await test.step('start playback and reach pending model loading', async () => {
+			const start = sendCoordinatorCommand(controlPage, { action: 'START_CURRENT_PAGE' });
+			expect(await responseWithin(start)).toEqual({ success: true });
+
+			const loadingState = await responseWithin(getBackgroundState(controlPage));
+			expect(loadingState).not.toBe('timed out');
+			expect((loadingState as PlaybackStateResponse).session).toMatchObject({ status: 'loading' });
+			return (loadingState as PlaybackStateResponse).session;
+		});
+
+		await test.step('change speed without completing the loading session', async () => {
+			const response = await responseWithin(sendCoordinatorCommand(controlPage, { action: 'CHANGE_SPEED', payload: { speed: 1.3 } }));
+			expect(response).toEqual({ success: true });
+			await expect
+				.poll(async () => (await getBackgroundState(controlPage)).session)
+				.toMatchObject({ sessionId: loadingSession?.sessionId, status: 'loading', speed: 1.3 });
+		});
+	});
+
 	test('reopen hydration uses the latest coordinator snapshot', async ({ context, extensionId, page, openPopup }) => {
 		const targetPage = await createTargetPage(context);
 		const { session } = await seedCoordinatorSession(context, extensionId, targetPage);
