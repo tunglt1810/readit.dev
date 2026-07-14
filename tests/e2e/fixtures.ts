@@ -1,6 +1,7 @@
-import { test as base, chromium, type BrowserContext, type Page } from '@playwright/test';
-import path from 'path';
+import { type BrowserContext, test as base, chromium, type Page } from '@playwright/test';
 import fs from 'fs';
+import path from 'path';
+
 import type { PlaybackStateResponse } from '../../src/shared/types';
 
 export async function installPopupRuntimeMock(page: Page, initialPlaybackState: PlaybackStateResponse): Promise<void> {
@@ -38,10 +39,7 @@ export async function installPopupRuntimeMock(page: Page, initialPlaybackState: 
 		(window as any).mockReceiveMessage = (message: any) => {
 			if (message.action === 'PLAYBACK_STATE_UPDATE') {
 				const currentState = readPlaybackState();
-				localStorage.setItem(
-					playbackStateKey,
-					JSON.stringify({ ...currentState, session: message.session ?? null }),
-				);
+				localStorage.setItem(playbackStateKey, JSON.stringify({ ...currentState, session: message.session ?? null }));
 			}
 			for (const listener of listeners) {
 				listener(message, {}, () => {});
@@ -60,7 +58,7 @@ export const test = base.extend<{
 		const tempDir = path.join(process.cwd(), '.tmp');
 		fs.mkdirSync(tempDir, { recursive: true });
 		const userDataDir = fs.mkdtempSync(path.join(tempDir, 'playwright-chrome-profile-'));
-		
+
 		// Khởi chạy Chromium với extension được unpack từ thư mục dist/
 		const context = await chromium.launchPersistentContext(userDataDir, {
 			headless: false,
@@ -72,7 +70,7 @@ export const test = base.extend<{
 				'--disable-sync',
 			],
 		});
-		
+
 		try {
 			await use(context);
 		} finally {

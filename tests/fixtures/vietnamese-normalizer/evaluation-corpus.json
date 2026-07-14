@@ -1,0 +1,1580 @@
+[
+	{
+		"id": "education-enrollment-1",
+		"domain": "general",
+		"scenario": "education-enrollment",
+		"text": "Bản ghi thứ nhất: Theo thông báo tuyển sinh chính thức của Trường ĐH Bách Khoa tuyển sinh vào 11/07/2026, học phí 700.000đ, tỷ lệ 12,5%, lúc 08:30, phòng A1, bản v1.2.3. Mã 11/99/2026 được giữ nguyên.",
+		"spans": [
+			{
+				"start": 66,
+				"end": 68,
+				"type": "LABB",
+				"expected": "Đại học"
+			},
+			{
+				"start": 94,
+				"end": 104,
+				"type": "NDAT",
+				"expected": "ngày mười một tháng bảy năm hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 114,
+				"end": 122,
+				"type": "MONEY",
+				"expected": "bảy trăm nghìn đồng"
+			},
+			{
+				"start": 130,
+				"end": 135,
+				"type": "NPER",
+				"expected": "mười hai phẩy năm phần trăm"
+			},
+			{
+				"start": 141,
+				"end": 146,
+				"type": "NTIM",
+				"expected": "tám giờ ba mươi phút"
+			},
+			{
+				"start": 154,
+				"end": 156,
+				"type": "LSEQ",
+				"expected": "a một"
+			},
+			{
+				"start": 162,
+				"end": 168,
+				"type": "NVER",
+				"expected": "vê một chấm hai chấm ba"
+			}
+		],
+		"source": "synthetic reviewed pronunciation fixture",
+		"license": "CC0-1.0"
+	},
+	{
+		"id": "business-report-1",
+		"domain": "business",
+		"scenario": "business-report",
+		"text": "Bản ghi thứ nhất: Doanh thu 178.000, quý II/2026 tăng 12,5%, ngân sách 700.000đ, kỳ 07/2026, tỷ lệ 1/2, mã 090. Mã 11/99/2026 được giữ nguyên.",
+		"spans": [
+			{
+				"start": 28,
+				"end": 35,
+				"type": "NNUM",
+				"expected": "một trăm bảy mươi tám nghìn"
+			},
+			{
+				"start": 41,
+				"end": 48,
+				"type": "NQUA",
+				"expected": "quý hai năm hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 54,
+				"end": 59,
+				"type": "NPER",
+				"expected": "mười hai phẩy năm phần trăm"
+			},
+			{
+				"start": 71,
+				"end": 79,
+				"type": "MONEY",
+				"expected": "bảy trăm nghìn đồng"
+			},
+			{
+				"start": 84,
+				"end": 91,
+				"type": "NMON",
+				"expected": "tháng bảy năm hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 99,
+				"end": 102,
+				"type": "NFRC",
+				"expected": "một trên hai"
+			},
+			{
+				"start": 107,
+				"end": 110,
+				"type": "NDIG",
+				"expected": "không chín không"
+			}
+		],
+		"source": "synthetic reviewed pronunciation fixture",
+		"license": "CC0-1.0"
+	},
+	{
+		"id": "technology-device-1",
+		"domain": "technology",
+		"scenario": "technology-device",
+		"text": "Bản ghi thứ nhất: Thiết bị Ford-2026 chạy bản v1.2.3, mã A1, email a@b.vn, tốc độ 42 km, lúc 08:30, lô 178.000. Mã 11/99/2026 được giữ nguyên.",
+		"spans": [
+			{
+				"start": 27,
+				"end": 36,
+				"type": "LWRD",
+				"expected": "Ford hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 46,
+				"end": 52,
+				"type": "NVER",
+				"expected": "vê một chấm hai chấm ba"
+			},
+			{
+				"start": 57,
+				"end": 59,
+				"type": "LSEQ",
+				"expected": "a một"
+			},
+			{
+				"start": 67,
+				"end": 73,
+				"type": "URLE",
+				"expected": "a a còng bê chấm vê nờ"
+			},
+			{
+				"start": 82,
+				"end": 87,
+				"type": "MEA",
+				"expected": "bốn mươi hai ki lô mét"
+			},
+			{
+				"start": 93,
+				"end": 98,
+				"type": "NTIM",
+				"expected": "tám giờ ba mươi phút"
+			},
+			{
+				"start": 103,
+				"end": 110,
+				"type": "NNUM",
+				"expected": "một trăm bảy mươi tám nghìn"
+			}
+		],
+		"source": "synthetic reviewed pronunciation fixture",
+		"license": "CC0-1.0"
+	},
+	{
+		"id": "sports-result-1",
+		"domain": "sports",
+		"scenario": "sports-result",
+		"text": "Bản ghi thứ nhất: Đội thắng tỷ số 2-1, chuỗi khoảng 10-12 trận, đạt 12,5%, lúc 08:30, ngày 11/07, vòng XIV, ghi 178.000 điểm. Mã 11/99/2026 được giữ nguyên.",
+		"spans": [
+			{
+				"start": 34,
+				"end": 37,
+				"type": "NSCR",
+				"expected": "hai một"
+			},
+			{
+				"start": 52,
+				"end": 57,
+				"type": "NRNG",
+				"expected": "mười đến mười hai"
+			},
+			{
+				"start": 68,
+				"end": 73,
+				"type": "NPER",
+				"expected": "mười hai phẩy năm phần trăm"
+			},
+			{
+				"start": 79,
+				"end": 84,
+				"type": "NTIM",
+				"expected": "tám giờ ba mươi phút"
+			},
+			{
+				"start": 91,
+				"end": 96,
+				"type": "NDAY",
+				"expected": "mười một tháng bảy"
+			},
+			{
+				"start": 103,
+				"end": 106,
+				"type": "ROMA",
+				"expected": "mười bốn"
+			},
+			{
+				"start": 112,
+				"end": 119,
+				"type": "NNUM",
+				"expected": "một trăm bảy mươi tám nghìn"
+			}
+		],
+		"source": "synthetic reviewed pronunciation fixture",
+		"license": "CC0-1.0"
+	},
+	{
+		"id": "health-treatment-1",
+		"domain": "health",
+		"scenario": "health-treatment",
+		"text": "Bản ghi thứ nhất: Bệnh nhân dùng tỷ lệ 1/2 viên, nặng 42 kg, tái khám ngày 11/07, lúc 08:30, mã 090, đạt 12,5%, ca A1. Mã 11/99/2026 được giữ nguyên.",
+		"spans": [
+			{
+				"start": 39,
+				"end": 42,
+				"type": "NFRC",
+				"expected": "một trên hai"
+			},
+			{
+				"start": 54,
+				"end": 59,
+				"type": "MEA",
+				"expected": "bốn mươi hai ki lô gam"
+			},
+			{
+				"start": 75,
+				"end": 80,
+				"type": "NDAY",
+				"expected": "mười một tháng bảy"
+			},
+			{
+				"start": 86,
+				"end": 91,
+				"type": "NTIM",
+				"expected": "tám giờ ba mươi phút"
+			},
+			{
+				"start": 96,
+				"end": 99,
+				"type": "NDIG",
+				"expected": "không chín không"
+			},
+			{
+				"start": 105,
+				"end": 110,
+				"type": "NPER",
+				"expected": "mười hai phẩy năm phần trăm"
+			},
+			{
+				"start": 115,
+				"end": 117,
+				"type": "LSEQ",
+				"expected": "a một"
+			}
+		],
+		"source": "synthetic reviewed pronunciation fixture",
+		"license": "CC0-1.0"
+	},
+	{
+		"id": "science-sample-1",
+		"domain": "science",
+		"scenario": "science-sample",
+		"text": "Bản ghi thứ nhất: Mẫu Ford-2026 thuộc nhóm XIV, đo 42 m, mã A1, quý II/2026, kỳ 07/2026, số 178.000. Mã 11/99/2026 được giữ nguyên.",
+		"spans": [
+			{
+				"start": 22,
+				"end": 31,
+				"type": "LWRD",
+				"expected": "Ford hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 43,
+				"end": 46,
+				"type": "ROMA",
+				"expected": "mười bốn"
+			},
+			{
+				"start": 51,
+				"end": 55,
+				"type": "MEA",
+				"expected": "bốn mươi hai mét"
+			},
+			{
+				"start": 60,
+				"end": 62,
+				"type": "LSEQ",
+				"expected": "a một"
+			},
+			{
+				"start": 68,
+				"end": 75,
+				"type": "NQUA",
+				"expected": "quý hai năm hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 80,
+				"end": 87,
+				"type": "NMON",
+				"expected": "tháng bảy năm hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 92,
+				"end": 99,
+				"type": "NNUM",
+				"expected": "một trăm bảy mươi tám nghìn"
+			}
+		],
+		"source": "synthetic reviewed pronunciation fixture",
+		"license": "CC0-1.0"
+	},
+	{
+		"id": "transport-route-1",
+		"domain": "general",
+		"scenario": "transport-route",
+		"text": "Bản ghi thứ nhất: Khoảng 10-12 km, lúc 08:30, phí 700.000đ, tuyến A1, xe Ford-2026, ngày 11/07, mã 090. Mã 11/99/2026 được giữ nguyên.",
+		"spans": [
+			{
+				"start": 25,
+				"end": 30,
+				"type": "NRNG",
+				"expected": "mười đến mười hai"
+			},
+			{
+				"start": 31,
+				"end": 33,
+				"type": "MEA",
+				"expected": "ki lô mét"
+			},
+			{
+				"start": 39,
+				"end": 44,
+				"type": "NTIM",
+				"expected": "tám giờ ba mươi phút"
+			},
+			{
+				"start": 50,
+				"end": 58,
+				"type": "MONEY",
+				"expected": "bảy trăm nghìn đồng"
+			},
+			{
+				"start": 66,
+				"end": 68,
+				"type": "LSEQ",
+				"expected": "a một"
+			},
+			{
+				"start": 73,
+				"end": 82,
+				"type": "LWRD",
+				"expected": "Ford hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 89,
+				"end": 94,
+				"type": "NDAY",
+				"expected": "mười một tháng bảy"
+			},
+			{
+				"start": 99,
+				"end": 102,
+				"type": "NDIG",
+				"expected": "không chín không"
+			}
+		],
+		"source": "synthetic reviewed pronunciation fixture",
+		"license": "CC0-1.0"
+	},
+	{
+		"id": "communication-contact-1",
+		"domain": "technology",
+		"scenario": "communication-contact",
+		"text": "Bản ghi thứ nhất: Liên hệ a@b.vn, theo thông báo chính thức của Trường ĐH Bách Khoa dùng mã A1, số 090, bản v1.2.3, mốc 11/07/2026, đạt 12,5%. Mã 11/99/2026 được giữ nguyên.",
+		"spans": [
+			{
+				"start": 26,
+				"end": 32,
+				"type": "URLE",
+				"expected": "a a còng bê chấm vê nờ"
+			},
+			{
+				"start": 71,
+				"end": 73,
+				"type": "LABB",
+				"expected": "Đại học"
+			},
+			{
+				"start": 92,
+				"end": 94,
+				"type": "LSEQ",
+				"expected": "a một"
+			},
+			{
+				"start": 99,
+				"end": 102,
+				"type": "NDIG",
+				"expected": "không chín không"
+			},
+			{
+				"start": 108,
+				"end": 114,
+				"type": "NVER",
+				"expected": "vê một chấm hai chấm ba"
+			},
+			{
+				"start": 120,
+				"end": 130,
+				"type": "NDAT",
+				"expected": "ngày mười một tháng bảy năm hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 136,
+				"end": 141,
+				"type": "NPER",
+				"expected": "mười hai phẩy năm phần trăm"
+			}
+		],
+		"source": "synthetic reviewed pronunciation fixture",
+		"license": "CC0-1.0"
+	},
+	{
+		"id": "calendar-schedule-1",
+		"domain": "business",
+		"scenario": "calendar-schedule",
+		"text": "Bản ghi thứ nhất: Mốc 11/07/2026, ngày 11/07, kỳ 07/2026, quý II/2026, lúc 08:30, khoảng 10-12, tỷ số 2-1. Mã 11/99/2026 được giữ nguyên.",
+		"spans": [
+			{
+				"start": 22,
+				"end": 32,
+				"type": "NDAT",
+				"expected": "ngày mười một tháng bảy năm hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 39,
+				"end": 44,
+				"type": "NDAY",
+				"expected": "mười một tháng bảy"
+			},
+			{
+				"start": 49,
+				"end": 56,
+				"type": "NMON",
+				"expected": "tháng bảy năm hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 62,
+				"end": 69,
+				"type": "NQUA",
+				"expected": "quý hai năm hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 75,
+				"end": 80,
+				"type": "NTIM",
+				"expected": "tám giờ ba mươi phút"
+			},
+			{
+				"start": 89,
+				"end": 94,
+				"type": "NRNG",
+				"expected": "mười đến mười hai"
+			},
+			{
+				"start": 102,
+				"end": 105,
+				"type": "NSCR",
+				"expected": "hai một"
+			}
+		],
+		"source": "synthetic reviewed pronunciation fixture",
+		"license": "CC0-1.0"
+	},
+	{
+		"id": "mixed-reference-1",
+		"domain": "science",
+		"scenario": "mixed-reference",
+		"text": "Bản ghi thứ nhất: Chi phí 700.000đ, số lượng 178.000, tỷ lệ 1/2, chiều dài 42 m, mục XIV, mẫu Ford-2026, gửi a@b.vn. Mã 11/99/2026 được giữ nguyên.",
+		"spans": [
+			{
+				"start": 26,
+				"end": 34,
+				"type": "MONEY",
+				"expected": "bảy trăm nghìn đồng"
+			},
+			{
+				"start": 45,
+				"end": 52,
+				"type": "NNUM",
+				"expected": "một trăm bảy mươi tám nghìn"
+			},
+			{
+				"start": 60,
+				"end": 63,
+				"type": "NFRC",
+				"expected": "một trên hai"
+			},
+			{
+				"start": 75,
+				"end": 79,
+				"type": "MEA",
+				"expected": "bốn mươi hai mét"
+			},
+			{
+				"start": 85,
+				"end": 88,
+				"type": "ROMA",
+				"expected": "mười bốn"
+			},
+			{
+				"start": 94,
+				"end": 103,
+				"type": "LWRD",
+				"expected": "Ford hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 109,
+				"end": 115,
+				"type": "URLE",
+				"expected": "a a còng bê chấm vê nờ"
+			}
+		],
+		"source": "synthetic reviewed pronunciation fixture",
+		"license": "CC0-1.0"
+	},
+	{
+		"id": "education-enrollment-2",
+		"domain": "general",
+		"scenario": "education-enrollment",
+		"text": "Bản ghi thứ hai: Theo thông báo tuyển sinh chính thức của Trường ĐH Bách Khoa tuyển sinh vào 11/07/2026, học phí 700.000đ, tỷ lệ 12,5%, lúc 08:30, phòng A1, bản v1.2.3. Mã AB-123-CD được giữ nguyên.",
+		"spans": [
+			{
+				"start": 65,
+				"end": 67,
+				"type": "LABB",
+				"expected": "Đại học"
+			},
+			{
+				"start": 93,
+				"end": 103,
+				"type": "NDAT",
+				"expected": "ngày mười một tháng bảy năm hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 113,
+				"end": 121,
+				"type": "MONEY",
+				"expected": "bảy trăm nghìn đồng"
+			},
+			{
+				"start": 129,
+				"end": 134,
+				"type": "NPER",
+				"expected": "mười hai phẩy năm phần trăm"
+			},
+			{
+				"start": 140,
+				"end": 145,
+				"type": "NTIM",
+				"expected": "tám giờ ba mươi phút"
+			},
+			{
+				"start": 153,
+				"end": 155,
+				"type": "LSEQ",
+				"expected": "a một"
+			},
+			{
+				"start": 161,
+				"end": 167,
+				"type": "NVER",
+				"expected": "vê một chấm hai chấm ba"
+			}
+		],
+		"source": "synthetic reviewed pronunciation fixture",
+		"license": "CC0-1.0"
+	},
+	{
+		"id": "business-report-2",
+		"domain": "business",
+		"scenario": "business-report",
+		"text": "Bản ghi thứ hai: Doanh thu 178.000, quý II/2026 tăng 12,5%, ngân sách 700.000đ, kỳ 07/2026, tỷ lệ 1/2, mã 090. Mã AB-123-CD được giữ nguyên.",
+		"spans": [
+			{
+				"start": 27,
+				"end": 34,
+				"type": "NNUM",
+				"expected": "một trăm bảy mươi tám nghìn"
+			},
+			{
+				"start": 40,
+				"end": 47,
+				"type": "NQUA",
+				"expected": "quý hai năm hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 53,
+				"end": 58,
+				"type": "NPER",
+				"expected": "mười hai phẩy năm phần trăm"
+			},
+			{
+				"start": 70,
+				"end": 78,
+				"type": "MONEY",
+				"expected": "bảy trăm nghìn đồng"
+			},
+			{
+				"start": 83,
+				"end": 90,
+				"type": "NMON",
+				"expected": "tháng bảy năm hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 98,
+				"end": 101,
+				"type": "NFRC",
+				"expected": "một trên hai"
+			},
+			{
+				"start": 106,
+				"end": 109,
+				"type": "NDIG",
+				"expected": "không chín không"
+			}
+		],
+		"source": "synthetic reviewed pronunciation fixture",
+		"license": "CC0-1.0"
+	},
+	{
+		"id": "technology-device-2",
+		"domain": "technology",
+		"scenario": "technology-device",
+		"text": "Bản ghi thứ hai: Thiết bị Ford-2026 chạy bản v1.2.3, mã A1, email a@b.vn, tốc độ 42 km, lúc 08:30, lô 178.000. Mã AB-123-CD được giữ nguyên.",
+		"spans": [
+			{
+				"start": 26,
+				"end": 35,
+				"type": "LWRD",
+				"expected": "Ford hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 45,
+				"end": 51,
+				"type": "NVER",
+				"expected": "vê một chấm hai chấm ba"
+			},
+			{
+				"start": 56,
+				"end": 58,
+				"type": "LSEQ",
+				"expected": "a một"
+			},
+			{
+				"start": 66,
+				"end": 72,
+				"type": "URLE",
+				"expected": "a a còng bê chấm vê nờ"
+			},
+			{
+				"start": 81,
+				"end": 86,
+				"type": "MEA",
+				"expected": "bốn mươi hai ki lô mét"
+			},
+			{
+				"start": 92,
+				"end": 97,
+				"type": "NTIM",
+				"expected": "tám giờ ba mươi phút"
+			},
+			{
+				"start": 102,
+				"end": 109,
+				"type": "NNUM",
+				"expected": "một trăm bảy mươi tám nghìn"
+			}
+		],
+		"source": "synthetic reviewed pronunciation fixture",
+		"license": "CC0-1.0"
+	},
+	{
+		"id": "sports-result-2",
+		"domain": "sports",
+		"scenario": "sports-result",
+		"text": "Bản ghi thứ hai: Đội thắng tỷ số 2-1, chuỗi khoảng 10-12 trận, đạt 12,5%, lúc 08:30, ngày 11/07, vòng XIV, ghi 178.000 điểm. Mã AB-123-CD được giữ nguyên.",
+		"spans": [
+			{
+				"start": 33,
+				"end": 36,
+				"type": "NSCR",
+				"expected": "hai một"
+			},
+			{
+				"start": 51,
+				"end": 56,
+				"type": "NRNG",
+				"expected": "mười đến mười hai"
+			},
+			{
+				"start": 67,
+				"end": 72,
+				"type": "NPER",
+				"expected": "mười hai phẩy năm phần trăm"
+			},
+			{
+				"start": 78,
+				"end": 83,
+				"type": "NTIM",
+				"expected": "tám giờ ba mươi phút"
+			},
+			{
+				"start": 90,
+				"end": 95,
+				"type": "NDAY",
+				"expected": "mười một tháng bảy"
+			},
+			{
+				"start": 102,
+				"end": 105,
+				"type": "ROMA",
+				"expected": "mười bốn"
+			},
+			{
+				"start": 111,
+				"end": 118,
+				"type": "NNUM",
+				"expected": "một trăm bảy mươi tám nghìn"
+			}
+		],
+		"source": "synthetic reviewed pronunciation fixture",
+		"license": "CC0-1.0"
+	},
+	{
+		"id": "health-treatment-2",
+		"domain": "health",
+		"scenario": "health-treatment",
+		"text": "Bản ghi thứ hai: Bệnh nhân dùng tỷ lệ 1/2 viên, nặng 42 kg, tái khám ngày 11/07, lúc 08:30, mã 090, đạt 12,5%, ca A1. Mã AB-123-CD được giữ nguyên.",
+		"spans": [
+			{
+				"start": 38,
+				"end": 41,
+				"type": "NFRC",
+				"expected": "một trên hai"
+			},
+			{
+				"start": 53,
+				"end": 58,
+				"type": "MEA",
+				"expected": "bốn mươi hai ki lô gam"
+			},
+			{
+				"start": 74,
+				"end": 79,
+				"type": "NDAY",
+				"expected": "mười một tháng bảy"
+			},
+			{
+				"start": 85,
+				"end": 90,
+				"type": "NTIM",
+				"expected": "tám giờ ba mươi phút"
+			},
+			{
+				"start": 95,
+				"end": 98,
+				"type": "NDIG",
+				"expected": "không chín không"
+			},
+			{
+				"start": 104,
+				"end": 109,
+				"type": "NPER",
+				"expected": "mười hai phẩy năm phần trăm"
+			},
+			{
+				"start": 114,
+				"end": 116,
+				"type": "LSEQ",
+				"expected": "a một"
+			}
+		],
+		"source": "synthetic reviewed pronunciation fixture",
+		"license": "CC0-1.0"
+	},
+	{
+		"id": "science-sample-2",
+		"domain": "science",
+		"scenario": "science-sample",
+		"text": "Bản ghi thứ hai: Mẫu Ford-2026 thuộc nhóm XIV, đo 42 m, mã A1, quý II/2026, kỳ 07/2026, số 178.000. Mã AB-123-CD được giữ nguyên.",
+		"spans": [
+			{
+				"start": 21,
+				"end": 30,
+				"type": "LWRD",
+				"expected": "Ford hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 42,
+				"end": 45,
+				"type": "ROMA",
+				"expected": "mười bốn"
+			},
+			{
+				"start": 50,
+				"end": 54,
+				"type": "MEA",
+				"expected": "bốn mươi hai mét"
+			},
+			{
+				"start": 59,
+				"end": 61,
+				"type": "LSEQ",
+				"expected": "a một"
+			},
+			{
+				"start": 67,
+				"end": 74,
+				"type": "NQUA",
+				"expected": "quý hai năm hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 79,
+				"end": 86,
+				"type": "NMON",
+				"expected": "tháng bảy năm hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 91,
+				"end": 98,
+				"type": "NNUM",
+				"expected": "một trăm bảy mươi tám nghìn"
+			}
+		],
+		"source": "synthetic reviewed pronunciation fixture",
+		"license": "CC0-1.0"
+	},
+	{
+		"id": "transport-route-2",
+		"domain": "general",
+		"scenario": "transport-route",
+		"text": "Bản ghi thứ hai: Khoảng 10-12 km, lúc 08:30, phí 700.000đ, tuyến A1, xe Ford-2026, ngày 11/07, mã 090. Mã AB-123-CD được giữ nguyên.",
+		"spans": [
+			{
+				"start": 24,
+				"end": 29,
+				"type": "NRNG",
+				"expected": "mười đến mười hai"
+			},
+			{
+				"start": 30,
+				"end": 32,
+				"type": "MEA",
+				"expected": "ki lô mét"
+			},
+			{
+				"start": 38,
+				"end": 43,
+				"type": "NTIM",
+				"expected": "tám giờ ba mươi phút"
+			},
+			{
+				"start": 49,
+				"end": 57,
+				"type": "MONEY",
+				"expected": "bảy trăm nghìn đồng"
+			},
+			{
+				"start": 65,
+				"end": 67,
+				"type": "LSEQ",
+				"expected": "a một"
+			},
+			{
+				"start": 72,
+				"end": 81,
+				"type": "LWRD",
+				"expected": "Ford hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 88,
+				"end": 93,
+				"type": "NDAY",
+				"expected": "mười một tháng bảy"
+			},
+			{
+				"start": 98,
+				"end": 101,
+				"type": "NDIG",
+				"expected": "không chín không"
+			}
+		],
+		"source": "synthetic reviewed pronunciation fixture",
+		"license": "CC0-1.0"
+	},
+	{
+		"id": "communication-contact-2",
+		"domain": "technology",
+		"scenario": "communication-contact",
+		"text": "Bản ghi thứ hai: Liên hệ a@b.vn, theo thông báo chính thức của Trường ĐH Bách Khoa dùng mã A1, số 090, bản v1.2.3, mốc 11/07/2026, đạt 12,5%. Mã AB-123-CD được giữ nguyên.",
+		"spans": [
+			{
+				"start": 25,
+				"end": 31,
+				"type": "URLE",
+				"expected": "a a còng bê chấm vê nờ"
+			},
+			{
+				"start": 70,
+				"end": 72,
+				"type": "LABB",
+				"expected": "Đại học"
+			},
+			{
+				"start": 91,
+				"end": 93,
+				"type": "LSEQ",
+				"expected": "a một"
+			},
+			{
+				"start": 98,
+				"end": 101,
+				"type": "NDIG",
+				"expected": "không chín không"
+			},
+			{
+				"start": 107,
+				"end": 113,
+				"type": "NVER",
+				"expected": "vê một chấm hai chấm ba"
+			},
+			{
+				"start": 119,
+				"end": 129,
+				"type": "NDAT",
+				"expected": "ngày mười một tháng bảy năm hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 135,
+				"end": 140,
+				"type": "NPER",
+				"expected": "mười hai phẩy năm phần trăm"
+			}
+		],
+		"source": "synthetic reviewed pronunciation fixture",
+		"license": "CC0-1.0"
+	},
+	{
+		"id": "calendar-schedule-2",
+		"domain": "business",
+		"scenario": "calendar-schedule",
+		"text": "Bản ghi thứ hai: Mốc 11/07/2026, ngày 11/07, kỳ 07/2026, quý II/2026, lúc 08:30, khoảng 10-12, tỷ số 2-1. Mã AB-123-CD được giữ nguyên.",
+		"spans": [
+			{
+				"start": 21,
+				"end": 31,
+				"type": "NDAT",
+				"expected": "ngày mười một tháng bảy năm hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 38,
+				"end": 43,
+				"type": "NDAY",
+				"expected": "mười một tháng bảy"
+			},
+			{
+				"start": 48,
+				"end": 55,
+				"type": "NMON",
+				"expected": "tháng bảy năm hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 61,
+				"end": 68,
+				"type": "NQUA",
+				"expected": "quý hai năm hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 74,
+				"end": 79,
+				"type": "NTIM",
+				"expected": "tám giờ ba mươi phút"
+			},
+			{
+				"start": 88,
+				"end": 93,
+				"type": "NRNG",
+				"expected": "mười đến mười hai"
+			},
+			{
+				"start": 101,
+				"end": 104,
+				"type": "NSCR",
+				"expected": "hai một"
+			}
+		],
+		"source": "synthetic reviewed pronunciation fixture",
+		"license": "CC0-1.0"
+	},
+	{
+		"id": "mixed-reference-2",
+		"domain": "science",
+		"scenario": "mixed-reference",
+		"text": "Bản ghi thứ hai: Chi phí 700.000đ, số lượng 178.000, tỷ lệ 1/2, chiều dài 42 m, mục XIV, mẫu Ford-2026, gửi a@b.vn. Mã AB-123-CD được giữ nguyên.",
+		"spans": [
+			{
+				"start": 25,
+				"end": 33,
+				"type": "MONEY",
+				"expected": "bảy trăm nghìn đồng"
+			},
+			{
+				"start": 44,
+				"end": 51,
+				"type": "NNUM",
+				"expected": "một trăm bảy mươi tám nghìn"
+			},
+			{
+				"start": 59,
+				"end": 62,
+				"type": "NFRC",
+				"expected": "một trên hai"
+			},
+			{
+				"start": 74,
+				"end": 78,
+				"type": "MEA",
+				"expected": "bốn mươi hai mét"
+			},
+			{
+				"start": 84,
+				"end": 87,
+				"type": "ROMA",
+				"expected": "mười bốn"
+			},
+			{
+				"start": 93,
+				"end": 102,
+				"type": "LWRD",
+				"expected": "Ford hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 108,
+				"end": 114,
+				"type": "URLE",
+				"expected": "a a còng bê chấm vê nờ"
+			}
+		],
+		"source": "synthetic reviewed pronunciation fixture",
+		"license": "CC0-1.0"
+	},
+	{
+		"id": "education-enrollment-3",
+		"domain": "general",
+		"scenario": "education-enrollment",
+		"text": "Bản ghi thứ ba: Theo thông báo tuyển sinh chính thức của Trường ĐH Bách Khoa tuyển sinh vào 11/07/2026, học phí 700.000đ, tỷ lệ 12,5%, lúc 08:30, phòng A1, bản v1.2.3. Địa chỉ IPv4 192.168.1.1 được giữ nguyên.",
+		"spans": [
+			{
+				"start": 64,
+				"end": 66,
+				"type": "LABB",
+				"expected": "Đại học"
+			},
+			{
+				"start": 92,
+				"end": 102,
+				"type": "NDAT",
+				"expected": "ngày mười một tháng bảy năm hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 112,
+				"end": 120,
+				"type": "MONEY",
+				"expected": "bảy trăm nghìn đồng"
+			},
+			{
+				"start": 128,
+				"end": 133,
+				"type": "NPER",
+				"expected": "mười hai phẩy năm phần trăm"
+			},
+			{
+				"start": 139,
+				"end": 144,
+				"type": "NTIM",
+				"expected": "tám giờ ba mươi phút"
+			},
+			{
+				"start": 152,
+				"end": 154,
+				"type": "LSEQ",
+				"expected": "a một"
+			},
+			{
+				"start": 160,
+				"end": 166,
+				"type": "NVER",
+				"expected": "vê một chấm hai chấm ba"
+			}
+		],
+		"source": "synthetic reviewed pronunciation fixture",
+		"license": "CC0-1.0"
+	},
+	{
+		"id": "business-report-3",
+		"domain": "business",
+		"scenario": "business-report",
+		"text": "Bản ghi thứ ba: Doanh thu 178.000, quý II/2026 tăng 12,5%, ngân sách 700.000đ, kỳ 07/2026, tỷ lệ 1/2, mã 090. Địa chỉ IPv4 192.168.1.1 được giữ nguyên.",
+		"spans": [
+			{
+				"start": 26,
+				"end": 33,
+				"type": "NNUM",
+				"expected": "một trăm bảy mươi tám nghìn"
+			},
+			{
+				"start": 39,
+				"end": 46,
+				"type": "NQUA",
+				"expected": "quý hai năm hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 52,
+				"end": 57,
+				"type": "NPER",
+				"expected": "mười hai phẩy năm phần trăm"
+			},
+			{
+				"start": 69,
+				"end": 77,
+				"type": "MONEY",
+				"expected": "bảy trăm nghìn đồng"
+			},
+			{
+				"start": 82,
+				"end": 89,
+				"type": "NMON",
+				"expected": "tháng bảy năm hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 97,
+				"end": 100,
+				"type": "NFRC",
+				"expected": "một trên hai"
+			},
+			{
+				"start": 105,
+				"end": 108,
+				"type": "NDIG",
+				"expected": "không chín không"
+			}
+		],
+		"source": "synthetic reviewed pronunciation fixture",
+		"license": "CC0-1.0"
+	},
+	{
+		"id": "technology-device-3",
+		"domain": "technology",
+		"scenario": "technology-device",
+		"text": "Bản ghi thứ ba: Thiết bị Ford-2026 chạy bản v1.2.3, mã A1, email a@b.vn, tốc độ 42 km, lúc 08:30, lô 178.000. Địa chỉ IPv4 192.168.1.1 được giữ nguyên.",
+		"spans": [
+			{
+				"start": 25,
+				"end": 34,
+				"type": "LWRD",
+				"expected": "Ford hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 44,
+				"end": 50,
+				"type": "NVER",
+				"expected": "vê một chấm hai chấm ba"
+			},
+			{
+				"start": 55,
+				"end": 57,
+				"type": "LSEQ",
+				"expected": "a một"
+			},
+			{
+				"start": 65,
+				"end": 71,
+				"type": "URLE",
+				"expected": "a a còng bê chấm vê nờ"
+			},
+			{
+				"start": 80,
+				"end": 85,
+				"type": "MEA",
+				"expected": "bốn mươi hai ki lô mét"
+			},
+			{
+				"start": 91,
+				"end": 96,
+				"type": "NTIM",
+				"expected": "tám giờ ba mươi phút"
+			},
+			{
+				"start": 101,
+				"end": 108,
+				"type": "NNUM",
+				"expected": "một trăm bảy mươi tám nghìn"
+			}
+		],
+		"source": "synthetic reviewed pronunciation fixture",
+		"license": "CC0-1.0"
+	},
+	{
+		"id": "sports-result-3",
+		"domain": "sports",
+		"scenario": "sports-result",
+		"text": "Bản ghi thứ ba: Đội thắng tỷ số 2-1, chuỗi khoảng 10-12 trận, đạt 12,5%, lúc 08:30, ngày 11/07, vòng XIV, ghi 178.000 điểm. Địa chỉ IPv4 192.168.1.1 được giữ nguyên.",
+		"spans": [
+			{
+				"start": 32,
+				"end": 35,
+				"type": "NSCR",
+				"expected": "hai một"
+			},
+			{
+				"start": 50,
+				"end": 55,
+				"type": "NRNG",
+				"expected": "mười đến mười hai"
+			},
+			{
+				"start": 66,
+				"end": 71,
+				"type": "NPER",
+				"expected": "mười hai phẩy năm phần trăm"
+			},
+			{
+				"start": 77,
+				"end": 82,
+				"type": "NTIM",
+				"expected": "tám giờ ba mươi phút"
+			},
+			{
+				"start": 89,
+				"end": 94,
+				"type": "NDAY",
+				"expected": "mười một tháng bảy"
+			},
+			{
+				"start": 101,
+				"end": 104,
+				"type": "ROMA",
+				"expected": "mười bốn"
+			},
+			{
+				"start": 110,
+				"end": 117,
+				"type": "NNUM",
+				"expected": "một trăm bảy mươi tám nghìn"
+			}
+		],
+		"source": "synthetic reviewed pronunciation fixture",
+		"license": "CC0-1.0"
+	},
+	{
+		"id": "health-treatment-3",
+		"domain": "health",
+		"scenario": "health-treatment",
+		"text": "Bản ghi thứ ba: Bệnh nhân dùng tỷ lệ 1/2 viên, nặng 42 kg, tái khám ngày 11/07, lúc 08:30, mã 090, đạt 12,5%, ca A1. Địa chỉ IPv4 192.168.1.1 được giữ nguyên.",
+		"spans": [
+			{
+				"start": 37,
+				"end": 40,
+				"type": "NFRC",
+				"expected": "một trên hai"
+			},
+			{
+				"start": 52,
+				"end": 57,
+				"type": "MEA",
+				"expected": "bốn mươi hai ki lô gam"
+			},
+			{
+				"start": 73,
+				"end": 78,
+				"type": "NDAY",
+				"expected": "mười một tháng bảy"
+			},
+			{
+				"start": 84,
+				"end": 89,
+				"type": "NTIM",
+				"expected": "tám giờ ba mươi phút"
+			},
+			{
+				"start": 94,
+				"end": 97,
+				"type": "NDIG",
+				"expected": "không chín không"
+			},
+			{
+				"start": 103,
+				"end": 108,
+				"type": "NPER",
+				"expected": "mười hai phẩy năm phần trăm"
+			},
+			{
+				"start": 113,
+				"end": 115,
+				"type": "LSEQ",
+				"expected": "a một"
+			}
+		],
+		"source": "synthetic reviewed pronunciation fixture",
+		"license": "CC0-1.0"
+	},
+	{
+		"id": "science-sample-3",
+		"domain": "science",
+		"scenario": "science-sample",
+		"text": "Bản ghi thứ ba: Mẫu Ford-2026 thuộc nhóm XIV, đo 42 m, mã A1, quý II/2026, kỳ 07/2026, số 178.000. Địa chỉ IPv4 192.168.1.1 được giữ nguyên.",
+		"spans": [
+			{
+				"start": 20,
+				"end": 29,
+				"type": "LWRD",
+				"expected": "Ford hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 41,
+				"end": 44,
+				"type": "ROMA",
+				"expected": "mười bốn"
+			},
+			{
+				"start": 49,
+				"end": 53,
+				"type": "MEA",
+				"expected": "bốn mươi hai mét"
+			},
+			{
+				"start": 58,
+				"end": 60,
+				"type": "LSEQ",
+				"expected": "a một"
+			},
+			{
+				"start": 66,
+				"end": 73,
+				"type": "NQUA",
+				"expected": "quý hai năm hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 78,
+				"end": 85,
+				"type": "NMON",
+				"expected": "tháng bảy năm hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 90,
+				"end": 97,
+				"type": "NNUM",
+				"expected": "một trăm bảy mươi tám nghìn"
+			}
+		],
+		"source": "synthetic reviewed pronunciation fixture",
+		"license": "CC0-1.0"
+	},
+	{
+		"id": "transport-route-3",
+		"domain": "general",
+		"scenario": "transport-route",
+		"text": "Bản ghi thứ ba: Khoảng 10-12 km, lúc 08:30, phí 700.000đ, tuyến A1, xe Ford-2026, ngày 11/07, mã 090. Địa chỉ IPv4 192.168.1.1 được giữ nguyên.",
+		"spans": [
+			{
+				"start": 23,
+				"end": 28,
+				"type": "NRNG",
+				"expected": "mười đến mười hai"
+			},
+			{
+				"start": 29,
+				"end": 31,
+				"type": "MEA",
+				"expected": "ki lô mét"
+			},
+			{
+				"start": 37,
+				"end": 42,
+				"type": "NTIM",
+				"expected": "tám giờ ba mươi phút"
+			},
+			{
+				"start": 48,
+				"end": 56,
+				"type": "MONEY",
+				"expected": "bảy trăm nghìn đồng"
+			},
+			{
+				"start": 64,
+				"end": 66,
+				"type": "LSEQ",
+				"expected": "a một"
+			},
+			{
+				"start": 71,
+				"end": 80,
+				"type": "LWRD",
+				"expected": "Ford hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 87,
+				"end": 92,
+				"type": "NDAY",
+				"expected": "mười một tháng bảy"
+			},
+			{
+				"start": 97,
+				"end": 100,
+				"type": "NDIG",
+				"expected": "không chín không"
+			}
+		],
+		"source": "synthetic reviewed pronunciation fixture",
+		"license": "CC0-1.0"
+	},
+	{
+		"id": "communication-contact-3",
+		"domain": "technology",
+		"scenario": "communication-contact",
+		"text": "Bản ghi thứ ba: Liên hệ a@b.vn, theo thông báo chính thức của Trường ĐH Bách Khoa dùng mã A1, số 090, bản v1.2.3, mốc 11/07/2026, đạt 12,5%. Địa chỉ IPv4 192.168.1.1 được giữ nguyên.",
+		"spans": [
+			{
+				"start": 24,
+				"end": 30,
+				"type": "URLE",
+				"expected": "a a còng bê chấm vê nờ"
+			},
+			{
+				"start": 69,
+				"end": 71,
+				"type": "LABB",
+				"expected": "Đại học"
+			},
+			{
+				"start": 90,
+				"end": 92,
+				"type": "LSEQ",
+				"expected": "a một"
+			},
+			{
+				"start": 97,
+				"end": 100,
+				"type": "NDIG",
+				"expected": "không chín không"
+			},
+			{
+				"start": 106,
+				"end": 112,
+				"type": "NVER",
+				"expected": "vê một chấm hai chấm ba"
+			},
+			{
+				"start": 118,
+				"end": 128,
+				"type": "NDAT",
+				"expected": "ngày mười một tháng bảy năm hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 134,
+				"end": 139,
+				"type": "NPER",
+				"expected": "mười hai phẩy năm phần trăm"
+			}
+		],
+		"source": "synthetic reviewed pronunciation fixture",
+		"license": "CC0-1.0"
+	},
+	{
+		"id": "calendar-schedule-3",
+		"domain": "business",
+		"scenario": "calendar-schedule",
+		"text": "Bản ghi thứ ba: Mốc 11/07/2026, ngày 11/07, kỳ 07/2026, quý II/2026, lúc 08:30, khoảng 10-12, tỷ số 2-1. Địa chỉ IPv4 192.168.1.1 được giữ nguyên.",
+		"spans": [
+			{
+				"start": 20,
+				"end": 30,
+				"type": "NDAT",
+				"expected": "ngày mười một tháng bảy năm hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 37,
+				"end": 42,
+				"type": "NDAY",
+				"expected": "mười một tháng bảy"
+			},
+			{
+				"start": 47,
+				"end": 54,
+				"type": "NMON",
+				"expected": "tháng bảy năm hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 60,
+				"end": 67,
+				"type": "NQUA",
+				"expected": "quý hai năm hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 73,
+				"end": 78,
+				"type": "NTIM",
+				"expected": "tám giờ ba mươi phút"
+			},
+			{
+				"start": 87,
+				"end": 92,
+				"type": "NRNG",
+				"expected": "mười đến mười hai"
+			},
+			{
+				"start": 100,
+				"end": 103,
+				"type": "NSCR",
+				"expected": "hai một"
+			}
+		],
+		"source": "synthetic reviewed pronunciation fixture",
+		"license": "CC0-1.0"
+	},
+	{
+		"id": "mixed-reference-3",
+		"domain": "science",
+		"scenario": "mixed-reference",
+		"text": "Bản ghi thứ ba: Chi phí 700.000đ, số lượng 178.000, tỷ lệ 1/2, chiều dài 42 m, mục XIV, mẫu Ford-2026, gửi a@b.vn. Địa chỉ IPv4 192.168.1.1 được giữ nguyên.",
+		"spans": [
+			{
+				"start": 24,
+				"end": 32,
+				"type": "MONEY",
+				"expected": "bảy trăm nghìn đồng"
+			},
+			{
+				"start": 43,
+				"end": 50,
+				"type": "NNUM",
+				"expected": "một trăm bảy mươi tám nghìn"
+			},
+			{
+				"start": 58,
+				"end": 61,
+				"type": "NFRC",
+				"expected": "một trên hai"
+			},
+			{
+				"start": 73,
+				"end": 77,
+				"type": "MEA",
+				"expected": "bốn mươi hai mét"
+			},
+			{
+				"start": 83,
+				"end": 86,
+				"type": "ROMA",
+				"expected": "mười bốn"
+			},
+			{
+				"start": 92,
+				"end": 101,
+				"type": "LWRD",
+				"expected": "Ford hai nghìn không trăm hai mươi sáu"
+			},
+			{
+				"start": 107,
+				"end": 113,
+				"type": "URLE",
+				"expected": "a a còng bê chấm vê nờ"
+			}
+		],
+		"source": "synthetic reviewed pronunciation fixture",
+		"license": "CC0-1.0"
+	}
+]

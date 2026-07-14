@@ -1,0 +1,83 @@
+{
+	"formatVersion": 1,
+	"source": {
+		"repository": "https://github.com/vinhdq842/soe-vinorm",
+		"version": "v0.3.2",
+		"commit": "c2b0c1eb36cec1584416ca4652b5391f4e723727",
+		"license": "MIT"
+	},
+	"modelSource": {
+		"repository": "https://huggingface.co/vinhdq842/soe-vinorm",
+		"revision": "cb9705bd465a4e60d75c2e267dd1f846cd0ad9cb",
+		"license": "MIT"
+	},
+	"assetBudgetBytes": 5242880,
+	"labels": [
+		"O",
+		"B-LWRD",
+		"I-LWRD",
+		"B-NSCR",
+		"B-NNUM",
+		"B-URLE",
+		"B-NDAY",
+		"B-LABB",
+		"B-LSEQ",
+		"B-MEA",
+		"B-NFRC",
+		"I-LSEQ",
+		"I-LABB",
+		"B-NDAT",
+		"B-NRNG",
+		"B-ROMA",
+		"B-NDIG",
+		"I-NSCR",
+		"B-NMON",
+		"B-NPER",
+		"I-NDIG",
+		"B-NTIM",
+		"B-MONEY",
+		"B-NVER",
+		"B-USS",
+		"I-MEA",
+		"I-NTIM",
+		"I-MONEY",
+		"B-NQUA",
+		"I-NRNG"
+	],
+	"abbreviation": {
+		"confidenceThreshold": 0.54,
+		"confidenceMargin": 0.08
+	},
+	"files": [
+		{
+			"path": "abbreviation-config.json",
+			"bytes": 84384,
+			"sha256": "6f3ccd58c231e689b18a23894315db4a1f1a96f3e70ba409e9ac0189754aab53",
+			"license": "MIT"
+		},
+		{
+			"path": "abbreviation-scorer.onnx",
+			"bytes": 3519480,
+			"sha256": "ee395aacb9525bb043ebe1f28f230900ab449d01b7f2449451f7c29f23575de4",
+			"license": "MIT"
+		},
+		{
+			"path": "abbreviations.txt",
+			"bytes": 70583,
+			"sha256": "f3ad7fec1bdf6cb854dd1ba66662206b2104ab199dbdab221c77b2ca114a75e3",
+			"license": "MIT"
+		},
+		{
+			"path": "crf-model.bin",
+			"bytes": 306024,
+			"sha256": "cb2fc60b5a38b3cd7a1a30f2a12170a844e28b6a890a87383a305c083fc56980",
+			"license": "MIT"
+		},
+		{
+			"path": "vietnamese-syllables.txt",
+			"bytes": 117210,
+			"sha256": "70affcffca43281b68a90772e187bf6a4e04b90e0fca44b1cedcdb68260bb099",
+			"license": "MIT"
+		}
+	]
+}

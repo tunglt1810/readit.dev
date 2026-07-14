@@ -38,3 +38,5 @@ scratch/
 playwright-report/
 test-results/
 tests/e2e/.user-data-*
+
+/.pnpm-store/**/*

@@ -114,12 +114,15 @@ test.describe('Kịch bản 3: Điều khiển TTS (TTS Controls)', () => {
 		await expect(statusText).toHaveText('Đang chuẩn bị giọng đọc...');
 
 		// Giả lập đang phát âm thanh (Playing) qua background coordinator
-		await page.evaluate((nextSession) => {
-			(window as any).mockReceiveMessage({
-				action: 'PLAYBACK_STATE_UPDATE',
-				session: nextSession,
-			});
-		}, { ...session, status: 'playing', progressPercentage: 20 });
+		await page.evaluate(
+			(nextSession) => {
+				(window as any).mockReceiveMessage({
+					action: 'PLAYBACK_STATE_UPDATE',
+					session: nextSession,
+				});
+			},
+			{ ...session, status: 'playing', progressPercentage: 20 },
+		);
 		await expect(statusText).toHaveText('Đang đọc đoạn 1/5');
 
 		// Kiểm tra thanh tiến trình và nút Tạm dừng hiển thị
@@ -140,12 +143,15 @@ test.describe('Kịch bản 3: Điều khiển TTS (TTS Controls)', () => {
 		expect(sentActionsAfterPause).toContain('PAUSE_READING');
 
 		// Giả lập trạng thái Tạm dừng từ background gửi về popup
-		await page.evaluate((nextSession) => {
-			(window as any).mockReceiveMessage({
-				action: 'PLAYBACK_STATE_UPDATE',
-				session: nextSession,
-			});
-		}, { ...session, status: 'paused', progressPercentage: 20 });
+		await page.evaluate(
+			(nextSession) => {
+				(window as any).mockReceiveMessage({
+					action: 'PLAYBACK_STATE_UPDATE',
+					session: nextSession,
+				});
+			},
+			{ ...session, status: 'paused', progressPercentage: 20 },
+		);
 		await expect(statusText).toHaveText('Tạm dừng');
 		const resumeButton = page.getByRole('button', { name: 'Tiếp tục' });
 		await expect(resumeButton).toHaveText('');
@@ -156,12 +162,15 @@ test.describe('Kịch bản 3: Điều khiển TTS (TTS Controls)', () => {
 		const sentActionsAfterResume = await page.evaluate(() => (window as any).sentMessages.map((m: any) => m.action));
 		expect(sentActionsAfterResume).toContain('RESUME_READING');
 
-		await page.evaluate((nextSession) => {
-			(window as any).mockReceiveMessage({
-				action: 'PLAYBACK_STATE_UPDATE',
-				session: nextSession,
-			});
-		}, { ...session, status: 'playing', progressPercentage: 20 });
+		await page.evaluate(
+			(nextSession) => {
+				(window as any).mockReceiveMessage({
+					action: 'PLAYBACK_STATE_UPDATE',
+					session: nextSession,
+				});
+			},
+			{ ...session, status: 'playing', progressPercentage: 20 },
+		);
 
 		// 5. Click nút "Dừng đọc bài" (Stop)
 		await page.getByRole('button', { name: 'Dừng đọc bài' }).click();

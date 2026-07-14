@@ -274,12 +274,7 @@ function isRestrictedUrl(url: string): boolean {
 	);
 }
 
-async function startArticlePlayback(
-	tabId: number,
-	fallbackTitle: string,
-	fallbackUrl: string,
-	article: Article,
-): Promise<CommandResponse> {
+async function startArticlePlayback(tabId: number, fallbackTitle: string, fallbackUrl: string, article: Article): Promise<CommandResponse> {
 	await ensureHydrated();
 	await stopActiveSession('session-replaced');
 

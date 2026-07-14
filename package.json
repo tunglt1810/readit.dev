@@ -6,11 +6,20 @@
 	"type": "module",
 	"scripts": {
 		"dev": "rsbuild dev",
+		"evaluate:vi": "node --experimental-strip-types scripts/evaluate-vietnamese-normalizer.ts",
 		"build": "tsc && rsbuild build",
+		"benchmark:vi": "node scripts/run-vietnamese-offscreen-benchmark.mjs",
+		"calibrate:vi-abbreviations": "node --experimental-strip-types scripts/calibrate-vietnamese-abbreviations.ts --write",
 		"validate:manifest": "node scripts/validate-free-manifest.mjs dist/manifest.json",
+		"validate:release-zip": "node scripts/validate-extension-archive.mjs",
+		"validate:vi-assets": "node scripts/validate-vietnamese-normalizer-assets.mjs public/assets/vietnamese-normalizer",
+		"validate:vi-assets:release": "node scripts/validate-vietnamese-normalizer-assets.mjs public/assets/vietnamese-normalizer --release --dist dist --check-wasm",
 		"test:unit": "node --experimental-strip-types --test tests/unit/*.test.ts",
 		"preview": "rsbuild preview",
-		"test:e2e": "playwright test"
+		"test:e2e": "playwright test",
+		"test:e2e:vi": "playwright test tests/e2e/vietnamese-pronunciation.spec.ts",
+		"lint": "biome check .",
+		"lint:fix": "biome check --write ."
 	},
 	"dependencies": {
 		"@mozilla/readability": "0.6.0",
@@ -20,6 +29,7 @@
 		"react-dom": "19.2.6"
 	},
 	"devDependencies": {
+		"@biomejs/biome": "2.5.3",
 		"@playwright/test": "1.61.0",
 		"@rsbuild/core": "2.0.7",
 		"@rsbuild/plugin-react": "2.0.0",

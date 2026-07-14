@@ -31,10 +31,14 @@ class FakeStatement {
 			return subscriptions.find((subscription) => subscription.license_key === this.args[0]) ?? null;
 		}
 		if (this.sql.includes('FROM activations') && this.sql.includes('AND email')) {
-			return activations.find((activation) => activation.device_id === this.args[0] && activation.email === this.args[1]) ? { 1: 1 } : null;
+			return activations.find((activation) => activation.device_id === this.args[0] && activation.email === this.args[1])
+				? { 1: 1 }
+				: null;
 		}
 		if (this.sql.includes('FROM activations') && this.sql.includes('AND license_key')) {
-			return activations.find((activation) => activation.device_id === this.args[0] && activation.license_key === this.args[1]) ? { 1: 1 } : null;
+			return activations.find((activation) => activation.device_id === this.args[0] && activation.license_key === this.args[1])
+				? { 1: 1 }
+				: null;
 		}
 		throw new Error(`Unsupported first() query: ${this.sql}`);
 	}
@@ -103,5 +107,3 @@ const validation = await post('/api/validate', {
 if (validation.status !== 200 || validation.body.success !== true) {
 	throw new Error(`Fallback validation failed: ${JSON.stringify(validation)}`);
 }
-
-console.log('Activation fallback smoke check passed.');

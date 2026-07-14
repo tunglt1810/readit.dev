@@ -39,9 +39,7 @@
 body {
 	width: 360px;
 	min-height: 480px;
-	background:
-		radial-gradient(circle at 88% 0%, rgba(99, 102, 241, 0.14), transparent 34%),
-		var(--bg-app);
+	background: radial-gradient(circle at 88% 0%, rgba(99, 102, 241, 0.14), transparent 34%), var(--bg-app);
 	color: var(--color-text-primary);
 	overflow-x: hidden;
 	position: relative;
@@ -321,13 +319,17 @@ body::before {
 .btn-primary {
 	background: var(--gradient-brand);
 	color: #fff;
-	box-shadow: 0 8px 20px rgba(99, 102, 241, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+	box-shadow:
+		0 8px 20px rgba(99, 102, 241, 0.28),
+		inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
 .btn-primary:hover:not(:disabled) {
 	background: var(--gradient-brand-hover);
 	transform: translateY(-1px);
-	box-shadow: 0 10px 24px rgba(99, 102, 241, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+	box-shadow:
+		0 10px 24px rgba(99, 102, 241, 0.38),
+		inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 
 .btn-primary:active:not(:disabled) {
@@ -503,7 +505,9 @@ body::before {
 	font-size: 10px;
 	font-weight: 500;
 	text-decoration: none;
-	transition: color 0.2s ease, transform 0.2s ease;
+	transition:
+		color 0.2s ease,
+		transform 0.2s ease;
 }
 
 .support-link:hover {

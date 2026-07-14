@@ -1,5 +1,6 @@
 import type { BrowserContext, Page } from '@playwright/test';
-import type { PlaybackStateResponse, PlaybackSessionSnapshot } from '../../src/shared/types';
+
+import type { PlaybackSessionSnapshot, PlaybackStateResponse } from '../../src/shared/types';
 import { expect, installPopupRuntimeMock, test } from './fixtures';
 
 const activeSession = {

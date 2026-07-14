@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { BUY_ME_A_COFFEE_URL, PRIVACY_POLICY_URL, STORAGE_KEYS, VOICE_STYLES } from '../shared/constants';
-import type { PlaybackStateResponse, PlaybackSessionSnapshot, PlaybackStatus } from '../shared/types';
+import type { PlaybackSessionSnapshot, PlaybackStateResponse, PlaybackStatus } from '../shared/types';
 import { buildFeedbackUrl } from './feedback';
 
 type CommandResponse = { success: boolean; error?: string };
@@ -215,6 +215,7 @@ export default function App() {
 						readit<span>.dev</span>
 					</h1>
 				</div>
+				<span className="extension-version">v{manifestVersion}</span>
 			</header>
 
 			{/* Main Playback Area */}
@@ -347,7 +348,6 @@ export default function App() {
 						Privacy Policy
 					</a>
 				</div>
-				<span className="extension-version">v{manifestVersion}</span>
 			</footer>
 		</div>
 	);

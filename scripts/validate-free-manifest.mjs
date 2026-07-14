@@ -34,5 +34,4 @@ if (scriptPath && fileURLToPath(import.meta.url) === scriptPath) {
 	}
 	const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 	validateFreeManifest(manifest);
-	console.log(`Validated Free manifest: ${manifestPath}`);
 }

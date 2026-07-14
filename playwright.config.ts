@@ -31,7 +31,7 @@ export default defineConfig({
 		/* Video recording options if needed */
 		video: 'on-first-retry',
 		launchOptions: {
-			args: ['--start-minimized']
+			args: ['--start-minimized'],
 		},
 	},
 

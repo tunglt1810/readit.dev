@@ -1,7 +1,12 @@
 import { MODEL_FILES, VOICE_STYLES } from '../shared/constants';
 import { PlaybackProgress, PlaybackStatus } from '../shared/types';
+import { synthesizeSpeechUnitSamples } from './audio';
+import { preparePlaybackUnits, VietnameseTextNormalizer } from './playback_preparation';
 import { createSingleFlight } from './single_flight';
-import { chunkText, loadTextToSpeech, loadVoiceStyle, Style, TextToSpeech, writeWavFile } from './supertonic_helper';
+import { loadTextToSpeech, loadVoiceStyle, Style, TextToSpeech, writeWavFile } from './supertonic_helper';
+import { loadVietnameseNormalizerAssets } from './vietnamese/assets';
+import { normalizeVietnameseText } from './vietnamese/normalizer';
+import { SpeechUnit } from './vietnamese/types';
 
 // Global Engine State
 let ttsEngine: TextToSpeech | null = null;
@@ -18,8 +23,8 @@ let currentExtensionSessionId: string | null = null;
 let speedVersion = 0;
 
 // Pipelining Queue state
-let textChunks: string[] = [];
-let currentChunkIndex = 0;
+let speechUnits: SpeechUnit[] = [];
+let currentUnitIndex = 0;
 let nextChunkBuffer: AudioBuffer | null = null;
 let isPreFetching = false;
 let currentSourceNode: AudioBufferSourceNode | null = null;
@@ -45,9 +50,9 @@ function reportProgress(status: PlaybackStatus, extra: Partial<PlaybackProgress>
 	playbackStatus = status;
 	const progress: PlaybackProgress = {
 		status,
-		currentParagraphIndex: currentChunkIndex,
-		totalParagraphs: textChunks.length,
-		progressPercentage: textChunks.length > 0 ? Math.round((currentChunkIndex / textChunks.length) * 100) : 0,
+		currentParagraphIndex: currentUnitIndex,
+		totalParagraphs: speechUnits.length,
+		progressPercentage: speechUnits.length > 0 ? Math.round((currentUnitIndex / speechUnits.length) * 100) : 0,
 		...extra,
 	};
 
@@ -132,9 +137,9 @@ async function getVoiceStyle(styleId: string): Promise<Style> {
 }
 
 /**
- * Synthesize a single chunk of text to an AudioBuffer
+ * Synthesize a single speech unit to an AudioBuffer
  */
-async function synthesizeChunk(text: string, lang: string, style: Style, speed: number): Promise<AudioBuffer> {
+async function synthesizeUnit(unit: SpeechUnit, lang: string, style: Style, speed: number): Promise<AudioBuffer> {
 	if (!ttsEngine) {
 		throw new Error('TTS Engine is not initialized');
 	}
@@ -142,16 +147,22 @@ async function synthesizeChunk(text: string, lang: string, style: Style, speed: 
 		audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
 	}
 
-	// Run Supertonic inference
-	const denoisingSteps = 8;
-	const { wav } = await ttsEngine.call(
-		text,
-		lang,
-		style,
-		denoisingSteps,
-		speed,
-		0.3, // silence duration
-	);
+	const wav =
+		lang === 'vi'
+			? await synthesizeSpeechUnitSamples(
+					unit,
+					lang,
+					speed,
+					ttsEngine.sampleRate,
+					async (text, requestedLang, steps, requestedSpeed, silenceDuration) => {
+						const result = await ttsEngine?.call(text, requestedLang, style, steps, requestedSpeed, silenceDuration);
+						if (!result) {
+							throw new Error('TTS Engine is not initialized');
+						}
+						return result.wav;
+					},
+				)
+			: (await ttsEngine.call(unit.text, lang, style, 8, speed, 0.3)).wav;
 
 	const sampleRate = ttsEngine.sampleRate;
 
@@ -166,7 +177,7 @@ async function synthesizeChunk(text: string, lang: string, style: Style, speed: 
  * Pre-fetch and synthesize the next chunk in the background
  */
 async function preFetchNextChunk(lang: string, style: Style, session: number) {
-	if (isPreFetching || currentChunkIndex + 1 >= textChunks.length) {
+	if (isPreFetching || currentUnitIndex + 1 >= speechUnits.length) {
 		return;
 	}
 	const requestSpeed = currentSpeed;
@@ -174,10 +185,10 @@ async function preFetchNextChunk(lang: string, style: Style, session: number) {
 	isPreFetching = true;
 
 	try {
-		const nextIndex = currentChunkIndex + 1;
-		const text = textChunks[nextIndex];
+		const nextIndex = currentUnitIndex + 1;
+		const unit = speechUnits[nextIndex];
 
-		const buffer = await synthesizeChunk(text, lang, style, requestSpeed);
+		const buffer = await synthesizeUnit(unit, lang, style, requestSpeed);
 		if (session !== playbackSession || requestSpeedVersion !== speedVersion) {
 			return;
 		}
@@ -217,8 +228,8 @@ function stopAudio() {
 	nextChunkBuffer = null;
 	isPreFetching = false;
 	reportProgress('stopped');
-	textChunks = [];
-	currentChunkIndex = 0;
+	speechUnits = [];
+	currentUnitIndex = 0;
 	currentExtensionSessionId = null;
 }
 
@@ -247,8 +258,8 @@ function playAudioBuffer(buffer: AudioBuffer, lang: string, style: Style, sessio
 		}
 
 		currentSourceNode = null;
-		currentChunkIndex++;
-		if (currentChunkIndex < textChunks.length) {
+		currentUnitIndex++;
+		if (currentUnitIndex < speechUnits.length) {
 			playNextChunk(lang, style, session);
 		} else {
 			stopAudio();
@@ -266,12 +277,12 @@ async function playNextChunk(lang: string, style: Style, session: number) {
 		return;
 	}
 
-	if (currentChunkIndex >= textChunks.length) {
+	if (currentUnitIndex >= speechUnits.length) {
 		stopAudio();
 		return;
 	}
 
-	const text = textChunks[currentChunkIndex];
+	const unit = speechUnits[currentUnitIndex];
 
 	// Check if we have pre-fetched buffer
 	if (nextChunkBuffer) {
@@ -287,7 +298,7 @@ async function playNextChunk(lang: string, style: Style, session: number) {
 		const requestSpeed = currentSpeed;
 		const requestSpeedVersion = speedVersion;
 		try {
-			const buffer = await synthesizeChunk(text, lang, style, requestSpeed);
+			const buffer = await synthesizeUnit(unit, lang, style, requestSpeed);
 			if (session !== playbackSession || requestSpeedVersion !== speedVersion) {
 				if (session === playbackSession && requestSpeedVersion !== speedVersion) {
 					playNextChunk(lang, style, session);
@@ -336,18 +347,16 @@ chrome.runtime.onMessage.addListener(
 
 					(async () => {
 						try {
-							if (!ttsEngine) {
-								await initModels();
-							}
-
-							if (session !== playbackSession) {
-								sendResponse({ success: false, error: 'Playback superseded' });
-								return;
-							}
-
 							const data = payload as { article: { content: string; lang: string }; voiceStyleId: string; speed: number };
 							const { article, voiceStyleId, speed } = data;
-							const style = await getVoiceStyle(voiceStyleId);
+							let normalizer: VietnameseTextNormalizer | null = null;
+							if (article.lang === 'vi') {
+								const assets = await loadVietnameseNormalizerAssets();
+								normalizer = {
+									normalize: (text) => normalizeVietnameseText(text, { assets, now: () => performance.now() }),
+								};
+							}
+							const preparedUnits = await preparePlaybackUnits(article.content, article.lang, normalizer);
 
 							if (session !== playbackSession) {
 								sendResponse({ success: false, error: 'Playback superseded' });
@@ -355,14 +364,22 @@ chrome.runtime.onMessage.addListener(
 							}
 
 							currentSpeed = speed;
-							// Chunk text (max 200 chars for good latency)
-							textChunks = chunkText(article.content, 200);
-							currentChunkIndex = 0;
+							speechUnits = preparedUnits;
+							currentUnitIndex = 0;
 							nextChunkBuffer = null;
 							isPaused = false;
 
-							if (textChunks.length === 0) {
+							if (speechUnits.length === 0) {
 								sendResponse({ success: false, error: 'No readable text content found.' });
+								return;
+							}
+
+							if (!ttsEngine) {
+								await initModels();
+							}
+							const style = await getVoiceStyle(voiceStyleId);
+							if (session !== playbackSession) {
+								sendResponse({ success: false, error: 'Playback superseded' });
 								return;
 							}
 

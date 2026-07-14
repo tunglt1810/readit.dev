@@ -9,16 +9,8 @@
 		"48": "assets/icon48.png",
 		"128": "assets/icon128.png"
 	},
-	"permissions": [
-		"activeTab",
-		"scripting",
-		"storage",
-		"offscreen",
-		"contextMenus"
-	],
-	"host_permissions": [
-		"https://huggingface.co/*"
-	],
+	"permissions": ["activeTab", "scripting", "storage", "offscreen", "contextMenus"],
+	"host_permissions": ["https://huggingface.co/*"],
 	"content_security_policy": {
 		"extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
 	},
@@ -28,12 +20,8 @@
 	},
 	"content_scripts": [
 		{
-			"matches": [
-				"<all_urls>"
-			],
-			"js": [
-				"content_script.js"
-			],
+			"matches": ["<all_urls>"],
+			"js": ["content_script.js"],
 			"run_at": "document_idle"
 		}
 	],
@@ -49,13 +37,8 @@
 	},
 	"web_accessible_resources": [
 		{
-			"resources": [
-				"*.wasm",
-				"*.mjs"
-			],
-			"matches": [
-				"<all_urls>"
-			]
+			"resources": ["ort-wasm-simd-threaded.asyncify.wasm", "ort-wasm-simd-threaded.asyncify.mjs"],
+			"matches": ["<all_urls>"]
 		}
 	]
 }

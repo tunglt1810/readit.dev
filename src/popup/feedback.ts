@@ -4,16 +4,9 @@ export function buildFeedbackUrl(version: string): string {
 	const url = new URL(GITHUB_NEW_ISSUE_URL);
 	url.searchParams.set(
 		'body',
-		[
-			'## Feedback type',
-			'- [ ] Bug',
-			'- [ ] Feature request',
-			'',
-			'## Description',
-			'',
-			'---',
-			`Extension version: v${version}`,
-		].join('\n'),
+		['## Feedback type', '- [ ] Bug', '- [ ] Feature request', '', '## Description', '', '---', `Extension version: v${version}`].join(
+			'\n',
+		),
 	);
 	return url.toString();
 }

@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures';
+import { expect, test } from './fixtures';
 
 test.describe('Kịch bản 2: Trích xuất nội dung (Reader Mode)', () => {
 	async function requestArticle(extPage: import('@playwright/test').Page) {
@@ -80,12 +80,12 @@ test.describe('Kịch bản 2: Trích xuất nội dung (Reader Mode)', () => {
 		const articleResult = result as { success: boolean; article?: { title: string; content: string; lang: string } };
 		expect(articleResult.success).toBe(true);
 		expect(articleResult.article).toBeDefined();
-		
+
 		const article = articleResult.article!;
-		
+
 		// Tiêu đề phải được lấy từ thẻ h1 của article
 		expect(article.title).toBe('Cách viết code sạch với TypeScript 6');
-		
+
 		// Nội dung chính không được chứa nội dung quảng cáo từ aside/nav/footer
 		expect(article.content).toContain('Đây là đoạn văn đầu tiên chứa nội dung quan trọng của bài viết.');
 		expect(article.content).toContain('Đoạn văn thứ hai tiếp tục thảo luận về các mẫu thiết kế');

@@ -33,6 +33,40 @@ required attribution and license links for Supertonic 3 and the runtime
 dependencies. The workflow validates that this file is present before it
 creates the release archive.
 
+## Vietnamese pronunciation release gate
+
+Before tagging, run the production checks from a clean build output:
+
+```bash
+pnpm build
+pnpm validate:manifest
+pnpm validate:vi-assets:release
+pnpm test:unit
+pnpm evaluate:vi
+CI=true pnpm test:e2e
+pnpm benchmark:vi
+```
+
+The Chrome benchmark writes timing-only evidence to
+`.tmp/vietnamese-performance/latest.json`. Record the reference Chrome
+version, operating system/device, 2,000-token and 10,000-token p95 values,
+memory result, warm time-to-first-audio ratio, and production thread decision.
+Do not tag unless there is also a current signed listening report at
+`_docs/evaluations/vietnamese-pronunciation-listening.md` with at least 80%
+improved-path preference and zero semantic regressions in must-not-change
+samples.
+
+The release build must contain every checksummed file listed by
+`assets/vietnamese-normalizer/model-manifest.json`, the Soe Vinorm MIT notice,
+the verified ONNX Runtime Asyncify loader/WASM pair, and the single hashed
+bundled WebGPU frontend. `pnpm validate:release-zip <archive>` repeats these
+assertions against the ZIP.
+
+If Vietnamese preparation must be rolled back, remove its call from the
+offscreen playback preparation path and remove the normalizer assets. Keep the
+existing non-Vietnamese Supertonic path, voice styles, WebGPU/WASM fallback,
+speed behavior, and background/popup message contracts unchanged.
+
 Before submitting a Free release, verify the [Free MVP Design Specification](./specs/2026-07-12-free-mvp-design.md),
 the [Privacy Policy](./privacy-policy.md), and the Chrome Web Store privacy
 disclosures describe the same local-processing and no-telemetry behavior.

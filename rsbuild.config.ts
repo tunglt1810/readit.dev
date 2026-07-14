@@ -1,6 +1,8 @@
 import { defineConfig } from '@rsbuild/core';
 import { pluginReact } from '@rsbuild/plugin-react';
-import { CopyRspackPlugin } from '@rspack/core';
+import { Compiler, CopyRspackPlugin } from '@rspack/core';
+
+const vietnameseBenchmark = process.env.READIT_VI_BENCHMARK === '1';
 
 export default defineConfig({
 	// Manifest-injected scripts have no HTML loader for async chunks.
@@ -9,7 +11,7 @@ export default defineConfig({
 	source: {
 		entry: {
 			popup: './src/popup/index.tsx',
-			offscreen: './src/offscreen/offscreen.ts',
+			offscreen: vietnameseBenchmark ? './tests/performance/vietnamese_offscreen_benchmark.ts' : './src/offscreen/offscreen.ts',
 			background: './src/background/background.ts',
 			content_script: './src/content/content_script.ts',
 		},
@@ -19,7 +21,7 @@ export default defineConfig({
 	},
 	output: {
 		distPath: {
-			root: 'dist',
+			root: vietnameseBenchmark ? '.tmp/vietnamese-performance/extension' : 'dist',
 		},
 		assetPrefix: '/',
 		cleanDistPath: true,
@@ -30,22 +32,17 @@ export default defineConfig({
 				return './src/popup/popup.html';
 			}
 			if (entryName === 'offscreen') {
-				return './src/offscreen/offscreen.html';
+				return vietnameseBenchmark ? './tests/performance/vietnamese_offscreen_benchmark.html' : './src/offscreen/offscreen.html';
 			}
 			return './src/popup/popup.html';
-		},
-		filename({ entryName }) {
-			if (entryName === 'popup') {
-				return 'src/popup/popup.html';
-			}
-			if (entryName === 'offscreen') {
-				return 'src/offscreen/offscreen.html';
-			}
-			return '[name].html';
 		},
 	},
 	tools: {
 		rspack: (config) => {
+			config.resolve = {
+				...config.resolve,
+				conditionNames: ['onnxruntime-web-use-extern-wasm', 'import', 'module', 'browser', 'default'],
+			};
 			// Đảm bảo background.js và content_script.js nằm ở root không bị hash
 			config.output = {
 				...config.output,
@@ -60,18 +57,20 @@ export default defineConfig({
 			config.plugins = config.plugins || [];
 
 			// Điều chỉnh tên file HTML đầu ra cho đúng thư mục của Extension
-			config.plugins.forEach((plugin: any) => {
-				if (plugin.constructor.name === 'HtmlRspackPlugin') {
-					const options = plugin.userOptions || plugin.options || {};
-					if (options.chunks && options.chunks.includes('popup')) {
+			config.plugins.forEach((plugin: unknown) => {
+				if (plugin && typeof plugin === 'object' && plugin.constructor.name === 'HtmlRspackPlugin') {
+					const htmlPlugin = plugin as { userOptions?: Record<string, unknown>; options?: Record<string, unknown> };
+					const options = htmlPlugin.userOptions || htmlPlugin.options || {};
+					const chunks = options.chunks as string[] | undefined;
+					if (chunks?.includes('popup')) {
 						options.filename = 'src/popup/popup.html';
-					} else if (options.chunks && options.chunks.includes('offscreen')) {
+					} else if (chunks?.includes('offscreen')) {
 						options.filename = 'src/offscreen/offscreen.html';
 					}
 				}
 			});
 
-			// Thêm CopyRspackPlugin để copy manifest.json, assets, WASM và MJS từ node_modules trực tiếp vào dist
+			// Copy the extension package and the single verified ONNX Runtime Asyncify pair.
 			config.plugins.push(
 				new CopyRspackPlugin({
 					patterns: [
@@ -88,12 +87,12 @@ export default defineConfig({
 							to: 'assets',
 						},
 						{
-							from: 'node_modules/onnxruntime-web/dist/*.wasm',
-							to: '[name][ext]',
+							from: 'node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.wasm',
+							to: 'ort-wasm-simd-threaded.asyncify.wasm',
 						},
 						{
-							from: 'node_modules/onnxruntime-web/dist/*.mjs',
-							to: '[name][ext]',
+							from: 'node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.mjs',
+							to: 'ort-wasm-simd-threaded.asyncify.mjs',
 						},
 					],
 				}),
@@ -102,7 +101,7 @@ export default defineConfig({
 			// Xóa các file HTML rác được sinh ra cho background và content_script
 			config.plugins.push({
 				name: 'RemoveHtmlPlugin',
-				apply(compiler) {
+				apply(compiler: Compiler) {
 					compiler.hooks.emit.tap('RemoveHtmlPlugin', (compilation) => {
 						delete compilation.assets['background.html'];
 						delete compilation.assets['content_script.html'];

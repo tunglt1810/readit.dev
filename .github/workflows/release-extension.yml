@@ -66,6 +66,9 @@ jobs:
       - name: Validate Free extension manifest
         run: pnpm validate:manifest
 
+      - name: Validate Vietnamese normalizer assets and ONNX Runtime packaging
+        run: pnpm validate:vi-assets:release
+
       - name: Validate third-party notices
         run: |
           set -euo pipefail
@@ -75,6 +78,9 @@ jobs:
 
       - name: Run unit tests
         run: pnpm test:unit
+
+      - name: Evaluate Vietnamese normalization corpus
+        run: pnpm evaluate:vi
 
       - name: Run extension E2E tests
         run: xvfb-run --auto-servernum pnpm test:e2e
@@ -86,7 +92,7 @@ jobs:
           set -euo pipefail
           archive="readit.dev-${RELEASE_VERSION}.zip"
           (cd dist && zip -qr "../$archive" . -x '*.DS_Store')
-          unzip -l "$archive" | grep -Fq 'THIRD_PARTY_NOTICES.txt'
+          pnpm validate:release-zip "$archive"
           echo "archive=$archive" >> "$GITHUB_ENV"
 
       - name: Create GitHub Release

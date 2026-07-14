@@ -1,4 +1,4 @@
-import * as ort from 'onnxruntime-web';
+import * as ort from 'onnxruntime-web/webgpu';
 
 // Set WebAssembly paths to the extension root where the .wasm files are copied
 ort.env.wasm.wasmPaths = typeof chrome !== 'undefined' && chrome.runtime ? chrome.runtime.getURL('/') : '/';

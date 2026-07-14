@@ -111,14 +111,20 @@ type SubscriptionMatch = {
 // Helper function to check subscription in DB
 async function findActiveSubscription(db: D1Database, email?: string, licenseKey?: string): Promise<SubscriptionMatch | null> {
 	if (email) {
-		const subscription = await db.prepare(`SELECT * FROM subscriptions WHERE email = ? LIMIT 1`).bind(email.toLowerCase()).first<DBSubscription>();
+		const subscription = await db
+			.prepare(`SELECT * FROM subscriptions WHERE email = ? LIMIT 1`)
+			.bind(email.toLowerCase())
+			.first<DBSubscription>();
 		if (subscription) {
 			return { subscription, matchedBy: 'email' };
 		}
 	}
 
 	if (licenseKey) {
-		const subscription = await db.prepare(`SELECT * FROM subscriptions WHERE license_key = ? LIMIT 1`).bind(licenseKey).first<DBSubscription>();
+		const subscription = await db
+			.prepare(`SELECT * FROM subscriptions WHERE license_key = ? LIMIT 1`)
+			.bind(licenseKey)
+			.first<DBSubscription>();
 		if (subscription) {
 			return { subscription, matchedBy: 'licenseKey' };
 		}

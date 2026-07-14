@@ -1,0 +1,22 @@
+[
+	{ "source": "ĐH", "leftContext": "Trường", "rightContext": "Bách Khoa tuyển sinh", "expected": "Đại học" },
+	{ "source": "ĐH", "leftContext": "khai mạc", "rightContext": "đại biểu toàn quốc", "expected": "Đại hội" },
+	{ "source": "BH", "leftContext": "chính sách", "rightContext": "y tế bắt buộc", "expected": "bảo hiểm" },
+	{ "source": "BH", "leftContext": "sản phẩm còn", "rightContext": "hai năm", "expected": "bảo hành" },
+	{ "source": "BS", "leftContext": "", "rightContext": "khám bệnh tại viện", "expected": "bác sĩ" },
+	{ "source": "BS", "leftContext": "xe mang", "rightContext": "30A lưu thông", "expected": "biển số" },
+	{ "source": "BT", "leftContext": "kỹ thuật", "rightContext": "hệ thống định kỳ", "expected": "bảo trì" },
+	{ "source": "BT", "leftContext": "ông", "rightContext": "phát biểu tại hội nghị", "expected": "bộ trưởng" },
+	{ "source": "CP", "leftContext": "giá", "rightContext": "tăng trên thị trường", "expected": "cổ phiếu" },
+	{ "source": "CP", "leftContext": "công ty", "rightContext": "ABC công bố báo cáo", "expected": "cổ phần" },
+	{ "source": "CP", "leftContext": "nghị quyết", "rightContext": "ban hành", "expected": "Chính phủ" },
+	{ "source": "ĐB", "leftContext": "các", "rightContext": "Quốc hội thảo luận", "expected": "đại biểu" },
+	{ "source": "ĐB", "leftContext": "vùng", "rightContext": "sông Cửu Long", "expected": "đồng bằng" },
+	{ "source": "CT", "leftContext": "tình hình", "rightContext": "thế giới", "expected": "chính trị" },
+	{ "source": "CT", "leftContext": "", "rightContext": "cổ phần niêm yết", "expected": "công ty" },
+	{ "source": "CT", "leftContext": "ban hành", "rightContext": "số 12", "expected": "chỉ thị" },
+	{ "source": "CK", "leftContext": "thị trường", "rightContext": "hôm nay tăng điểm", "expected": "chứng khoán" },
+	{ "source": "CK", "leftContext": "bác sĩ", "rightContext": "tim mạch", "expected": "chuyên khoa" },
+	{ "source": "CN", "leftContext": "khu", "rightContext": "phía nam thành phố", "expected": "công nghiệp" },
+	{ "source": "CN", "leftContext": "ứng dụng", "rightContext": "thông tin mới", "expected": "công nghệ" }
+]

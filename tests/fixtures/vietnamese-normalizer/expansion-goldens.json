@@ -1,0 +1,25 @@
+[
+	{ "type": "LSEQ", "input": "A1", "expected": "a một", "oracle": "soe-vinorm-v0.3.2" },
+	{ "type": "LWRD", "input": "Ford-2026", "expected": "Ford hai nghìn không trăm hai mươi sáu", "oracle": "soe-vinorm-v0.3.2" },
+	{ "type": "MEA", "input": "42 km", "expected": "bốn mươi hai ki lô mét", "oracle": "soe-vinorm-v0.3.2" },
+	{ "type": "MONEY", "input": "700.000đ", "expected": "bảy trăm nghìn đồng", "oracle": "soe-vinorm-v0.3.2" },
+	{
+		"type": "NDAT",
+		"input": "11/07/2026",
+		"expected": "ngày mười một tháng bảy năm hai nghìn không trăm hai mươi sáu",
+		"oracle": "soe-vinorm-v0.3.2"
+	},
+	{ "type": "NDAY", "input": "11/07", "expected": "mười một tháng bảy", "oracle": "soe-vinorm-v0.3.2" },
+	{ "type": "NDIG", "input": "090", "expected": "không chín không", "oracle": "soe-vinorm-v0.3.2" },
+	{ "type": "NFRC", "input": "1/2", "expected": "một trên hai", "oracle": "soe-vinorm-v0.3.2" },
+	{ "type": "NMON", "input": "07/2026", "expected": "tháng bảy năm hai nghìn không trăm hai mươi sáu", "oracle": "soe-vinorm-v0.3.2" },
+	{ "type": "NNUM", "input": "178.000", "expected": "một trăm bảy mươi tám nghìn", "oracle": "soe-vinorm-v0.3.2" },
+	{ "type": "NPER", "input": "12,5%", "expected": "mười hai phẩy năm phần trăm", "oracle": "soe-vinorm-v0.3.2" },
+	{ "type": "NQUA", "input": "II/2026", "expected": "quý hai năm hai nghìn không trăm hai mươi sáu", "oracle": "soe-vinorm-v0.3.2" },
+	{ "type": "NRNG", "input": "10-12", "expected": "mười đến mười hai", "oracle": "soe-vinorm-v0.3.2" },
+	{ "type": "NSCR", "input": "2-1", "expected": "hai một", "oracle": "soe-vinorm-v0.3.2" },
+	{ "type": "NTIM", "input": "08:30", "expected": "tám giờ ba mươi phút", "oracle": "soe-vinorm-v0.3.2" },
+	{ "type": "NVER", "input": "v1.2.3", "expected": "vê một chấm hai chấm ba", "oracle": "soe-vinorm-v0.3.2" },
+	{ "type": "ROMA", "input": "XIV", "expected": "mười bốn", "oracle": "soe-vinorm-v0.3.2" },
+	{ "type": "URLE", "input": "a@b.vn", "expected": "a a còng bê chấm vê nờ", "oracle": "soe-vinorm-v0.3.2" }
+]

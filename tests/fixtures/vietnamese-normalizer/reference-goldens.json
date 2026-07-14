@@ -1,0 +1,14 @@
+[
+	{ "tokens": ["Ngày", "11/07/2026", "có", "12,5%"], "labels": ["O", "B-NDAT", "O", "B-NPER"] },
+	{ "tokens": ["Trường", "ĐH", "mở", "đăng", "ký"], "labels": ["O", "B-LABB", "O", "O", "O"] },
+	{ "tokens": ["Giá", "10.000", "₫"], "labels": ["O", "B-NNUM", "O"] },
+	{ "tokens": ["Khoảng", "10-12", "km"], "labels": ["O", "B-NRNG", "B-MEA"] },
+	{ "tokens": ["Email", "a@b.vn"], "labels": ["B-LWRD", "B-URLE"] },
+	{ "tokens": ["Phiên", "bản", "v1.2.3"], "labels": ["O", "O", "B-URLE"] },
+	{ "tokens": ["Tỷ", "số", "2-1"], "labels": ["O", "O", "B-NSCR"] },
+	{ "tokens": ["Lúc", "08:30"], "labels": ["O", "B-NTIM"] },
+	{ "tokens": ["Quý", "II/2026"], "labels": ["O", "B-NQUA"] },
+	{ "tokens": ["tàu", "USS", "Ford"], "labels": ["O", "B-USS", "I-LWRD"] },
+	{ "tokens": ["Năm", "2026"], "labels": ["O", "B-NNUM"] },
+	{ "tokens": ["cao", "1,75", "m"], "labels": ["O", "B-NNUM", "B-MEA"] }
+]
