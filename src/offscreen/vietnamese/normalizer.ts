@@ -1,6 +1,11 @@
 import { expandAbbreviation } from './abbreviations.ts';
 import { reconstructDetectedSpans } from './crf.ts';
-import { expandTypedSpan, recognizeDeterministicType } from './expanders.ts';
+import {
+	expandTypedSpan,
+	isCurrencyShapedToken,
+	isUppercaseRomanNumeral,
+	recognizeDeterministicType,
+} from './expanders.ts';
 import { restoreSource, tokenizeVietnameseText } from './tokenizer.ts';
 import type {
 	CheckpointLabel,
@@ -19,7 +24,25 @@ function originalSpan(tokens: readonly SourceToken[], span: DetectedSpan): strin
 		.join('');
 }
 
-function deterministicOverlay(tokens: readonly SourceToken[], labels: CheckpointLabel[]): void {
+const ROMAN_CONTEXT_WORDS = new Set(['mục', 'chương', 'phần', 'quý', 'điều', 'khoản']);
+
+function hasExplicitRomanContext(tokens: readonly SourceToken[], index: number): boolean {
+	const previousToken = tokens[index - 1];
+	const previous = previousToken?.kind === 'word' ? previousToken.text.toLocaleLowerCase('vi') : undefined;
+	const precedingToken = tokens[index - 2];
+	const preceding = precedingToken?.kind === 'word' ? precedingToken.text.toLocaleLowerCase('vi') : undefined;
+	const previousPhrase = preceding && previous ? `${preceding} ${previous}` : undefined;
+	const isOutlineStart = index === 0 || (previousToken?.kind === 'punctuation' && /^[.!?…]$/u.test(previousToken.text));
+	const isOutlineMarker =
+		/^[.)]$/u.test(tokens[index + 1]?.text ?? '') && isOutlineStart;
+	return Boolean((previous && ROMAN_CONTEXT_WORDS.has(previous)) || previousPhrase === 'thế kỷ' || isOutlineMarker);
+}
+
+function deterministicOverlay(
+	tokens: readonly SourceToken[],
+	labels: CheckpointLabel[],
+	vietnameseSyllables: ReadonlySet<string>,
+): void {
 	for (let index = 0; index < tokens.length; index++) {
 		const source = tokens[index].text;
 		const isIpAddress = /^(?:\d{1,3}\.){3}\d{1,3}$/u.test(source);
@@ -29,9 +52,26 @@ function deterministicOverlay(tokens: readonly SourceToken[], labels: Checkpoint
 			labels[index] = 'O';
 			continue;
 		}
+		const explicitRomanContext = isUppercaseRomanNumeral(source) && hasExplicitRomanContext(tokens, index);
+		const isVietnameseRomanWord = /^[IVXLCDM]+$/iu.test(source) && vietnameseSyllables.has(source.toLocaleLowerCase('vi'));
+		if (isVietnameseRomanWord && !explicitRomanContext && labels[index] === 'B-ROMA') {
+			labels[index] = 'O';
+		}
 		const type = recognizeDeterministicType(source);
+		if (type === 'MONEY') {
+			labels[index] = 'B-MONEY';
+			continue;
+		}
+		if (isCurrencyShapedToken(source)) {
+			labels[index] = 'O';
+			continue;
+		}
 		if (type && (labels[index] === 'O' || type === 'NVER')) {
 			labels[index] = `B-${type}`;
+			continue;
+		}
+		if (explicitRomanContext && labels[index] === 'O') {
+			labels[index] = 'B-ROMA';
 			continue;
 		}
 		if (labels[index] !== 'O') {
@@ -81,7 +121,7 @@ export function detectVietnameseLabels(
 			fallbackReason = error instanceof Error ? error.message : 'CRF detection failed';
 		}
 	}
-	deterministicOverlay(tokens, labels);
+	deterministicOverlay(tokens, labels, assets.vietnameseSyllables);
 	return { labels, usedCrf, ...(fallbackReason ? { fallbackReason } : {}) };
 }
 

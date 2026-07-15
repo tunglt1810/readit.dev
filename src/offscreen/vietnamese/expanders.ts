@@ -116,6 +116,11 @@ function parseRoman(source: string): number | null {
 	return total;
 }
 
+export function isUppercaseRomanNumeral(rawSource: string): boolean {
+	const source = rawSource.trim();
+	return source.length > 0 && source === source.toUpperCase() && parseRoman(source) !== null;
+}
+
 function daysInMonth(month: number, year: number): number {
 	if (month === 2) {
 		return year % 400 === 0 || (year % 4 === 0 && year % 100 !== 0) ? 29 : 28;
@@ -165,6 +170,11 @@ function expandMeasurement(source: string): string | null {
 	return value && unit ? `${value} ${unit}` : null;
 }
 
+export function isCurrencyShapedToken(rawSource: string): boolean {
+	const source = rawSource.trim();
+	return /^(?:[$€¥£₩]\s*-?\d[\d.,]*(?:\s*(?:nghìn|triệu|tỷ))?|-?\d[\d.,]*\s*(?:₫|đ|VND|USD|EUR))$/iu.test(source);
+}
+
 function expandMoney(source: string): string | null {
 	const input = source.trim();
 	const match = /^(?:([$€¥£₩])\s*(-?\d+(?:\.\d{3})*(?:,\d+)?)|(-?\d+(?:\.\d{3})*(?:,\d+)?)\s*(₫|đ|VND|USD|EUR))$/iu.exec(input);
@@ -178,7 +188,14 @@ function expandMoney(source: string): string | null {
 }
 
 function expandTime(source: string): string | null {
-	const match = /^(\d{1,2})[:hg](\d{1,2})(?:[:mp](\d{1,2}))?$/u.exec(source.trim());
+	const input = source.trim();
+	const hourOnly = /^(\d{1,2})h$/u.exec(input);
+	if (hourOnly) {
+		const hour = Number(hourOnly[1]);
+		return hour <= 23 ? `${expandInteger(hourOnly[1])} giờ` : null;
+	}
+
+	const match = /^(\d{1,2})[:hg](\d{1,2})(?:[:mp](\d{1,2}))?$/u.exec(input);
 	if (!match) {
 		return null;
 	}
@@ -305,7 +322,7 @@ export function recognizeDeterministicType(rawSource: string): NswType | null {
 	if (expandTypedSpan('NMON', source)) {
 		return 'NMON';
 	}
-	if (/^\d{1,2}:\d{2}(?::\d{2})?$/u.test(source) && expandTime(source)) {
+	if ((/^\d{1,2}h$/u.test(source) || /^\d{1,2}:\d{2}(?::\d{2})?$/u.test(source)) && expandTime(source)) {
 		return 'NTIM';
 	}
 	if (expandMoney(source)) {
@@ -322,9 +339,6 @@ export function recognizeDeterministicType(rawSource: string): NswType | null {
 	}
 	if (expandTypedSpan('NVER', source)) {
 		return 'NVER';
-	}
-	if (parseRoman(source) !== null) {
-		return 'ROMA';
 	}
 	if (/^0\d{8,10}$/u.test(source) || !/^-?\d[\d.,]{0,20}$/u.test(source)) {
 		return null;

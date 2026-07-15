@@ -34,6 +34,63 @@ test('normalizes required Vietnamese cases and is idempotent', async () => {
 	assert.equal(first.diagnostics.usedCrf, true);
 });
 
+test('keeps hour-only normalization idempotent across two passes', async () => {
+	const dependencies = createTestNormalizationDependencies();
+	const first = await normalizeVietnameseText('Lúc 10h.', dependencies);
+	const second = await normalizeVietnameseText(first.text, dependencies);
+	assert.equal(first.text, 'Lúc mười giờ.');
+	assert.equal(second.text, 'Lúc mười giờ.');
+});
+
+test('lets strict money override CRF LSEQ and preserves rejected money shapes', async () => {
+	const dependencies = createTestNormalizationDependencies();
+	dependencies.assets.detector = {
+		detect(tokens) {
+			return tokens.map((token) => (token.text.endsWith('USD') ? 'B-LSEQ' : 'O'));
+		},
+	};
+	const source = 'Chi phí 1.000 USD. Mã 1.00 USD.';
+	const first = await normalizeVietnameseText(source, dependencies);
+	const second = await normalizeVietnameseText(first.text, dependencies);
+	assert.equal(first.text, 'Chi phí một nghìn đô la. Mã 1.00 USD.');
+	assert.equal(second.text, first.text);
+});
+
+test('protects Roman-shaped Vietnamese syllables even when CRF labels them ROMA', async () => {
+	const dependencies = createTestNormalizationDependencies();
+	dependencies.assets.vietnameseSyllables = new Set([...dependencies.assets.vietnameseSyllables, 'di']);
+	dependencies.assets.detector = {
+		detect(tokens) {
+			return tokens.map((token) => (/^(?:di|xiv)$/iu.test(token.text) ? 'B-ROMA' : 'O'));
+		},
+	};
+	const source = 'thiết bị di động. DI CHUYỂN. Mục XIV.';
+	const first = await normalizeVietnameseText(source, dependencies);
+	const second = await normalizeVietnameseText(first.text, dependencies);
+	assert.equal(first.text, 'thiết bị di động. DI CHUYỂN. Mục mười bốn.');
+	assert.equal(second.text, first.text);
+});
+
+test('uses explicit context for Roman numerals when CRF is unavailable', async () => {
+	const dependencies = createTestNormalizationDependencies();
+	dependencies.assets.vietnameseSyllables = new Set([...dependencies.assets.vietnameseSyllables, 'di']);
+	dependencies.assets.detector = null;
+	assert.equal((await normalizeVietnameseText('IV. Phạm vi.', dependencies)).text, 'bốn. Phạm vi.');
+	assert.equal(
+		(await normalizeVietnameseText('Mục DI. Chương IV. thế kỷ XXI. IV. Phạm vi.', dependencies)).text,
+		'Mục năm trăm linh một. Chương bốn. thế kỷ hai mươi mốt. bốn. Phạm vi.',
+	);
+});
+
+test('does not infer Roman context across punctuation or inline punctuation boundaries', async () => {
+	const dependencies = createTestNormalizationDependencies();
+	dependencies.assets.vietnameseSyllables = new Set([...dependencies.assets.vietnameseSyllables, 'vi']);
+	dependencies.assets.detector = null;
+	for (const source of ['Kết thúc thế kỷ. VI tiếp tục.', 'Nhãn “VI.” vẫn giữ nguyên.', 'A, VI. tiếp tục.']) {
+		assert.equal((await normalizeVietnameseText(source, dependencies)).text, source);
+	}
+});
+
 test('falls back to deterministic spans when the CRF is unavailable', async () => {
 	const dependencies = createTestNormalizationDependencies();
 	dependencies.assets.detector = null;

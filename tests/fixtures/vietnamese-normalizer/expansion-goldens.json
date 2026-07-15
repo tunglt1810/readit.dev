@@ -19,6 +19,7 @@
 	{ "type": "NRNG", "input": "10-12", "expected": "mười đến mười hai", "oracle": "soe-vinorm-v0.3.2" },
 	{ "type": "NSCR", "input": "2-1", "expected": "hai một", "oracle": "soe-vinorm-v0.3.2" },
 	{ "type": "NTIM", "input": "08:30", "expected": "tám giờ ba mươi phút", "oracle": "soe-vinorm-v0.3.2" },
+	{ "type": "NTIM", "input": "10h", "expected": "mười giờ", "oracle": "manual-review-2026-07-15" },
 	{ "type": "NVER", "input": "v1.2.3", "expected": "vê một chấm hai chấm ba", "oracle": "soe-vinorm-v0.3.2" },
 	{ "type": "ROMA", "input": "XIV", "expected": "mười bốn", "oracle": "soe-vinorm-v0.3.2" },
 	{ "type": "URLE", "input": "a@b.vn", "expected": "a a còng bê chấm vê nờ", "oracle": "soe-vinorm-v0.3.2" }

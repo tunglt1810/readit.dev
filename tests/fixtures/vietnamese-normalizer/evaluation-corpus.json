@@ -1576,5 +1576,33 @@
 		],
 		"source": "synthetic reviewed pronunciation fixture",
 		"license": "CC0-1.0"
+	},
+	{
+		"id": "semantic-regressions-1",
+		"domain": "general",
+		"scenario": "semantic-regressions",
+		"text": "DI CHUYỂN lúc 10h, chi phí 1.000 USD. Mục XIV quy định phạm vi áp dụng.",
+		"spans": [
+			{
+				"start": 14,
+				"end": 17,
+				"type": "NTIM",
+				"expected": "mười giờ"
+			},
+			{
+				"start": 27,
+				"end": 36,
+				"type": "MONEY",
+				"expected": "một nghìn đô la"
+			},
+			{
+				"start": 42,
+				"end": 45,
+				"type": "ROMA",
+				"expected": "mười bốn"
+			}
+		],
+		"source": "manual semantic regression review 2026-07-15",
+		"license": "CC0-1.0"
 	}
 ]

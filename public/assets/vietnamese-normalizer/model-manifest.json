@@ -51,8 +51,8 @@
 	"files": [
 		{
 			"path": "abbreviation-config.json",
-			"bytes": 84384,
-			"sha256": "6f3ccd58c231e689b18a23894315db4a1f1a96f3e70ba409e9ac0189754aab53",
+			"bytes": 75348,
+			"sha256": "5d28711a5708dab5fb27bf6075d651240bfd59631b6eec524dd7fe5f4b458082",
 			"license": "MIT"
 		},
 		{

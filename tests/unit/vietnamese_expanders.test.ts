@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { expandTypedSpan, recognizeDeterministicType } from '../../src/offscreen/vietnamese/expanders.ts';
+import {
+	expandTypedSpan,
+	isCurrencyShapedToken,
+	isUppercaseRomanNumeral,
+	recognizeDeterministicType,
+} from '../../src/offscreen/vietnamese/expanders.ts';
 import { expandDecimal, expandInteger } from '../../src/offscreen/vietnamese/number_words.ts';
 import type { NswType } from '../../src/offscreen/vietnamese/types.ts';
 
@@ -18,6 +23,36 @@ test('expands the required Vietnamese pronunciation table', () => {
 		['NVER', 'v1.2.3', 'vê một chấm hai chấm ba'],
 	];
 	for (const [type, input, expected] of cases) assert.equal(expandTypedSpan(type, input), expected, `${type}: ${input}`);
+});
+
+test('expands valid hour-only times and preserves invalid hours', () => {
+	assert.equal(expandTypedSpan('NTIM', '0h'), 'không giờ');
+	assert.equal(expandTypedSpan('NTIM', '10h'), 'mười giờ');
+	assert.equal(expandTypedSpan('NTIM', '12h40'), 'mười hai giờ bốn mươi phút');
+	assert.equal(expandTypedSpan('NTIM', '23h'), 'hai mươi ba giờ');
+	assert.equal(expandTypedSpan('NTIM', '24h'), null);
+	assert.equal(recognizeDeterministicType('10h'), 'NTIM');
+	assert.equal(recognizeDeterministicType('24h'), null);
+});
+
+test('expands strict money shapes and identifies rejected currency-shaped tokens', () => {
+	assert.equal(expandTypedSpan('MONEY', '1.000 USD'), 'một nghìn đô la');
+	assert.equal(expandTypedSpan('MONEY', '1.000,50 USD'), 'một nghìn phẩy năm không đô la');
+	assert.equal(expandTypedSpan('MONEY', '1.00 USD'), null);
+	assert.equal(isCurrencyShapedToken('1.000 USD'), true);
+	assert.equal(isCurrencyShapedToken('1.00 USD'), true);
+	assert.equal(isCurrencyShapedToken('DEVUSD'), false);
+	assert.equal(isCurrencyShapedToken('fooEUR'), false);
+	assert.equal(isCurrencyShapedToken('USD'), false);
+});
+
+test('keeps generic deterministic recognition away from Roman-shaped words', () => {
+	assert.equal(isUppercaseRomanNumeral('XIV'), true);
+	assert.equal(isUppercaseRomanNumeral('DI'), true);
+	assert.equal(isUppercaseRomanNumeral('di'), false);
+	assert.equal(expandTypedSpan('ROMA', 'XIV'), 'mười bốn');
+	assert.equal(recognizeDeterministicType('XIV'), null);
+	assert.equal(recognizeDeterministicType('DI'), null);
 });
 
 test('validates Gregorian dates without locale parsing', () => {
