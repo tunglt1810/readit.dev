@@ -35,6 +35,7 @@ CONTEXT.md
 scratch/
 /.tmp/
 /.superpowers/
+/.worktrees/
 playwright-report/
 test-results/
 tests/e2e/.user-data-*
