@@ -1,11 +1,27 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-import { BUY_ME_A_COFFEE_URL, PRIVACY_POLICY_URL, STORAGE_KEYS, VOICE_STYLES } from '../shared/constants';
+import {
+	BUY_ME_A_COFFEE_URL,
+	PRIVACY_POLICY_URL,
+	STORAGE_KEYS,
+	THEME_TRANSLATIONS,
+	VOICE_STYLE_TRANSLATIONS,
+	VOICE_STYLES,
+} from '../shared/constants';
 import type { PlaybackSessionSnapshot, PlaybackStateResponse, PlaybackStatus } from '../shared/types';
 import { buildFeedbackUrl } from './feedback';
 
 type CommandResponse = { success: boolean; error?: string };
 type PlaybackIconName = 'read' | 'stop' | 'pause' | 'resume';
+
+const uiLang =
+	typeof chrome !== 'undefined' && chrome.i18n && chrome.i18n.getUILanguage
+		? chrome.i18n.getUILanguage().startsWith('vi')
+			? 'vi'
+			: 'en'
+		: 'en';
+
+const t = (key: keyof typeof THEME_TRANSLATIONS.en) => THEME_TRANSLATIONS[uiLang][key];
 
 function PlaybackIcon({ name }: { name: PlaybackIconName }) {
 	const commonProps = {
@@ -53,6 +69,9 @@ export default function App() {
 	// Playback state is owned by the background coordinator.
 	const [session, setSession] = useState<PlaybackSessionSnapshot | null>(null);
 	const [currentTabId, setCurrentTabId] = useState<number | undefined>();
+	const [activeTheme, setActiveTheme] = useState<'default' | 'winamp' | 'wmp12'>('default');
+	const [themeMenuOpen, setThemeMenuOpen] = useState(false);
+	const themeSelectorButtonRef = useRef<HTMLButtonElement>(null);
 
 	// Settings States
 	const [activeVoice, setActiveVoice] = useState('M1');
@@ -73,15 +92,21 @@ export default function App() {
 
 	// Fetch initial states on mount
 	useEffect(() => {
-		// Get stored voice and speed
-		chrome.storage.local.get([STORAGE_KEYS.ACTIVE_VOICE, STORAGE_KEYS.SPEED], (result: { [key: string]: unknown }) => {
-			if (result[STORAGE_KEYS.ACTIVE_VOICE]) {
-				setActiveVoice(result[STORAGE_KEYS.ACTIVE_VOICE] as string);
-			}
-			if (result[STORAGE_KEYS.SPEED]) {
-				setSpeed(result[STORAGE_KEYS.SPEED] as number);
-			}
-		});
+		// Get stored voice, speed and theme
+		chrome.storage.local.get(
+			[STORAGE_KEYS.ACTIVE_VOICE, STORAGE_KEYS.SPEED, STORAGE_KEYS.THEME],
+			(result: { [key: string]: unknown }) => {
+				if (result[STORAGE_KEYS.ACTIVE_VOICE]) {
+					setActiveVoice(result[STORAGE_KEYS.ACTIVE_VOICE] as string);
+				}
+				if (result[STORAGE_KEYS.SPEED]) {
+					setSpeed(result[STORAGE_KEYS.SPEED] as number);
+				}
+				if (result[STORAGE_KEYS.THEME]) {
+					setActiveTheme(result[STORAGE_KEYS.THEME] as 'default' | 'winamp' | 'wmp12');
+				}
+			},
+		);
 
 		chrome.runtime.sendMessage({ action: 'GET_PLAYBACK_STATE' }, (response: PlaybackStateResponse | undefined) => {
 			if (!response) {
@@ -127,7 +152,7 @@ export default function App() {
 
 			if (action === 'MODEL_LOAD_FAILED') {
 				setModelLoading(false);
-				setModelError(`Không thể tải model: ${error || 'Unknown error'}`);
+				setModelError(`${t('modelLoadFailed')}: ${error || t('unknownError')}`);
 			}
 		};
 
@@ -140,7 +165,7 @@ export default function App() {
 		setCommandError('');
 		chrome.runtime.sendMessage({ action: 'START_CURRENT_PAGE' }, (response: CommandResponse | undefined) => {
 			if (response?.success === false) {
-				setCommandError(response.error || 'Không thể bắt đầu đọc trang này. Vui lòng thử lại.');
+				setCommandError(response.error || t('startReadingFailed'));
 				return;
 			}
 			setCommandError('');
@@ -183,30 +208,47 @@ export default function App() {
 		chrome.runtime.sendMessage({ action: 'CHANGE_SPEED', payload: { speed: val } });
 	};
 
+	// Handler: Change Theme
+	const handleThemeChange = (newTheme: 'default' | 'winamp' | 'wmp12') => {
+		setActiveTheme(newTheme);
+		setThemeMenuOpen(false);
+		chrome.storage.local.set({ [STORAGE_KEYS.THEME]: newTheme });
+	};
+
 	// Display text for active status
 	const getStatusText = () => {
 		if (!session) {
-			return 'Sẵn sàng đọc trang web';
+			return t('readyStatus');
 		}
 
 		switch (status) {
 			case 'loading':
 				return modelLoading
-					? `Đang tải model: ${loadingProgress.modelName} (${Math.round((loadingProgress.loaded / loadingProgress.total) * 100)}%)`
-					: 'Đang chuẩn bị giọng đọc...';
+					? `${t('loadingModel')}: ${loadingProgress.modelName} (${Math.round((loadingProgress.loaded / loadingProgress.total) * 100)}%)`
+					: t('preparingState');
 			case 'playing':
-				return `Đang đọc đoạn ${session.currentParagraphIndex + 1}/${session.totalParagraphs}`;
+				return `${t('playingStatus')} ${session.currentParagraphIndex + 1}/${session.totalParagraphs}`;
 			case 'paused':
-				return 'Tạm dừng';
+				return t('pauseState');
 			case 'error':
-				return 'Lỗi hoạt động';
+				return t('errorState');
 			default:
-				return 'Sẵn sàng đọc trang web';
+				return t('readyStatus');
 		}
 	};
 
 	return (
-		<div className="app-container">
+		<div className="app-container" data-theme={activeTheme}>
+			{activeTheme === 'winamp' && (
+				<div className="winamp-titlebar">
+					<span className="winamp-title-text">{t('winampTitle')}</span>
+					<div className="winamp-window-controls">
+						<span className="winamp-win-btn">_</span>
+						<span className="winamp-win-btn">⬜</span>
+						<span className="winamp-win-btn">X</span>
+					</div>
+				</div>
+			)}
 			{/* Header */}
 			<header className="app-header">
 				<div className="logo-group">
@@ -215,6 +257,53 @@ export default function App() {
 					</h1>
 				</div>
 				<span className="extension-version">v{manifestVersion}</span>
+				<div
+					className="theme-selector-container"
+					onMouseEnter={() => setThemeMenuOpen(true)}
+					onMouseLeave={() => setThemeMenuOpen(false)}
+					onBlur={(event) => {
+						if (!event.currentTarget.contains(event.relatedTarget)) {
+							setThemeMenuOpen(false);
+						}
+					}}
+					onKeyDown={(event) => {
+						if (event.key === 'Escape') {
+							setThemeMenuOpen(false);
+							themeSelectorButtonRef.current?.focus();
+						}
+					}}
+				>
+					<button
+						ref={themeSelectorButtonRef}
+						className="theme-selector-btn"
+						aria-label={t('selectTheme')}
+						aria-controls="theme-options"
+						aria-expanded={themeMenuOpen}
+						onClick={() => setThemeMenuOpen((open) => !open)}
+					>
+						🎨
+					</button>
+					<div id="theme-options" className={`theme-dropdown ${themeMenuOpen ? 'open' : ''}`} hidden={!themeMenuOpen}>
+						<button
+							className={`theme-opt-btn ${activeTheme === 'default' ? 'active' : ''}`}
+							onClick={() => handleThemeChange('default')}
+						>
+							{t('themeDefault')}
+						</button>
+						<button
+							className={`theme-opt-btn ${activeTheme === 'winamp' ? 'active' : ''}`}
+							onClick={() => handleThemeChange('winamp')}
+						>
+							{t('themeWinamp')}
+						</button>
+						<button
+							className={`theme-opt-btn ${activeTheme === 'wmp12' ? 'active' : ''}`}
+							onClick={() => handleThemeChange('wmp12')}
+						>
+							{t('themeWmp12')}
+						</button>
+					</div>
+				</div>
 			</header>
 
 			{/* Main Playback Area */}
@@ -226,6 +315,18 @@ export default function App() {
 				<div className="status-display" data-status={status} role="status">
 					<div className="status-dot-pulse" data-status={status} />
 					<span className="status-text">{getStatusText()}</span>
+					{activeTheme === 'winamp' && status === 'playing' && (
+						<div className="winamp-visualizer">
+							<div className="v-bar" />
+							<div className="v-bar" />
+							<div className="v-bar" />
+							<div className="v-bar" />
+							<div className="v-bar" />
+							<div className="v-bar" />
+							<div className="v-bar" />
+							<div className="v-bar" />
+						</div>
+					)}
 				</div>
 
 				{session && (
@@ -237,10 +338,10 @@ export default function App() {
 						<div className="session-context">
 							<span>
 								{session.totalParagraphs > 0
-									? `Đoạn ${session.currentParagraphIndex + 1}/${session.totalParagraphs} • ${Math.round(session.progressPercentage)}%`
-									: 'Đang chuẩn bị nội dung'}
+									? `${t('paragraphLabel')} ${session.currentParagraphIndex + 1}/${session.totalParagraphs} • ${Math.round(session.progressPercentage)}%`
+									: t('preparingContent')}
 							</span>
-							<span>{isSessionOnAnotherTab ? 'Đang đọc ở tab khác' : 'Đang đọc ở tab này'}</span>
+							<span>{isSessionOnAnotherTab ? t('readingOtherTab') : t('readingThisTab')}</span>
 						</div>
 					</div>
 				)}
@@ -253,14 +354,14 @@ export default function App() {
 				)}
 
 				{/* CTA Controls */}
-				<div className="controls-group">
+				<div className={`controls-group ${activeTheme === 'wmp12' ? 'wmp-dock' : ''}`}>
 					<div className="playback-controls">
 						{(status === 'playing' || status === 'paused') && (
 							<button
 								className="btn btn-secondary btn-icon-only btn-playpause"
 								onClick={handlePlayPause}
-								aria-label={status === 'playing' ? 'Tạm dừng' : 'Tiếp tục'}
-								title={status === 'playing' ? 'Tạm dừng' : 'Tiếp tục'}
+								aria-label={status === 'playing' ? t('pauseState') : t('resumeStatus')}
+								title={status === 'playing' ? t('pauseState') : t('resumeStatus')}
 							>
 								<PlaybackIcon name={status === 'playing' ? 'pause' : 'resume'} />
 							</button>
@@ -269,8 +370,8 @@ export default function App() {
 						<button
 							className={`btn btn-primary btn-icon-only btn-read ${status !== 'stopped' && status !== 'error' ? 'active' : ''}`}
 							onClick={handleReadPage}
-							aria-label={status === 'stopped' || status === 'error' ? 'Đọc trang hiện tại' : 'Dừng đọc bài'}
-							title={status === 'stopped' || status === 'error' ? 'Đọc trang hiện tại' : 'Dừng đọc bài'}
+							aria-label={status === 'stopped' || status === 'error' ? t('readPage') : t('stopReading')}
+							title={status === 'stopped' || status === 'error' ? t('readPage') : t('stopReading')}
 						>
 							<PlaybackIcon name={status === 'stopped' || status === 'error' ? 'read' : 'stop'} />
 						</button>
@@ -278,16 +379,16 @@ export default function App() {
 
 					{session && isSessionOnAnotherTab && (
 						<button className="btn btn-secondary btn-read-current-page" onClick={handleReadCurrentPage}>
-							Đọc trang này thay thế
+							{t('readCurrentPage')}
 						</button>
 					)}
 
 					<div className="privacy-disclosure" role="note">
 						<span aria-hidden="true">🔒</span>
 						<span>
-							Nội dung được xử lý trên thiết bị, không gửi lên server.{' '}
+							{t('privacyDisclosure')}{' '}
 							<a href={PRIVACY_POLICY_URL} target="_blank" rel="noreferrer">
-								Tìm hiểu thêm
+								{t('learnMore')}
 							</a>
 						</span>
 					</div>
@@ -296,10 +397,10 @@ export default function App() {
 
 			{/* Settings Section */}
 			<section className="app-section">
-				<h2 className="section-title">Cấu hình giọng đọc</h2>
+				<h2 className="section-title">{t('voiceConfig')}</h2>
 
 				<div className="form-group">
-					<label className="form-label">Chọn giọng (Supertonic 3)</label>
+					<label className="form-label">{t('selectVoice')}</label>
 					<select
 						className="form-select"
 						value={activeVoice}
@@ -308,7 +409,8 @@ export default function App() {
 					>
 						{VOICE_STYLES.map((voice) => (
 							<option key={voice.id} value={voice.id}>
-								{voice.gender === 'male' ? '♂️' : '♀️'} {voice.name}
+								{voice.gender === 'male' ? '♂️' : '♀️'}{' '}
+								{VOICE_STYLE_TRANSLATIONS[uiLang][voice.id as keyof typeof VOICE_STYLE_TRANSLATIONS.en]}
 							</option>
 						))}
 					</select>
@@ -316,7 +418,7 @@ export default function App() {
 
 				<div className="form-group">
 					<div className="slider-label-group">
-						<span className="form-label">Tốc độ đọc</span>
+						<span className="form-label">{t('readingSpeed')}</span>
 						<span className="slider-value">{speed.toFixed(2)}x</span>
 					</div>
 					<input
@@ -338,13 +440,13 @@ export default function App() {
 			<footer className="app-footer">
 				<div className="footer-links">
 					<a className="support-link" href={BUY_ME_A_COFFEE_URL} target="_blank" rel="noreferrer">
-						<span aria-hidden="true">☕</span> Buy me a coffee
+						<span aria-hidden="true">☕</span> {t('buyMeCoffee')}
 					</a>
 					<a className="support-link feedback-link" href={feedbackUrl} target="_blank" rel="noreferrer">
-						Feedback
+						{t('feedback')}
 					</a>
 					<a className="privacy-link" href={PRIVACY_POLICY_URL} target="_blank" rel="noreferrer">
-						Privacy Policy
+						{t('privacyPolicy')}
 					</a>
 				</div>
 			</footer>

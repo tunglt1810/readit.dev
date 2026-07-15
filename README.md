@@ -46,11 +46,11 @@ This starts the local Cloudflare Worker with the local D1 database configuration
 
 ## Documentation
 
-- [Product Requirements Document](./docs/PRD.md)
-- [Free MVP Design Specification](./docs/superpowers/specs/2026-07-12-free-mvp-design.md)
-- [Deployment Guide](./docs/DEPLOYMENT.md)
-- [Release Guide](./docs/RELEASING.md)
-- [Architecture Decision Record](./docs/adr)
+- [Product Requirements Document](./_docs/PRD.md)
+- [Free MVP Design Specification](./_docs/specs/2026-07-12-free-mvp-design.md)
+- [Deployment Guide](./_docs/DEPLOYMENT.md)
+- [Release Guide](./_docs/RELEASING.md)
+- [Architecture Decision Record](./_docs/adr)
 - [Privacy Policy](https://tunglt1810.github.io/readit.dev/privacy-policy/)
 - [Third-Party Notices](./public/THIRD_PARTY_NOTICES.txt)
 

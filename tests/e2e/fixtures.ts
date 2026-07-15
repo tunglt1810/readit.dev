@@ -52,8 +52,10 @@ export const test = base.extend<{
 	context: BrowserContext;
 	extensionId: string;
 	openPopup: (page: Page) => Promise<void>;
+	browserLocale: string;
 }>({
-	context: async ({}, use) => {
+	browserLocale: ['vi-VN', { option: true }],
+	context: async ({ browserLocale }, use) => {
 		const pathToExtension = path.join(process.cwd(), 'dist');
 		const tempDir = path.join(process.cwd(), '.tmp');
 		fs.mkdirSync(tempDir, { recursive: true });
@@ -62,6 +64,7 @@ export const test = base.extend<{
 		// Khởi chạy Chromium với extension được unpack từ thư mục dist/
 		const context = await chromium.launchPersistentContext(userDataDir, {
 			headless: false,
+			locale: browserLocale,
 			args: [
 				`--disable-extensions-except=${pathToExtension}`,
 				`--load-extension=${pathToExtension}`,

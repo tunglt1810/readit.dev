@@ -1,5 +1,7 @@
 import { expect, installPopupRuntimeMock, test } from './fixtures';
 
+test.use({ browserLocale: 'en-US' });
+
 test('shows privacy-safe support links and the exact extension version', async ({ page, openPopup }) => {
 	await installPopupRuntimeMock(page, {
 		session: {

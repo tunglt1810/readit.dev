@@ -8,7 +8,7 @@ Workers backend. Extension code lives in `src/`: `content/` extracts articles,
 `offscreen/` runs Supertonic TTS, and `shared/` holds common types/constants.
 Static extension files and voice presets are in `public/`. End-to-end tests
 are in `tests/e2e/`; backend code, D1 schema, and Wrangler configuration are
-in `backend/`. Product and deployment guidance is under `docs/`.
+in `backend/`. Product and deployment guidance is under `_docs/`.
 
 ## Build, Test, and Development Commands
 
@@ -25,7 +25,7 @@ Run `pnpm install` from the repository root before development.
   helpers.
 - `pnpm --filter readit-backend dev` starts the local Worker.
 - `pnpm --filter readit-backend deploy` deploys the backend; configure D1 and
-  secrets as described in `docs/DEPLOYMENT.md`.
+  secrets as described in `_docs/DEPLOYMENT.md`.
 
 ## Coding Style & Naming Conventions
 

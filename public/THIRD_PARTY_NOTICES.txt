@@ -25,6 +25,7 @@ readit.dev includes data and derived portable model assets from Soe Vinorm for
 local Vietnamese text normalization.
 
 - License: MIT License
+- License link: https://github.com/vinhdq842/soe-vinorm/blob/main/LICENSE
 - Copyright (c) 2025 Vinh Dang
 - Project: https://github.com/vinhdq842/soe-vinorm
 - Source version: v0.3.2
