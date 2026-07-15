@@ -33,6 +33,7 @@ export default defineConfig({
 		launchOptions: {
 			args: ['--start-minimized'],
 		},
+		locale: 'vi-VN',
 	},
 
 	/* Configure projects for major browsers */

@@ -1,4 +1,4 @@
-import { VoiceStyle } from './types';
+import type { VoiceStyle } from './types.ts';
 
 export const SUPERTONIC_HF_BASE = 'https://huggingface.co/Supertone/supertonic-3/resolve/main';
 
@@ -29,8 +29,50 @@ export const STORAGE_KEYS = {
 	SPEED: 'readit_speed',
 	READ_MODE_SETTINGS: 'readit_read_mode_settings',
 	PLAYBACK_SESSION: 'readit_playback_session',
+	THEME: 'readit_active_theme',
 };
 
 export const PRIVACY_POLICY_URL = 'https://tunglt1810.github.io/readit.dev/privacy-policy/';
 
 export const BUY_ME_A_COFFEE_URL = 'https://buymeacoffee.com/bbeeezzzzz';
+
+export const THEME_TRANSLATIONS = {
+	vi: {
+		selectTheme: 'Chọn giao diện',
+		themeDefault: '📱 Hiện đại',
+		themeWinamp: '🕹️ Classic (1998)',
+		themeWmp12: '💿 Vista Aero (2006)',
+		winampTitle: 'WINAMP CỔ ĐIỂN',
+		voiceConfig: 'CẤU HÌNH GIỌNG ĐỌC',
+		readCurrentPage: 'Đọc trang này thay thế',
+		readPage: 'Đọc trang hiện tại',
+		stopReading: 'Dừng đọc bài',
+		playingStatus: 'Đang đọc đoạn',
+		readyStatus: 'Sẵn sàng đọc trang web',
+		preparingState: 'Đang chuẩn bị giọng đọc...',
+		pauseState: 'Tạm dừng',
+		errorState: 'Lỗi hoạt động',
+		resumeStatus: 'Tiếp tục',
+		selectVoice: 'Chọn giọng (Supertonic 3)',
+		readingSpeed: 'Tốc độ đọc',
+	},
+	en: {
+		selectTheme: 'Select Theme',
+		themeDefault: '📱 Modern',
+		themeWinamp: '🕹️ Classic (1998)',
+		themeWmp12: '💿 Vista Aero (2006)',
+		winampTitle: 'WINAMP CLASSIC',
+		voiceConfig: 'VOICE CONFIGURATION',
+		readCurrentPage: 'Read this page instead',
+		readPage: 'Read current page',
+		stopReading: 'Stop reading',
+		playingStatus: 'Reading paragraph',
+		readyStatus: 'Ready to read page',
+		preparingState: 'Preparing voice...',
+		pauseState: 'Paused',
+		errorState: 'Playback Error',
+		resumeStatus: 'Resume',
+		selectVoice: 'Select Voice (Supertonic 3)',
+		readingSpeed: 'Reading Speed',
+	},
+} as const;
