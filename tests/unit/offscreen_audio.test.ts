@@ -9,7 +9,37 @@ test('appends the requested silence without changing waveform samples', () => {
 	assert.ok(output.slice(2).every((sample) => sample === 0));
 });
 
-test('uses exact Vietnamese synthesis parameters and appends the unit pause', async () => {
+test('uses zero internal silence and appends a numeric Latin pause', async () => {
+	const calls: unknown[][] = [];
+	const output = await synthesizeSpeechUnitSamples({ text: 'Hello.', pauseAfterMs: 60 }, 'en', 1.15, 1_000, async (...args) => {
+		calls.push(args);
+		return [0.5];
+	});
+	assert.deepEqual(calls, [['Hello.', 'en', 8, 1.15, 0]]);
+	assert.equal(output.length, 61);
+});
+
+test('treats numeric zero as an explicit pause', async () => {
+	const calls: unknown[][] = [];
+	const output = await synthesizeSpeechUnitSamples({ text: 'No punctuation', pauseAfterMs: 0 }, 'fr', 1, 1_000, async (...args) => {
+		calls.push(args);
+		return [0.25];
+	});
+	assert.deepEqual(calls, [['No punctuation', 'fr', 8, 1, 0]]);
+	assert.deepEqual(Array.from(output), [0.25]);
+});
+
+test('uses engine silence without appending for a null compatibility pause', async () => {
+	const calls: unknown[][] = [];
+	const output = await synthesizeSpeechUnitSamples({ text: '中文内容', pauseAfterMs: null }, 'zh', 1.05, 1_000, async (...args) => {
+		calls.push(args);
+		return [0.75, -0.25];
+	});
+	assert.deepEqual(calls, [['中文内容', 'zh', 8, 1.05, 0.3]]);
+	assert.deepEqual(Array.from(output), [0.75, -0.25]);
+});
+
+test('forwards Vietnamese and appends its existing explicit pause', async () => {
 	const calls: unknown[][] = [];
 	const output = await synthesizeSpeechUnitSamples({ text: 'xin chào', pauseAfterMs: 80 }, 'vi', 1.15, 1_000, async (...args) => {
 		calls.push(args);

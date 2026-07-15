@@ -26,8 +26,10 @@ export async function synthesizeSpeechUnitSamples(
 	sampleRate: number,
 	synthesize: SpeechSynthesisCall,
 ): Promise<Float32Array> {
-	const wav = await synthesize(unit.text, lang, 8, speed, 0);
-	return appendSilenceSamples(wav instanceof Float32Array ? wav : Float32Array.from(wav), sampleRate, unit.pauseAfterMs);
+	const internalSilence = unit.pauseAfterMs === null ? 0.3 : 0;
+	const wav = await synthesize(unit.text, lang, 8, speed, internalSilence);
+	const samples = wav instanceof Float32Array ? wav : Float32Array.from(wav);
+	return appendSilenceSamples(samples, sampleRate, unit.pauseAfterMs ?? 0);
 }
 
-import type { SpeechUnit } from './vietnamese/types.ts';
+import type { SpeechUnit } from './speech_unit.ts';

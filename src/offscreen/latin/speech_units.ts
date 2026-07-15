@@ -1,25 +1,25 @@
 import { type BoundaryCandidate, planTextSegments, type SegmentationPolicy } from '../segmentation.ts';
-import type { SpeechUnit } from './types.ts';
+import type { SpeechUnit } from '../speech_unit.ts';
 
-export const VI_PAUSE_MS = Object.freeze({
+export const LATIN_PAUSE_MS = Object.freeze({
 	comma: 60,
 	colonOrSemicolon: 90,
 	spacedDash: 105,
 	sentenceEnd: 165,
 	paragraphEnd: 260,
 });
-export const VI_PREFERRED_MIN_LENGTH = 140;
-export const VI_PREFERRED_CENTER_LENGTH = 190;
-export const VI_PREFERRED_MAX_LENGTH = 240;
-export const VI_MAX_UNIT_LENGTH = 300;
+export const LATIN_PREFERRED_MIN_LENGTH = 140;
+export const LATIN_PREFERRED_CENTER_LENGTH = 190;
+export const LATIN_PREFERRED_MAX_LENGTH = 240;
+export const LATIN_MAX_UNIT_LENGTH = 300;
 
-type VietnameseBoundaryKind = 'sentence' | 'semicolon' | 'colon' | 'spacedDash' | 'comma';
+type LatinBoundaryKind = 'sentence' | 'semicolon' | 'colon' | 'spacedDash' | 'comma';
 
-const VI_SEGMENTATION_POLICY: SegmentationPolicy<VietnameseBoundaryKind> = Object.freeze({
-	preferredMin: VI_PREFERRED_MIN_LENGTH,
-	preferredCenter: VI_PREFERRED_CENTER_LENGTH,
-	preferredMax: VI_PREFERRED_MAX_LENGTH,
-	hardMax: VI_MAX_UNIT_LENGTH,
+const LATIN_SEGMENTATION_POLICY: SegmentationPolicy<LatinBoundaryKind> = Object.freeze({
+	preferredMin: LATIN_PREFERRED_MIN_LENGTH,
+	preferredCenter: LATIN_PREFERRED_CENTER_LENGTH,
+	preferredMax: LATIN_PREFERRED_MAX_LENGTH,
+	hardMax: LATIN_MAX_UNIT_LENGTH,
 	outsidePreferredPenalty: 10,
 	shortRemainderLength: 80,
 	shortRemainderPenalty: 30,
@@ -33,6 +33,9 @@ const VI_SEGMENTATION_POLICY: SegmentationPolicy<VietnameseBoundaryKind> = Objec
 	}),
 });
 
+const LETTER_PATTERN = /\p{L}/u;
+const LATIN_LETTER_PATTERN = /\p{Script=Latin}/u;
+
 const PROTECTED_PATTERNS = [
 	/https?:\/\/[^\s<>"'“”‘’]+/giu,
 	/[\p{L}\p{N}._%+-]+@[\p{L}\p{N}.-]+\.[\p{L}]{2,}/giu,
@@ -41,8 +44,23 @@ const PROTECTED_PATTERNS = [
 	/\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?/gu,
 	/\d{1,2}:\d{2}(?:\s*[-–]\s*\d{1,2}:\d{2})?/gu,
 	/\d+(?:[.,]\d+)*(?:\s?[-–]\s?\d+(?:[.,]\d+)*)?\s?(?:km\/h|m²|m3|%|₫|đ|mm|cm|km|kg|mg|ml|ha|m|g|l)/giu,
-	/[A-ZĐĂÂÊÔƠƯ]+-\d+(?:-[A-ZĐĂÂÊÔƠƯ]+)*/gu,
+	/\p{Lu}+-\d+(?:-\p{Lu}+)*/gu,
 ] as const;
+
+export function isPredominantlyLatinText(text: string): boolean {
+	let letterCount = 0;
+	let latinLetterCount = 0;
+	for (const character of text) {
+		if (!LETTER_PATTERN.test(character)) {
+			continue;
+		}
+		letterCount++;
+		if (LATIN_LETTER_PATTERN.test(character)) {
+			latinLetterCount++;
+		}
+	}
+	return letterCount > 0 && latinLetterCount / letterCount > 0.5;
+}
 
 function protectedPositions(text: string): Uint8Array {
 	const positions = new Uint8Array(text.length);
@@ -60,22 +78,22 @@ function protectedPositions(text: string): Uint8Array {
 	return positions;
 }
 
-function scanBoundaries(text: string): BoundaryCandidate<VietnameseBoundaryKind>[] {
+function scanBoundaries(text: string): BoundaryCandidate<LatinBoundaryKind>[] {
 	const protectedAt = protectedPositions(text);
-	const boundaries: BoundaryCandidate<VietnameseBoundaryKind>[] = [];
+	const boundaries: BoundaryCandidate<LatinBoundaryKind>[] = [];
 	for (let index = 0; index < text.length; index++) {
 		if (protectedAt[index]) {
 			continue;
 		}
 		const character = text[index];
 		if (character === ',' && !(/\d/u.test(text[index - 1] ?? '') && /\d/u.test(text[index + 1] ?? ''))) {
-			boundaries.push({ end: index + 1, kind: 'comma', pauseAfterMs: VI_PAUSE_MS.comma });
+			boundaries.push({ end: index + 1, kind: 'comma', pauseAfterMs: LATIN_PAUSE_MS.comma });
 		} else if (character === ':' && !(/\d/u.test(text[index - 1] ?? '') && /\d/u.test(text[index + 1] ?? ''))) {
-			boundaries.push({ end: index + 1, kind: 'colon', pauseAfterMs: VI_PAUSE_MS.colonOrSemicolon });
+			boundaries.push({ end: index + 1, kind: 'colon', pauseAfterMs: LATIN_PAUSE_MS.colonOrSemicolon });
 		} else if (character === ';' && !(/\d/u.test(text[index - 1] ?? '') && /\d/u.test(text[index + 1] ?? ''))) {
-			boundaries.push({ end: index + 1, kind: 'semicolon', pauseAfterMs: VI_PAUSE_MS.colonOrSemicolon });
+			boundaries.push({ end: index + 1, kind: 'semicolon', pauseAfterMs: LATIN_PAUSE_MS.colonOrSemicolon });
 		} else if ('-–—'.includes(character) && /\s/u.test(text[index - 1] ?? '') && /\s/u.test(text[index + 1] ?? '')) {
-			boundaries.push({ end: index + 1, kind: 'spacedDash', pauseAfterMs: VI_PAUSE_MS.spacedDash });
+			boundaries.push({ end: index + 1, kind: 'spacedDash', pauseAfterMs: LATIN_PAUSE_MS.spacedDash });
 		} else if (
 			/[.!?…]/u.test(character) &&
 			!(character === '.' && /\d/u.test(text[index - 1] ?? '') && /\d/u.test(text[index + 1] ?? ''))
@@ -84,7 +102,7 @@ function scanBoundaries(text: string): BoundaryCandidate<VietnameseBoundaryKind>
 			while (text[end] === '.') {
 				end++;
 			}
-			boundaries.push({ end, kind: 'sentence', pauseAfterMs: VI_PAUSE_MS.sentenceEnd });
+			boundaries.push({ end, kind: 'sentence', pauseAfterMs: LATIN_PAUSE_MS.sentenceEnd });
 			index = end - 1;
 		}
 	}
@@ -95,10 +113,10 @@ function planParagraph(text: string, paragraphPauseAfterMs: number): SpeechUnit[
 	const boundaries = scanBoundaries(text);
 	const trailingBoundary = boundaries.at(-1);
 	const trailingPauseAfterMs = trailingBoundary?.end === text.length ? trailingBoundary.pauseAfterMs : 0;
-	return planTextSegments(text, boundaries, VI_SEGMENTATION_POLICY, Math.max(trailingPauseAfterMs, paragraphPauseAfterMs));
+	return planTextSegments(text, boundaries, LATIN_SEGMENTATION_POLICY, Math.max(trailingPauseAfterMs, paragraphPauseAfterMs));
 }
 
-export function planSpeechUnits(text: string): SpeechUnit[] {
+export function planLatinSpeechUnits(text: string): SpeechUnit[] {
 	const paragraphs = text
 		.normalize('NFC')
 		.split(/\n[\t ]*\n+/u)
@@ -106,7 +124,7 @@ export function planSpeechUnits(text: string): SpeechUnit[] {
 		.filter(Boolean);
 	const units: SpeechUnit[] = [];
 	for (let index = 0; index < paragraphs.length; index++) {
-		units.push(...planParagraph(paragraphs[index], index < paragraphs.length - 1 ? VI_PAUSE_MS.paragraphEnd : 0));
+		units.push(...planParagraph(paragraphs[index], index < paragraphs.length - 1 ? LATIN_PAUSE_MS.paragraphEnd : 0));
 	}
 	return units;
 }

@@ -1,6 +1,6 @@
 # Weighted Speech Segmentation and Indexed Prefetch Design
 
-**Status:** Approved design; implementation pending
+**Status:** Implemented; automated verification passed; human listening follow-up pending
 **Date:** July 14, 2026
 **Scope:** Shared speech-unit planning, Vietnamese segmentation policy, and offscreen synthesis ordering
 

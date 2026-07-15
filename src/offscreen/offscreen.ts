@@ -1,13 +1,13 @@
 import { MODEL_FILES, VOICE_STYLES } from '../shared/constants';
 import { PlaybackProgress, PlaybackStatus } from '../shared/types';
 import { synthesizeSpeechUnitSamples } from './audio';
-import { preparePlaybackUnits, VietnameseTextNormalizer } from './playback_preparation';
+import { isVietnameseLanguage, preparePlaybackUnits, VietnameseTextNormalizer } from './playback_preparation';
 import { createSingleFlight } from './single_flight';
+import type { SpeechUnit } from './speech_unit';
 import { loadTextToSpeech, loadVoiceStyle, Style, TextToSpeech, writeWavFile } from './supertonic_helper';
 import { IndexedSynthesisCoordinator, type SynthesisKey } from './synthesis_coordinator';
 import { loadVietnameseNormalizerAssets } from './vietnamese/assets';
 import { normalizeVietnameseText } from './vietnamese/normalizer';
-import { SpeechUnit } from './vietnamese/types';
 
 // Global Engine State
 let ttsEngine: TextToSpeech | null = null;
@@ -146,22 +146,19 @@ async function synthesizeUnit(unit: SpeechUnit, lang: string, style: Style, spee
 		audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
 	}
 
-	const wav =
-		lang === 'vi'
-			? await synthesizeSpeechUnitSamples(
-					unit,
-					lang,
-					speed,
-					ttsEngine.sampleRate,
-					async (text, requestedLang, steps, requestedSpeed, silenceDuration) => {
-						const result = await ttsEngine?.call(text, requestedLang, style, steps, requestedSpeed, silenceDuration);
-						if (!result) {
-							throw new Error('TTS Engine is not initialized');
-						}
-						return result.wav;
-					},
-				)
-			: (await ttsEngine.call(unit.text, lang, style, 8, speed, 0.3)).wav;
+	const wav = await synthesizeSpeechUnitSamples(
+		unit,
+		lang,
+		speed,
+		ttsEngine.sampleRate,
+		async (text, requestedLang, steps, requestedSpeed, silenceDuration) => {
+			const result = await ttsEngine?.call(text, requestedLang, style, steps, requestedSpeed, silenceDuration);
+			if (!result) {
+				throw new Error('TTS Engine is not initialized');
+			}
+			return result.wav;
+		},
+	);
 
 	const sampleRate = ttsEngine.sampleRate;
 
@@ -356,7 +353,7 @@ chrome.runtime.onMessage.addListener(
 					(async () => {
 						try {
 							let normalizer: VietnameseTextNormalizer | null = null;
-							if (article.lang === 'vi') {
+							if (isVietnameseLanguage(article.lang)) {
 								const assets = await loadVietnameseNormalizerAssets();
 								normalizer = {
 									normalize: (text) => normalizeVietnameseText(text, { assets, now: () => performance.now() }),

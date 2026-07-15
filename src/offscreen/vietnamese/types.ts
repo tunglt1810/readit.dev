@@ -53,11 +53,6 @@ export interface DetectedSpan {
 	endToken: number;
 }
 
-export interface SpeechUnit {
-	text: string;
-	pauseAfterMs: number;
-}
-
 export interface NormalizationDiagnostics {
 	tokenCount: number;
 	crfMs: number;

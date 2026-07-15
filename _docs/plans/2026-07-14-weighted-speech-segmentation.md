@@ -329,7 +329,7 @@ Run:
 node --experimental-strip-types --test tests/unit/segmentation.test.ts
 ```
 
-Expected: 5 tests pass, 0 fail.
+Expected: 7 tests pass, 0 fail.
 
 - [ ] **Step 5: Format and statically check the new planner files**
 
@@ -655,14 +655,17 @@ git diff --check
 git status --short
 ```
 
-Expected: `git diff --check` prints nothing. `git status --short` shows no segmentation implementation changes after the two task commits; unrelated pre-existing files remain untouched.
+Expected: `git diff --check` prints nothing. `git status --short` shows no uncommitted segmentation changes; unrelated pre-existing files
+remain untouched.
 
 - [ ] **Step 5: Record the checkpoint commit**
 
 Run:
 
 ```bash
-git log -2 --oneline
+git log -6 --oneline
 ```
 
-Expected: the two most recent implementation commits are `Use weighted Vietnamese speech units` and `Add weighted speech segmentation planner`.
+Expected at the Plan 1 checkpoint: the ordered history is `Protect decimals in speech segmentation`, `Use weighted Vietnamese speech units`,
+`Align TDD red-state instructions`, `Harden speech segmentation invariants`, `Add weighted speech segmentation planner`, then
+`Add speech segmentation implementation plans`.
