@@ -6,14 +6,14 @@
 	--bg-app: #09090b; /* Zinc 950 */
 	--bg-glass: rgba(18, 18, 24, 0.78);
 	--border-glass: rgba(255, 255, 255, 0.07);
-	--border-glass-focus: rgba(124, 58, 237, 0.4);
+	--border-glass-focus: rgba(0, 135, 113, 0.5);
 
 	--color-text-primary: #f4f4f5;
 	--color-text-secondary: #a1a1aa;
 
-	/* Brand Gradients */
-	--gradient-brand: linear-gradient(135deg, #8b5cf6, #6366f1); /* Violet-Indigo */
-	--gradient-brand-hover: linear-gradient(135deg, #a78bfa, #818cf8);
+	/* Brand Gradients – Teal to Blue (matches logo) */
+	--gradient-brand: linear-gradient(135deg, #008771, #0461A3);
+	--gradient-brand-hover: linear-gradient(135deg, #099FB5, #1A6AC6);
 	/* Status Colors */
 	--color-success: #10b981;
 	--color-danger: #ef4444;
@@ -39,7 +39,7 @@
 body {
 	width: 360px;
 	min-height: 480px;
-	background: radial-gradient(circle at 88% 0%, rgba(99, 102, 241, 0.14), transparent 34%), var(--bg-app);
+	background: radial-gradient(circle at 88% 0%, rgba(0, 135, 113, 0.14), transparent 34%), var(--bg-app);
 	color: var(--color-text-primary);
 	overflow-x: hidden;
 	position: relative;
@@ -54,7 +54,7 @@ body::before {
 	width: 250px;
 	height: 250px;
 	border-radius: 50%;
-	background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, rgba(139, 92, 246, 0.05) 50%, transparent 100%);
+	background: radial-gradient(circle, rgba(0, 135, 113, 0.15) 0%, rgba(4, 97, 163, 0.05) 50%, transparent 100%);
 	filter: blur(40px);
 	z-index: 0;
 	pointer-events: none;
@@ -97,7 +97,7 @@ body::before {
 }
 
 .logo-text span {
-	color: #6366f1;
+	color: #099FB5;
 }
 
 /* Main Display & CTA Area */
@@ -271,7 +271,7 @@ body::before {
 
 .privacy-disclosure a,
 .privacy-link {
-	color: #a78bfa;
+	color: #099FB5;
 	text-underline-offset: 2px;
 }
 
@@ -312,7 +312,7 @@ body::before {
 }
 
 .btn:focus-visible {
-	outline: 2px solid #a78bfa;
+	outline: 2px solid #099FB5;
 	outline-offset: 3px;
 }
 
@@ -320,7 +320,7 @@ body::before {
 	background: var(--gradient-brand);
 	color: #fff;
 	box-shadow:
-		0 8px 20px rgba(99, 102, 241, 0.28),
+		0 8px 20px rgba(0, 135, 113, 0.28),
 		inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
@@ -328,7 +328,7 @@ body::before {
 	background: var(--gradient-brand-hover);
 	transform: translateY(-1px);
 	box-shadow:
-		0 10px 24px rgba(99, 102, 241, 0.38),
+		0 10px 24px rgba(0, 135, 113, 0.38),
 		inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 
@@ -420,7 +420,7 @@ body::before {
 
 .form-select:focus {
 	border-color: var(--border-glass-focus);
-	box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.15);
+	box-shadow: 0 0 0 2px rgba(0, 135, 113, 0.2);
 }
 
 .form-input {
@@ -448,7 +448,7 @@ body::before {
 .slider-value {
 	font-size: 12px;
 	font-weight: 600;
-	color: #8b5cf6;
+	color: #099FB5;
 }
 
 .form-slider {
@@ -467,9 +467,9 @@ body::before {
 	width: 17px;
 	height: 17px;
 	border-radius: 50%;
-	background: #8b5cf6;
+	background: #008771;
 	cursor: pointer;
-	box-shadow: 0 0 10px rgba(139, 92, 246, 0.5);
+	box-shadow: 0 0 10px rgba(0, 135, 113, 0.5);
 	transition: transform 0.1s ease;
 }
 
@@ -511,7 +511,7 @@ body::before {
 }
 
 .support-link:hover {
-	color: #c4b5fd;
+	color: #099FB5;
 	transform: translateY(-1px);
 }
 

@@ -210,7 +210,6 @@ export default function App() {
 			{/* Header */}
 			<header className="app-header">
 				<div className="logo-group">
-					<span className="logo-icon">🔊</span>
 					<h1 className="logo-text">
 						readit<span>.dev</span>
 					</h1>
@@ -328,7 +327,7 @@ export default function App() {
 						step="0.05"
 						value={speed}
 						style={{
-							background: `linear-gradient(90deg, #8b5cf6 0%, #8b5cf6 ${speedProgress}%, rgba(255, 255, 255, 0.1) ${speedProgress}%)`,
+							background: `linear-gradient(90deg, #008771 0%, #008771 ${speedProgress}%, rgba(255, 255, 255, 0.1) ${speedProgress}%)`,
 						}}
 						onChange={(e) => handleSpeedChange(parseFloat(e.target.value))}
 					/>
