@@ -80,6 +80,13 @@ A valid selection replaces the current single session through the same
 background/offscreen playback pipeline used by full-page reading. Selected text
 and generated audio remain in memory and are not persisted.
 
+On Chrome 127+, a default-on popup setting also enables a compact logo-only
+button beside supported top-document selections. Activating the button opens
+the action popup immediately and replaces the active session through the same
+single-session coordinator used by full-page and context-menu starts. The
+button is not shown in editable content or child frames, and disabling the
+setting removes only the affordance without stopping playback.
+
 ### 4.3 Controls, status, and settings
 
 The popup must provide:

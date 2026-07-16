@@ -8,6 +8,7 @@ import {
 	VOICE_STYLE_TRANSLATIONS,
 	VOICE_STYLES,
 } from '../shared/constants';
+import { isSelectionButtonEnabled } from '../shared/selection_button';
 import type { PlaybackSessionSnapshot, PlaybackStateResponse, PlaybackStatus } from '../shared/types';
 import { buildFeedbackUrl } from './feedback';
 
@@ -135,6 +136,7 @@ export default function App() {
 	// Settings States
 	const [activeVoice, setActiveVoice] = useState('M1');
 	const [speed, setSpeed] = useState(1.05);
+	const [selectionButtonEnabled, setSelectionButtonEnabled] = useState(true);
 	const speedProgress = ((speed - 0.7) / (1.8 - 0.7)) * 100;
 
 	// Model Loading States
@@ -153,7 +155,7 @@ export default function App() {
 	useEffect(() => {
 		// Get stored voice, speed and theme
 		chrome.storage.local.get(
-			[STORAGE_KEYS.ACTIVE_VOICE, STORAGE_KEYS.SPEED, STORAGE_KEYS.THEME],
+			[STORAGE_KEYS.ACTIVE_VOICE, STORAGE_KEYS.SPEED, STORAGE_KEYS.THEME, STORAGE_KEYS.SELECTION_BUTTON_ENABLED],
 			(result: { [key: string]: unknown }) => {
 				if (result[STORAGE_KEYS.ACTIVE_VOICE]) {
 					setActiveVoice(result[STORAGE_KEYS.ACTIVE_VOICE] as string);
@@ -164,6 +166,7 @@ export default function App() {
 				if (result[STORAGE_KEYS.THEME]) {
 					setActiveTheme(result[STORAGE_KEYS.THEME] as ThemeName);
 				}
+				setSelectionButtonEnabled(isSelectionButtonEnabled(result[STORAGE_KEYS.SELECTION_BUTTON_ENABLED]));
 			},
 		);
 
@@ -285,6 +288,11 @@ export default function App() {
 		setActiveTheme(newTheme);
 		setThemeMenuOpen(false);
 		chrome.storage.local.set({ [STORAGE_KEYS.THEME]: newTheme });
+	};
+
+	const handleSelectionButtonEnabledChange = (enabled: boolean) => {
+		setSelectionButtonEnabled(enabled);
+		void chrome.storage.local.set({ [STORAGE_KEYS.SELECTION_BUTTON_ENABLED]: enabled });
 	};
 
 	// Display text for active status
@@ -526,6 +534,16 @@ export default function App() {
 					/>
 				</section>
 			)}
+
+			<label className="selection-button-setting">
+				<span>{t('showSelectionButton')}</span>
+				<input
+					type="checkbox"
+					className="selection-button-toggle"
+					checked={selectionButtonEnabled}
+					onChange={(event) => handleSelectionButtonEnabledChange(event.target.checked)}
+				/>
+			</label>
 
 			{/* Footer */}
 			<footer className="app-footer">

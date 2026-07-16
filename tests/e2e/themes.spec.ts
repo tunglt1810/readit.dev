@@ -196,6 +196,30 @@ test('Winamp uses a mechanical LCD deck and disables meter animation under reduc
 	await expect(page.locator('.app-container[data-theme="winamp"] .status-display')).toHaveCSS('background-color', 'rgb(2, 3, 3)');
 });
 
+test('selection button setting defaults on, persists, and stays before the footer in every theme', async ({ page, openPopup }) => {
+	await installPopupRuntimeMock(page, { session: null, currentTabId: 7 });
+	await openPopup(page);
+
+	const toggle = page.getByRole('checkbox', { name: 'Hiện nút đọc cạnh văn bản đã chọn' });
+	await expect(toggle).toBeChecked();
+	await expect(page.locator('.selection-button-setting + .app-footer')).toHaveCount(1);
+
+	for (const label of ['🕹️ Classic (1998)', '💿 Vista Aero (2006)', '📱 Hiện đại']) {
+		await selectTheme(page, label);
+		await expect(toggle).toBeVisible();
+		await expect(page.locator('.selection-button-setting + .app-footer')).toHaveCount(1);
+	}
+
+	await toggle.uncheck();
+	expect(
+		await page.evaluate(
+			async () => (await chrome.storage.local.get('readit_selection_button_enabled')).readit_selection_button_enabled,
+		),
+	).toBe(false);
+	await page.reload();
+	await expect(page.getByRole('checkbox', { name: 'Hiện nút đọc cạnh văn bản đã chọn' })).not.toBeChecked();
+});
+
 test.describe('English popup locale', () => {
 	test.use({ browserLocale: 'en-US' });
 
@@ -216,6 +240,7 @@ test.describe('English popup locale', () => {
 		await expect(page.getByRole('link', { name: 'Buy me a coffee' })).toBeVisible();
 		await expect(page.getByRole('link', { name: 'Feedback' })).toBeVisible();
 		await expect(page.getByRole('link', { name: 'Privacy Policy' })).toBeVisible();
+		await expect(page.getByRole('checkbox', { name: 'Show read button for selected text' })).toBeChecked();
 
 		await page.evaluate(() => {
 			(window as any).mockReceiveMessage({

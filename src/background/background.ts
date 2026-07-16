@@ -1,9 +1,11 @@
 import { STORAGE_KEYS } from '../shared/constants';
 import type { Article, PlaybackProgress, PlaybackSessionSnapshot, PlaybackStatus } from '../shared/types';
+import { requestActionPopup } from './action_popup';
 import { requestArticleFromTab } from './article_request';
 import { syncPlaybackBadge } from './badge';
 import { applyPlaybackProgress, createPlaybackErrorSession, createPlaybackSession, ownsTab } from './playback_state';
 import { createSelectedTextArticle } from './selected_text';
+import { prepareSelectedTextRequest } from './selected_text_request';
 
 const DEFAULT_VOICE_STYLE_ID = 'M1';
 const DEFAULT_SPEED = 1.05;
@@ -457,7 +459,7 @@ function respondFromQueue<T>(operation: () => Promise<T>, sendResponse: (respons
 
 // Handle runtime messages
 chrome.runtime.onMessage.addListener(
-	(message: unknown, _sender: chrome.runtime.MessageSender, sendResponse: (response?: unknown) => void) => {
+	(message: unknown, sender: chrome.runtime.MessageSender, sendResponse: (response?: unknown) => void) => {
 		if (!message || typeof message !== 'object') {
 			return undefined;
 		}
@@ -471,6 +473,29 @@ chrome.runtime.onMessage.addListener(
 
 			case 'START_CURRENT_PAGE':
 				return respondFromQueue(startCurrentPage, sendResponse);
+
+			case 'START_SELECTED_TEXT': {
+				const request = prepareSelectedTextRequest(
+					{ selectionText: msg.selectionText, pageLanguage: msg.pageLanguage },
+					{
+						frameId: sender.frameId,
+						tabId: sender.tab?.id,
+						windowId: sender.tab?.windowId,
+						title: sender.tab?.title,
+						url: sender.url,
+					},
+				);
+				if (!request) {
+					sendResponse({ success: true });
+					return undefined;
+				}
+
+				void requestActionPopup(request.windowId, chrome.action);
+				return respondFromQueue(
+					() => startArticlePlayback(request.tabId, request.title, request.url, request.article),
+					sendResponse,
+				);
+			}
 
 			case 'PAUSE_READING':
 				return respondFromQueue(() => routeSessionCommand('PAUSE'), sendResponse);

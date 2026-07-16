@@ -1,6 +1,7 @@
 import { Article } from '../shared/types';
 import { extractArticleFromDocument } from './article_extractor';
 import { claimContentScriptInitialization } from './content_script_state';
+import { installSelectionButton } from './selection_button';
 
 function extractArticle(): Article | null {
 	return extractArticleFromDocument(document);
@@ -22,6 +23,7 @@ if (claimContentScriptInitialization(globalThis as unknown as Record<string, unk
 			return true; // Keep message channel open for async response
 		},
 	);
+	void installSelectionButton();
 
 	// Inject extension info tag for E2E testing
 	if (typeof document !== 'undefined' && !document.getElementById('readit-dev-ext-info')) {

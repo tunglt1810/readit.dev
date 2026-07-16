@@ -18,6 +18,13 @@ The Free release does not require `api.readit.dev`, Cloudflare Workers, D1,
 license secrets, analytics, or crash-reporting services. The `backend/` folder
 is future-Pro source and must not be included in the extension build or ZIP.
 
+`pnpm validate:manifest` asserts:
+
+- `minimum_chrome_version` is exactly `127`;
+- `assets/icon32.png` is exposed only to `http://*/*` and `https://*/*`;
+- the existing ONNX web-accessible resources remain exact; and
+- permissions and host permissions remain at the documented Free boundary.
+
 ## First Chrome Web Store release
 
 The first item must be initialized in the Chrome Web Store Developer Dashboard.

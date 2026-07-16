@@ -4,6 +4,17 @@ import { fileURLToPath } from 'node:url';
 
 const REQUIRED_PERMISSIONS = ['activeTab', 'contextMenus', 'offscreen', 'scripting', 'storage'];
 const REQUIRED_HOST_PERMISSIONS = ['https://huggingface.co/*'];
+const REQUIRED_MINIMUM_CHROME_VERSION = '127';
+const REQUIRED_WEB_ACCESSIBLE_RESOURCES = [
+	{
+		resources: ['ort-wasm-simd-threaded.asyncify.mjs', 'ort-wasm-simd-threaded.asyncify.wasm'],
+		matches: ['<all_urls>'],
+	},
+	{
+		resources: ['assets/icon32.png'],
+		matches: ['http://*/*', 'https://*/*'],
+	},
+];
 
 function compareExact(actual, expected, label) {
 	const actualValues = Array.isArray(actual) ? actual.map(String).sort() : [];
@@ -15,6 +26,24 @@ function compareExact(actual, expected, label) {
 	}
 }
 
+function canonicalizeResourceEntries(value) {
+	if (!Array.isArray(value)) {
+		return [];
+	}
+
+	return value
+		.map((entry) => ({
+			resources: Array.isArray(entry?.resources) ? entry.resources.map(String).sort() : [],
+			matches: Array.isArray(entry?.matches) ? entry.matches.map(String).sort() : [],
+		}))
+		.map((entry) => JSON.stringify(entry))
+		.sort();
+}
+
+function compareResourceEntries(actual, expected) {
+	compareExact(canonicalizeResourceEntries(actual), canonicalizeResourceEntries(expected), 'web_accessible_resources');
+}
+
 export function validateFreeManifest(manifest) {
 	if (!manifest || typeof manifest !== 'object') {
 		throw new Error('Manifest must be an object');
@@ -22,6 +51,10 @@ export function validateFreeManifest(manifest) {
 	if (manifest.manifest_version !== 3) {
 		throw new Error(`Expected manifest_version 3, got ${String(manifest.manifest_version)}`);
 	}
+	if (manifest.minimum_chrome_version !== REQUIRED_MINIMUM_CHROME_VERSION) {
+		throw new Error(`Expected minimum_chrome_version 127, got ${String(manifest.minimum_chrome_version)}`);
+	}
+	compareResourceEntries(manifest.web_accessible_resources, REQUIRED_WEB_ACCESSIBLE_RESOURCES);
 	compareExact(manifest.permissions, REQUIRED_PERMISSIONS, 'permissions');
 	compareExact(manifest.host_permissions, REQUIRED_HOST_PERMISSIONS, 'host_permissions');
 }
