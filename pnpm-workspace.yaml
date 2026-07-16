@@ -7,3 +7,6 @@ allowBuilds:
   protobufjs: true
   sharp: true
   workerd: true
+
+minimumReleaseAgeExclude:
+  - '@rsbuild/core@2.1.6'
