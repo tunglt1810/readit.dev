@@ -5,6 +5,7 @@
 
 	--bg-app: #09090b; /* Zinc 950 */
 	--bg-glass: rgba(18, 18, 24, 0.78);
+	--bg-theme-dropdown: #18181c;
 	--border-glass: rgba(255, 255, 255, 0.07);
 	--border-glass-focus: rgba(0, 135, 113, 0.5);
 
@@ -83,6 +84,7 @@ body::before {
 	display: flex;
 	align-items: center;
 	gap: 9px;
+	align-self: baseline;
 }
 
 .logo-icon {
@@ -563,11 +565,12 @@ body::before {
 	position: relative;
 	display: inline-block;
 	margin-left: auto;
-	order: 2;
+	order: 3;
 }
 .extension-version {
-	order: 3;
-	margin-left: var(--space-3);
+	order: 2;
+	margin-left: var(--space-2);
+	align-self: baseline;
 }
 .theme-selector-btn {
 	background: transparent;
@@ -585,15 +588,13 @@ body::before {
 	right: 0;
 	top: 100%;
 	margin-top: 8px;
-	background: var(--bg-glass);
+	background: var(--bg-theme-dropdown);
 	border: 1px solid var(--border-glass);
 	border-radius: 8px;
 	padding: 6px;
 	z-index: 100;
 	min-width: 140px;
 	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-	backdrop-filter: blur(12px);
-	-webkit-backdrop-filter: blur(12px);
 }
 .theme-dropdown.open {
 	display: flex;
@@ -624,6 +625,7 @@ body::before {
 [data-theme="winamp"] {
 	--bg-app: #28282b;
 	--bg-glass: #050505;
+	--bg-theme-dropdown: #050505;
 	--border-glass: #8e8e93;
 	--color-text-primary: #39ff14; /* Lime green LED */
 	--color-text-secondary: #008800;
@@ -776,6 +778,7 @@ body::before {
 [data-theme="wmp12"] {
 	--bg-app: radial-gradient(circle at 50% 50%, rgba(20, 50, 80, 0.45), rgba(5, 12, 24, 0.95));
 	--bg-glass: rgba(255, 255, 255, 0.08);
+	--bg-theme-dropdown: #0a1a2b;
 	--border-glass: rgba(255, 255, 255, 0.25);
 	--border-glass-focus: rgba(0, 229, 255, 0.6);
 	--color-text-primary: #ffffff;

@@ -30,7 +30,7 @@ test('normalizes Vietnamese BCP-47 variants once and plans explicit pauses', asy
 			},
 		});
 		assert.equal(calls, 1);
-		assert.deepEqual(units, [{ text: 'đại học mở cửa.', pauseAfterMs: 165 }]);
+		assert.deepEqual(units, [{ text: 'đại học mở cửa.', pauseAfterMs: 180 }]);
 	}
 });
 
@@ -44,7 +44,7 @@ test('uses weighted units for Latin text despite missing or inaccurate language 
 	};
 	for (const lang of ['en', 'na', 'zh', '']) {
 		assert.deepEqual(await preparePlaybackUnits('First sentence. Second sentence.', lang, normalizer), [
-			{ text: 'First sentence. Second sentence.', pauseAfterMs: 165 },
+			{ text: 'First sentence. Second sentence.', pauseAfterMs: 180 },
 		]);
 	}
 	assert.equal(calls, 0);
@@ -57,7 +57,7 @@ test('uses weighted units for accented Latin languages', async () => {
 		['es', 'Corazón español. Muy bien.'],
 		['pl', 'Zażółć gęślą jaźń. Dobrze.'],
 	] as const) {
-		assert.deepEqual(await preparePlaybackUnits(text, lang, null), [{ text, pauseAfterMs: 165 }]);
+		assert.deepEqual(await preparePlaybackUnits(text, lang, null), [{ text, pauseAfterMs: 180 }]);
 	}
 });
 
@@ -73,7 +73,7 @@ test('fails open to explicit units from the exact original Vietnamese text', asy
 			throw new Error('expected failure');
 		},
 	});
-	assert.deepEqual(units, [{ text: 'Một câu, vẫn đọc được.', pauseAfterMs: 165 }]);
+	assert.deepEqual(units, [{ text: 'Một câu, vẫn đọc được.', pauseAfterMs: 180 }]);
 });
 
 test('returns identical units for identical selected and article text', async () => {
@@ -92,5 +92,5 @@ test('does not return empty units when normalization yields whitespace', async (
 			return { text: ' \n\n ', diagnostics };
 		},
 	});
-	assert.deepEqual(units, [{ text: 'Vẫn phải đọc.', pauseAfterMs: 165 }]);
+	assert.deepEqual(units, [{ text: 'Vẫn phải đọc.', pauseAfterMs: 180 }]);
 });

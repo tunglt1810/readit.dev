@@ -29,6 +29,10 @@ test('shows privacy-safe support links and the exact extension version', async (
 	const header = page.locator('.app-header');
 	await expect(header.locator(':scope > .logo-group + .extension-version')).toHaveText('v1.0.0');
 	await expect(header).toHaveCSS('justify-content', 'space-between');
+	await expect(header.locator('.logo-group')).toHaveCSS('align-self', 'baseline');
+	await expect(header.locator('.extension-version')).toHaveCSS('align-self', 'baseline');
+	await expect(header.locator('.extension-version')).toHaveCSS('order', '2');
+	await expect(header.locator('.theme-selector-container')).toHaveCSS('order', '3');
 	await expect(page.locator('.app-footer .extension-version')).toHaveCount(0);
 	const href = (await feedback.getAttribute('href')) || '';
 	const feedbackBody = new URL(href).searchParams.get('body') || '';

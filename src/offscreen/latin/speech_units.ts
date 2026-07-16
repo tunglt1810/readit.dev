@@ -6,6 +6,7 @@ export const LATIN_PAUSE_MS = Object.freeze({
 	colonOrSemicolon: 90,
 	spacedDash: 105,
 	sentenceEnd: 165,
+	period: 180,
 	paragraphEnd: 260,
 });
 export const LATIN_PREFERRED_MIN_LENGTH = 140;
@@ -102,7 +103,11 @@ function scanBoundaries(text: string): BoundaryCandidate<LatinBoundaryKind>[] {
 			while (text[end] === '.') {
 				end++;
 			}
-			boundaries.push({ end, kind: 'sentence', pauseAfterMs: LATIN_PAUSE_MS.sentenceEnd });
+			boundaries.push({
+				end,
+				kind: 'sentence',
+				pauseAfterMs: character === '.' ? LATIN_PAUSE_MS.period : LATIN_PAUSE_MS.sentenceEnd,
+			});
 			index = end - 1;
 		}
 	}

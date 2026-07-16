@@ -259,8 +259,6 @@ export default function App() {
 				<span className="extension-version">v{manifestVersion}</span>
 				<div
 					className="theme-selector-container"
-					onMouseEnter={() => setThemeMenuOpen(true)}
-					onMouseLeave={() => setThemeMenuOpen(false)}
 					onBlur={(event) => {
 						if (!event.currentTarget.contains(event.relatedTarget)) {
 							setThemeMenuOpen(false);

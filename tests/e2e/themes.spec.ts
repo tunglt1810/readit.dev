@@ -23,10 +23,13 @@ test('theme selector supports keyboard interaction and persists the selected the
 	const winampOption = page.getByRole('button', { name: '🕹️ Classic (1998)' });
 
 	await expect(selector).toHaveAttribute('aria-expanded', 'false');
+	await selector.hover();
+	await expect(selector).toHaveAttribute('aria-expanded', 'false');
 	await selector.focus();
 	await page.keyboard.press('Enter');
 	await expect(selector).toHaveAttribute('aria-expanded', 'true');
 	await expect(winampOption).toBeVisible();
+	await expect(page.locator('.theme-dropdown')).toHaveCSS('background-color', 'rgb(24, 24, 28)');
 
 	await page.keyboard.press('Escape');
 	await expect(selector).toHaveAttribute('aria-expanded', 'false');
@@ -52,11 +55,11 @@ test('classic themes apply their backgrounds and WMP12 emphasizes Play/Pause', a
 	await openPopup(page);
 
 	const selector = page.getByRole('button', { name: 'Chọn giao diện' });
-	await selector.hover();
+	await selector.click();
 	await page.getByRole('button', { name: '🕹️ Classic (1998)' }).click();
 	await expect(page.locator('.app-container')).toHaveCSS('background-color', 'rgb(40, 40, 43)');
 
-	await selector.hover();
+	await selector.click();
 	await page.getByRole('button', { name: '💿 Vista Aero (2006)' }).click();
 	await expect(page.locator('.app-container')).toHaveCSS('background-image', /radial-gradient/);
 

@@ -42,6 +42,13 @@ test('keeps short clauses together and applies paragraph pause precedence', () =
 	]);
 });
 
+test('uses a slightly longer pause after a period without changing other sentence endings', () => {
+	assert.deepEqual(planLatinSpeechUnits('A sentence. A question? An exclamation! An ellipsis…'), [
+		{ text: 'A sentence. A question? An exclamation! An ellipsis…', pauseAfterMs: 165 },
+	]);
+	assert.deepEqual(planLatinSpeechUnits('A sentence.'), [{ text: 'A sentence.', pauseAfterMs: 180 }]);
+});
+
 test('selects a weighted boundary in the preferred range', () => {
 	const source = `${'word '.repeat(18).trim()}. ${'phrase '.repeat(14).trim()}, ${'long '.repeat(90).trim()}`;
 	const units = planLatinSpeechUnits(source);
@@ -89,5 +96,5 @@ test('returns no empty units', () => {
 });
 
 test('keeps consecutive short sentences in one synthesis unit', () => {
-	assert.deepEqual(planLatinSpeechUnits('Câu đầu… Câu sau.'), [{ text: 'Câu đầu… Câu sau.', pauseAfterMs: 165 }]);
+	assert.deepEqual(planLatinSpeechUnits('Câu đầu… Câu sau.'), [{ text: 'Câu đầu… Câu sau.', pauseAfterMs: 180 }]);
 });
