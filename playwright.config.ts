@@ -30,9 +30,6 @@ export default defineConfig({
 		trace: 'on-first-retry',
 		/* Video recording options if needed */
 		video: 'on-first-retry',
-		launchOptions: {
-			args: ['--start-minimized'],
-		},
 	},
 
 	/* Configure projects for major browsers */

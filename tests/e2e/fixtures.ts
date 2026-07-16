@@ -66,6 +66,7 @@ export const test = base.extend<{
 			headless: false,
 			locale: browserLocale,
 			args: [
+				'--start-minimized',
 				`--disable-extensions-except=${pathToExtension}`,
 				`--load-extension=${pathToExtension}`,
 				'--no-first-run',
