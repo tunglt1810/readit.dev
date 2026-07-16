@@ -26,6 +26,7 @@ test('THEME_TRANSLATIONS dịch ngôn ngữ vi và en hoạt động chính xác
 	assert.strictEqual(vi.stopReading, 'Dừng đọc bài');
 	assert.strictEqual(vi.playingStatus, 'Đang đọc đoạn');
 	assert.strictEqual(vi.readyStatus, 'Sẵn sàng đọc trang web');
+	assert.strictEqual(vi.nowPlaying, 'Đang phát');
 
 	assert.strictEqual(en.selectTheme, 'Select Theme');
 	assert.strictEqual(en.themeWinamp, '🕹️ Classic (1998)');
@@ -38,6 +39,7 @@ test('THEME_TRANSLATIONS dịch ngôn ngữ vi và en hoạt động chính xác
 	assert.strictEqual(en.stopReading, 'Stop reading');
 	assert.strictEqual(en.playingStatus, 'Reading paragraph');
 	assert.strictEqual(en.readyStatus, 'Ready to read page');
+	assert.strictEqual(en.nowPlaying, 'Now Playing');
 
 	assert.strictEqual(vi.loadingModel, 'Đang tải model');
 	assert.strictEqual(vi.modelLoadFailed, 'Không thể tải model');

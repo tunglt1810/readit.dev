@@ -13,6 +13,22 @@ import { buildFeedbackUrl } from './feedback';
 
 type CommandResponse = { success: boolean; error?: string };
 type PlaybackIconName = 'read' | 'stop' | 'pause' | 'resume';
+type ThemeName = 'default' | 'winamp' | 'wmp12';
+
+type ReadingSpeedControlProps = {
+	theme: ThemeName;
+	compact?: boolean;
+	speed: number;
+	speedProgress: number;
+	onSpeedChange: (value: number) => void;
+};
+
+type VoiceControlProps = {
+	className?: string;
+	voice: string;
+	disabled: boolean;
+	onVoiceChange: (value: string) => void;
+};
 
 const uiLang =
 	typeof chrome !== 'undefined' && chrome.i18n && chrome.i18n.getUILanguage
@@ -65,11 +81,54 @@ function PlaybackIcon({ name }: { name: PlaybackIconName }) {
 	}
 }
 
+function ReadingSpeedControl({ theme, compact = false, speed, speedProgress, onSpeedChange }: ReadingSpeedControlProps) {
+	const activeColor = theme === 'wmp12' ? '#1776b9' : theme === 'winamp' ? '#8fdf53' : '#008771';
+	const inactiveColor = theme === 'wmp12' ? '#3c454a' : theme === 'winamp' ? '#141414' : 'rgba(255, 255, 255, 0.1)';
+
+	return (
+		<div className={`form-group ${compact ? 'wmp-speed-control' : ''}`}>
+			<div className="slider-label-group">
+				<span className={compact ? 'wmp-speed-value' : 'form-label'}>{compact ? `${speed.toFixed(2)}x` : t('readingSpeed')}</span>
+				{!compact && <span className="slider-value">{speed.toFixed(2)}x</span>}
+			</div>
+			<input
+				type="range"
+				className="form-slider"
+				aria-label={t('readingSpeed')}
+				min="0.7"
+				max="1.8"
+				step="0.05"
+				value={speed}
+				style={{
+					background: `linear-gradient(90deg, ${activeColor} 0%, ${activeColor} ${speedProgress}%, ${inactiveColor} ${speedProgress}%)`,
+				}}
+				onChange={(event) => onSpeedChange(Number.parseFloat(event.target.value))}
+			/>
+		</div>
+	);
+}
+
+function VoiceControl({ className, voice, disabled, onVoiceChange }: VoiceControlProps) {
+	return (
+		<div className={className ? `form-group ${className}` : 'form-group'}>
+			<label className="form-label">{t('selectVoice')}</label>
+			<select className="form-select" value={voice} onChange={(event) => onVoiceChange(event.target.value)} disabled={disabled}>
+				{VOICE_STYLES.map((voiceStyle) => (
+					<option key={voiceStyle.id} value={voiceStyle.id}>
+						{voiceStyle.gender === 'male' ? '♂️' : '♀️'}{' '}
+						{VOICE_STYLE_TRANSLATIONS[uiLang][voiceStyle.id as keyof typeof VOICE_STYLE_TRANSLATIONS.en]}
+					</option>
+				))}
+			</select>
+		</div>
+	);
+}
+
 export default function App() {
 	// Playback state is owned by the background coordinator.
 	const [session, setSession] = useState<PlaybackSessionSnapshot | null>(null);
 	const [currentTabId, setCurrentTabId] = useState<number | undefined>();
-	const [activeTheme, setActiveTheme] = useState<'default' | 'winamp' | 'wmp12'>('default');
+	const [activeTheme, setActiveTheme] = useState<ThemeName>('default');
 	const [themeMenuOpen, setThemeMenuOpen] = useState(false);
 	const themeSelectorButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -103,7 +162,7 @@ export default function App() {
 					setSpeed(result[STORAGE_KEYS.SPEED] as number);
 				}
 				if (result[STORAGE_KEYS.THEME]) {
-					setActiveTheme(result[STORAGE_KEYS.THEME] as 'default' | 'winamp' | 'wmp12');
+					setActiveTheme(result[STORAGE_KEYS.THEME] as ThemeName);
 				}
 			},
 		);
@@ -190,6 +249,19 @@ export default function App() {
 		}
 	};
 
+	const handleThemedPrimaryPlayback = () => {
+		if (status === 'stopped' || status === 'error') {
+			setModelError('');
+			handleStartCurrentPage();
+		} else if (status === 'playing') {
+			chrome.runtime.sendMessage({ action: 'PAUSE_READING' });
+		} else if (status === 'paused') {
+			chrome.runtime.sendMessage({ action: 'RESUME_READING' });
+		}
+	};
+
+	const handleStopReading = () => chrome.runtime.sendMessage({ action: 'STOP_READING' });
+
 	const handleReadCurrentPage = () => {
 		setModelError('');
 		handleStartCurrentPage();
@@ -209,7 +281,7 @@ export default function App() {
 	};
 
 	// Handler: Change Theme
-	const handleThemeChange = (newTheme: 'default' | 'winamp' | 'wmp12') => {
+	const handleThemeChange = (newTheme: ThemeName) => {
 		setActiveTheme(newTheme);
 		setThemeMenuOpen(false);
 		chrome.storage.local.set({ [STORAGE_KEYS.THEME]: newTheme });
@@ -237,18 +309,13 @@ export default function App() {
 		}
 	};
 
+	const usesThemedTransport = activeTheme !== 'default';
+	const isThemedPrimaryDisabled = status === 'loading';
+	const canStopThemedPlayback = status === 'loading' || status === 'playing' || status === 'paused';
+	const themedPrimaryLabel = status === 'playing' ? t('pauseState') : status === 'paused' ? t('resumeStatus') : t('readPage');
+
 	return (
 		<div className="app-container" data-theme={activeTheme}>
-			{activeTheme === 'winamp' && (
-				<div className="winamp-titlebar">
-					<span className="winamp-title-text">{t('winampTitle')}</span>
-					<div className="winamp-window-controls">
-						<span className="winamp-win-btn">_</span>
-						<span className="winamp-win-btn">⬜</span>
-						<span className="winamp-win-btn">X</span>
-					</div>
-				</div>
-			)}
 			{/* Header */}
 			<header className="app-header">
 				<div className="logo-group">
@@ -306,6 +373,14 @@ export default function App() {
 
 			{/* Main Playback Area */}
 			<main className="app-main">
+				{activeTheme === 'wmp12' && (
+					<>
+						<div className="wmp-artwork" aria-hidden="true">
+							♪
+						</div>
+						<span className="wmp-now-playing-label">{t('nowPlaying')}</span>
+					</>
+				)}
 				{/* Error Message */}
 				{errorMsg && <div className="alert alert-danger">{errorMsg}</div>}
 
@@ -314,7 +389,7 @@ export default function App() {
 					<div className="status-dot-pulse" data-status={status} />
 					<span className="status-text">{getStatusText()}</span>
 					{activeTheme === 'winamp' && status === 'playing' && (
-						<div className="winamp-visualizer">
+						<div className="winamp-visualizer" aria-hidden="true">
 							<div className="v-bar" />
 							<div className="v-bar" />
 							<div className="v-bar" />
@@ -344,6 +419,15 @@ export default function App() {
 					</div>
 				)}
 
+				{activeTheme === 'wmp12' && (
+					<VoiceControl
+						className="wmp-voice-control"
+						voice={activeVoice}
+						disabled={status === 'playing' || status === 'loading'}
+						onVoiceChange={handleVoiceChange}
+					/>
+				)}
+
 				{/* Playback Progress Bar */}
 				{status !== 'stopped' && status !== 'error' && (
 					<div className="progress-bar-container">
@@ -353,27 +437,59 @@ export default function App() {
 
 				{/* CTA Controls */}
 				<div className={`controls-group ${activeTheme === 'wmp12' ? 'wmp-dock' : ''}`}>
-					<div className="playback-controls">
-						{(status === 'playing' || status === 'paused') && (
+					{usesThemedTransport ? (
+						<div className={`theme-transport ${activeTheme === 'wmp12' ? 'wmp-transport' : 'winamp-deck'}`}>
 							<button
-								className="btn btn-secondary btn-icon-only btn-playpause"
-								onClick={handlePlayPause}
-								aria-label={status === 'playing' ? t('pauseState') : t('resumeStatus')}
-								title={status === 'playing' ? t('pauseState') : t('resumeStatus')}
+								className="btn btn-icon-only theme-primary"
+								disabled={isThemedPrimaryDisabled}
+								onClick={handleThemedPrimaryPlayback}
+								aria-label={themedPrimaryLabel}
+								title={themedPrimaryLabel}
 							>
 								<PlaybackIcon name={status === 'playing' ? 'pause' : 'resume'} />
 							</button>
-						)}
-
-						<button
-							className={`btn btn-primary btn-icon-only btn-read ${status !== 'stopped' && status !== 'error' ? 'active' : ''}`}
-							onClick={handleReadPage}
-							aria-label={status === 'stopped' || status === 'error' ? t('readPage') : t('stopReading')}
-							title={status === 'stopped' || status === 'error' ? t('readPage') : t('stopReading')}
-						>
-							<PlaybackIcon name={status === 'stopped' || status === 'error' ? 'read' : 'stop'} />
-						</button>
-					</div>
+							{canStopThemedPlayback && (
+								<button
+									className="btn btn-icon-only theme-stop"
+									onClick={handleStopReading}
+									aria-label={t('stopReading')}
+									title={t('stopReading')}
+								>
+									<PlaybackIcon name="stop" />
+								</button>
+							)}
+							{activeTheme === 'wmp12' && (
+								<ReadingSpeedControl
+									theme={activeTheme}
+									compact
+									speed={speed}
+									speedProgress={speedProgress}
+									onSpeedChange={handleSpeedChange}
+								/>
+							)}
+						</div>
+					) : (
+						<div className="playback-controls">
+							{(status === 'playing' || status === 'paused') && (
+								<button
+									className="btn btn-secondary btn-icon-only btn-playpause"
+									onClick={handlePlayPause}
+									aria-label={status === 'playing' ? t('pauseState') : t('resumeStatus')}
+									title={status === 'playing' ? t('pauseState') : t('resumeStatus')}
+								>
+									<PlaybackIcon name={status === 'playing' ? 'pause' : 'resume'} />
+								</button>
+							)}
+							<button
+								className={`btn btn-primary btn-icon-only btn-read ${status !== 'stopped' && status !== 'error' ? 'active' : ''}`}
+								onClick={handleReadPage}
+								aria-label={status === 'stopped' || status === 'error' ? t('readPage') : t('stopReading')}
+								title={status === 'stopped' || status === 'error' ? t('readPage') : t('stopReading')}
+							>
+								<PlaybackIcon name={status === 'stopped' || status === 'error' ? 'read' : 'stop'} />
+							</button>
+						</div>
+					)}
 
 					{session && isSessionOnAnotherTab && (
 						<button className="btn btn-secondary btn-read-current-page" onClick={handleReadCurrentPage}>
@@ -394,45 +510,22 @@ export default function App() {
 			</main>
 
 			{/* Settings Section */}
-			<section className="app-section">
-				<h2 className="section-title">{t('voiceConfig')}</h2>
-
-				<div className="form-group">
-					<label className="form-label">{t('selectVoice')}</label>
-					<select
-						className="form-select"
-						value={activeVoice}
-						onChange={(e) => handleVoiceChange(e.target.value)}
+			{activeTheme !== 'wmp12' && (
+				<section className="app-section">
+					<h2 className="section-title">{t('voiceConfig')}</h2>
+					<VoiceControl
+						voice={activeVoice}
 						disabled={status === 'playing' || status === 'loading'}
-					>
-						{VOICE_STYLES.map((voice) => (
-							<option key={voice.id} value={voice.id}>
-								{voice.gender === 'male' ? '♂️' : '♀️'}{' '}
-								{VOICE_STYLE_TRANSLATIONS[uiLang][voice.id as keyof typeof VOICE_STYLE_TRANSLATIONS.en]}
-							</option>
-						))}
-					</select>
-				</div>
-
-				<div className="form-group">
-					<div className="slider-label-group">
-						<span className="form-label">{t('readingSpeed')}</span>
-						<span className="slider-value">{speed.toFixed(2)}x</span>
-					</div>
-					<input
-						type="range"
-						className="form-slider"
-						min="0.7"
-						max="1.8"
-						step="0.05"
-						value={speed}
-						style={{
-							background: `linear-gradient(90deg, #008771 0%, #008771 ${speedProgress}%, rgba(255, 255, 255, 0.1) ${speedProgress}%)`,
-						}}
-						onChange={(e) => handleSpeedChange(parseFloat(e.target.value))}
+						onVoiceChange={handleVoiceChange}
 					/>
-				</div>
-			</section>
+					<ReadingSpeedControl
+						theme={activeTheme}
+						speed={speed}
+						speedProgress={speedProgress}
+						onSpeedChange={handleSpeedChange}
+					/>
+				</section>
+			)}
 
 			{/* Footer */}
 			<footer className="app-footer">
