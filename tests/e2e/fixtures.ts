@@ -55,7 +55,7 @@ export const test = base.extend<{
 	browserLocale: string;
 }>({
 	browserLocale: ['vi-VN', { option: true }],
-	context: async ({ browserLocale }, use) => {
+	context: async ({ browserLocale, headless }, use) => {
 		const pathToExtension = path.join(process.cwd(), 'dist');
 		const tempDir = path.join(process.cwd(), '.tmp');
 		fs.mkdirSync(tempDir, { recursive: true });
@@ -63,10 +63,10 @@ export const test = base.extend<{
 
 		// Khởi chạy Chromium với extension được unpack từ thư mục dist/
 		const context = await chromium.launchPersistentContext(userDataDir, {
-			headless: false,
+			channel: 'chromium',
+			headless,
 			locale: browserLocale,
 			args: [
-				'--start-minimized',
 				`--disable-extensions-except=${pathToExtension}`,
 				`--load-extension=${pathToExtension}`,
 				'--no-first-run',
