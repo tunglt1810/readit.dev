@@ -77,8 +77,10 @@ export async function installSelectionButton(): Promise<void> {
 		return;
 	}
 
-	const stored = await chrome.storage.local.get(STORAGE_KEYS.SELECTION_BUTTON_ENABLED);
-	let enabled = isSelectionButtonEnabled(stored[STORAGE_KEYS.SELECTION_BUTTON_ENABLED]);
+	// Default to enabled and attach listeners synchronously below so pointer/keyboard
+	// selection is never missed while the storage read (async IPC to the service worker)
+	// is still in flight.
+	let enabled = true;
 	let host: HTMLDivElement | null = null;
 	let snapshot: SelectionSnapshot | null = null;
 	let previousFocus: HTMLElement | null = null;
@@ -248,4 +250,10 @@ export async function installSelectionButton(): Promise<void> {
 			removeButton();
 		}
 	});
+
+	const stored = await chrome.storage.local.get(STORAGE_KEYS.SELECTION_BUTTON_ENABLED);
+	enabled = isSelectionButtonEnabled(stored[STORAGE_KEYS.SELECTION_BUTTON_ENABLED]);
+	if (!enabled) {
+		removeButton();
+	}
 }
