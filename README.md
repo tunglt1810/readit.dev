@@ -7,6 +7,24 @@
 - **Frontend (Chrome Extension)**: React 19, TypeScript 6, Rsbuild, and Supertonic TTS running through ONNX Runtime Web.
 - **Backend**: Hono, Cloudflare Workers, and Cloudflare D1 (SQLite at the edge).
 
+## How it works
+
+```mermaid
+flowchart TD
+	A["Popup<br/>Read current page"] --> B["Background service worker<br/>Coordinate playback session"]
+	C["Selection button or context menu<br/>Read selected text"] --> B
+	B -->|Current page only| D["Content script<br/>Extract Article"]
+	D -->|Article| B
+	B --> E["Offscreen document<br/>Normalize and segment Article"]
+	E --> F["Supertonic TTS<br/>Local synthesis and audio playback"]
+	F --> G["Audio output"]
+	F -. Playback progress .-> B
+	B -.-> H["Session state<br/>Popup and toolbar badge"]
+	F -. Word timing .-> I["Content script<br/>Highlight spoken word"]
+```
+
+The Free extension keeps Article processing and speech synthesis on the user's device.
+
 ## Quick start
 
 This monorepo uses `pnpm v11`.
