@@ -1,6 +1,9 @@
 import { defineConfig } from '@rsbuild/core';
 import { pluginReact } from '@rsbuild/plugin-react';
 
+import fs from 'node:fs';
+import path from 'node:path';
+
 const vietnameseBenchmark = process.env.READIT_VI_BENCHMARK === '1';
 
 export default defineConfig({
@@ -12,6 +15,24 @@ export default defineConfig({
 				target: '19',
 			},
 		}),
+		{
+			name: 'manifest-version-sync',
+			setup(api) {
+				const syncVersion = () => {
+					const distPath = api.context.distPath;
+					const manifestPath = path.join(distPath, 'manifest.json');
+					if (fs.existsSync(manifestPath)) {
+						const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+						const packageJsonPath = path.resolve(api.context.rootPath, 'package.json');
+						const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+						manifest.version = packageJson.version;
+						fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, '\t'));
+					}
+				};
+				api.onAfterBuild(syncVersion);
+				api.onDevCompileDone(syncVersion);
+			},
+		},
 	],
 	performance: {
 		buildCache: {

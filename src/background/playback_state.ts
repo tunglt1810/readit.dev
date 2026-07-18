@@ -1,8 +1,9 @@
-import type { PlaybackProgress, PlaybackSessionSnapshot } from '../shared/types';
+import type { PlaybackContentScope, PlaybackProgress, PlaybackSessionSnapshot } from '../shared/types';
 
 export function createPlaybackSession(input: {
 	sessionId: string;
 	tabId: number;
+	contentScope?: PlaybackContentScope;
 	title: string;
 	url: string;
 	lang: string;
@@ -13,6 +14,7 @@ export function createPlaybackSession(input: {
 	return {
 		sessionId: input.sessionId,
 		tabId: input.tabId,
+		contentScope: input.contentScope ?? 'article',
 		title: input.title,
 		url: input.url,
 		lang: input.lang,
@@ -39,6 +41,7 @@ export function createPlaybackErrorSession(input: {
 	return {
 		sessionId: input.sessionId,
 		tabId: input.tabId,
+		contentScope: 'article',
 		title: input.title,
 		url: input.url,
 		lang: 'und',
@@ -70,6 +73,7 @@ export function applyPlaybackProgress(
 	return {
 		sessionId: session.sessionId,
 		tabId: session.tabId,
+		contentScope: session.contentScope,
 		title: session.title,
 		url: session.url,
 		lang: session.lang,

@@ -1,11 +1,6 @@
 import { expandAbbreviation } from './abbreviations.ts';
 import { reconstructDetectedSpans } from './crf.ts';
-import {
-	expandTypedSpan,
-	isCurrencyShapedToken,
-	isUppercaseRomanNumeral,
-	recognizeDeterministicType,
-} from './expanders.ts';
+import { expandTypedSpan, isCurrencyShapedToken, isUppercaseRomanNumeral, recognizeDeterministicType } from './expanders.ts';
 import { restoreSource, tokenizeVietnameseText } from './tokenizer.ts';
 import type {
 	CheckpointLabel,
@@ -15,6 +10,7 @@ import type {
 	SourceToken,
 	TokenizedParagraph,
 	VietnameseNormalizerAssets,
+	WordMapEntry,
 } from './types.ts';
 
 function originalSpan(tokens: readonly SourceToken[], span: DetectedSpan): string {
@@ -33,16 +29,11 @@ function hasExplicitRomanContext(tokens: readonly SourceToken[], index: number):
 	const preceding = precedingToken?.kind === 'word' ? precedingToken.text.toLocaleLowerCase('vi') : undefined;
 	const previousPhrase = preceding && previous ? `${preceding} ${previous}` : undefined;
 	const isOutlineStart = index === 0 || (previousToken?.kind === 'punctuation' && /^[.!?…]$/u.test(previousToken.text));
-	const isOutlineMarker =
-		/^[.)]$/u.test(tokens[index + 1]?.text ?? '') && isOutlineStart;
+	const isOutlineMarker = /^[.)]$/u.test(tokens[index + 1]?.text ?? '') && isOutlineStart;
 	return Boolean((previous && ROMAN_CONTEXT_WORDS.has(previous)) || previousPhrase === 'thế kỷ' || isOutlineMarker);
 }
 
-function deterministicOverlay(
-	tokens: readonly SourceToken[],
-	labels: CheckpointLabel[],
-	vietnameseSyllables: ReadonlySet<string>,
-): void {
+function deterministicOverlay(tokens: readonly SourceToken[], labels: CheckpointLabel[], vietnameseSyllables: ReadonlySet<string>): void {
 	for (let index = 0; index < tokens.length; index++) {
 		const source = tokens[index].text;
 		const isIpAddress = /^(?:\d{1,3}\.){3}\d{1,3}$/u.test(source);
@@ -129,16 +120,34 @@ async function expandParagraph(
 	paragraph: TokenizedParagraph,
 	labels: readonly CheckpointLabel[],
 	dependencies: NormalizationDependencies,
-): Promise<{ text: string; usedAbbreviationScorer: boolean }> {
+): Promise<{ text: string; wordMap: WordMapEntry[]; usedAbbreviationScorer: boolean }> {
 	const spans = reconstructDetectedSpans(labels);
 	const spansByStart = new Map(spans.map((span) => [span.startToken, span]));
 	const output: string[] = [];
+	const wordMap: WordMapEntry[] = [];
+	let cursor = 0;
 	let usedAbbreviationScorer = false;
 	for (let index = 0; index < paragraph.tokens.length; ) {
 		const token = paragraph.tokens[index];
 		const span = spansByStart.get(index);
 		if (!span) {
 			output.push(token.leading, token.original);
+			cursor += token.leading.length;
+			// Punctuation tokens stay in the spoken output (they affect TTS pacing/pauses), but must
+			// never become a highlight target: a punctuation mark is virtually always adjacent to a
+			// letter (e.g. "úp,"), so its own position can never satisfy a word-boundary-aware DOM
+			// search — forcing the highlighter to skip ahead to some unrelated, distant occurrence of
+			// the same mark and silently eat every real word in between.
+			if (token.kind !== 'punctuation') {
+				wordMap.push({
+					originalText: token.original,
+					originalStart: token.start,
+					originalEnd: token.end,
+					spokenStart: cursor,
+					spokenEnd: cursor + token.original.length,
+				});
+			}
+			cursor += token.original.length;
 			index++;
 			continue;
 		}
@@ -177,11 +186,23 @@ async function expandParagraph(
 		} catch {
 			expansion = null;
 		}
-		output.push(token.leading, expansion?.trim() || source);
+		const piece = expansion?.trim() || source;
+		output.push(token.leading, piece);
+		cursor += token.leading.length;
+		const spanStartToken = paragraph.tokens[span.startToken];
+		const spanEndToken = paragraph.tokens[span.endToken - 1];
+		wordMap.push({
+			originalText: source,
+			originalStart: spanStartToken.start,
+			originalEnd: spanEndToken.end,
+			spokenStart: cursor,
+			spokenEnd: cursor + piece.length,
+		});
+		cursor += piece.length;
 		index = span.endToken;
 	}
 	output.push(paragraph.trailing);
-	return { text: output.join(''), usedAbbreviationScorer };
+	return { text: output.join(''), wordMap, usedAbbreviationScorer };
 }
 
 export async function normalizeVietnameseText(text: string, dependencies: NormalizationDependencies): Promise<NormalizationResult> {
@@ -194,6 +215,8 @@ export async function normalizeVietnameseText(text: string, dependencies: Normal
 	let usedAbbreviationScorer = false;
 	let fallbackReason: string | undefined;
 	const paragraphs: string[] = [];
+	const wordMap: WordMapEntry[] = [];
+	let spokenOffset = 0;
 
 	for (const paragraph of document.paragraphs) {
 		tokenCount += paragraph.tokens.length;
@@ -206,12 +229,23 @@ export async function normalizeVietnameseText(text: string, dependencies: Normal
 		const expanded = await expandParagraph(paragraph, detected.labels, dependencies);
 		expansionMs += dependencies.now() - expansionStartedAt;
 		usedAbbreviationScorer ||= expanded.usedAbbreviationScorer;
+		for (const entry of expanded.wordMap) {
+			wordMap.push({
+				originalText: entry.originalText,
+				originalStart: entry.originalStart,
+				originalEnd: entry.originalEnd,
+				spokenStart: spokenOffset + entry.spokenStart,
+				spokenEnd: spokenOffset + entry.spokenEnd,
+			});
+		}
+		spokenOffset += expanded.text.length + 2;
 		paragraphs.push(expanded.text);
 	}
 
 	let normalized = paragraphs.join('\n\n');
 	if (normalized.length === 0 && text.length > 0) {
 		normalized = text;
+		wordMap.length = 0;
 	}
 	const diagnostics = {
 		tokenCount,
@@ -225,5 +259,5 @@ export async function normalizeVietnameseText(text: string, dependencies: Normal
 	if (document.paragraphs.length === 0 && document.normalizedSource.length > 0) {
 		normalized = restoreSource([], document.normalizedSource);
 	}
-	return { text: normalized, diagnostics };
+	return { text: normalized, wordMap, diagnostics };
 }

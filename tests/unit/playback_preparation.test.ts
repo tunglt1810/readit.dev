@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { isVietnameseLanguage, preparePlaybackUnits } from '../../src/offscreen/playback_preparation.ts';
+import type { SpeechUnit } from '../../src/offscreen/speech_unit.ts';
 
 const diagnostics = {
 	tokenCount: 3,
@@ -10,6 +11,10 @@ const diagnostics = {
 	usedCrf: true,
 	usedAbbreviationScorer: false,
 };
+
+function withoutWordMap(units: SpeechUnit[]) {
+	return units.map(({ wordMap: _wordMap, ...rest }) => rest);
+}
 
 test('recognizes Vietnamese primary language subtags', () => {
 	for (const lang of ['vi', 'VI', 'vi-VN', 'VI-latn-VN', 'vi_VN']) {
@@ -26,11 +31,11 @@ test('normalizes Vietnamese BCP-47 variants once and plans explicit pauses', asy
 		const units = await preparePlaybackUnits('ĐH mở cửa.', lang, {
 			async normalize() {
 				calls++;
-				return { text: 'đại học mở cửa.', diagnostics };
+				return { text: 'đại học mở cửa.', wordMap: [], diagnostics };
 			},
 		});
 		assert.equal(calls, 1);
-		assert.deepEqual(units, [{ text: 'đại học mở cửa.', pauseAfterMs: 180 }]);
+		assert.deepEqual(withoutWordMap(units), [{ text: 'đại học mở cửa.', pauseAfterMs: 180 }]);
 	}
 });
 
@@ -43,7 +48,7 @@ test('uses weighted units for Latin text despite missing or inaccurate language 
 		},
 	};
 	for (const lang of ['en', 'na', 'zh', '']) {
-		assert.deepEqual(await preparePlaybackUnits('First sentence. Second sentence.', lang, normalizer), [
+		assert.deepEqual(withoutWordMap(await preparePlaybackUnits('First sentence. Second sentence.', lang, normalizer)), [
 			{ text: 'First sentence. Second sentence.', pauseAfterMs: 180 },
 		]);
 	}
@@ -57,13 +62,13 @@ test('uses weighted units for accented Latin languages', async () => {
 		['es', 'Corazón español. Muy bien.'],
 		['pl', 'Zażółć gęślą jaźń. Dobrze.'],
 	] as const) {
-		assert.deepEqual(await preparePlaybackUnits(text, lang, null), [{ text, pauseAfterMs: 180 }]);
+		assert.deepEqual(withoutWordMap(await preparePlaybackUnits(text, lang, null)), [{ text, pauseAfterMs: 180 }]);
 	}
 });
 
 test('keeps non-Latin and exact-half text on engine-managed compatibility pauses', async () => {
 	for (const text of ['中文内容。', 'Русский текст.', 'نص عربي.', 'ab中文', '123 😀 !!!']) {
-		assert.deepEqual(await preparePlaybackUnits(text, 'unknown', null), [{ text, pauseAfterMs: null }]);
+		assert.deepEqual(withoutWordMap(await preparePlaybackUnits(text, 'unknown', null)), [{ text, pauseAfterMs: null }]);
 	}
 });
 
@@ -73,24 +78,54 @@ test('fails open to explicit units from the exact original Vietnamese text', asy
 			throw new Error('expected failure');
 		},
 	});
-	assert.deepEqual(units, [{ text: 'Một câu, vẫn đọc được.', pauseAfterMs: 180 }]);
+	assert.deepEqual(withoutWordMap(units), [{ text: 'Một câu, vẫn đọc được.', pauseAfterMs: 180 }]);
 });
 
 test('returns identical units for identical selected and article text', async () => {
 	const text = 'Nội dung giống nhau.';
 	const normalizer = {
 		async normalize() {
-			return { text, diagnostics };
+			return { text, wordMap: [], diagnostics };
 		},
 	};
-	assert.deepEqual(await preparePlaybackUnits(text, 'vi', normalizer), await preparePlaybackUnits(text, 'vi', normalizer));
+	assert.deepEqual(
+		withoutWordMap(await preparePlaybackUnits(text, 'vi', normalizer)),
+		withoutWordMap(await preparePlaybackUnits(text, 'vi', normalizer)),
+	);
 });
 
 test('does not return empty units when normalization yields whitespace', async () => {
 	const units = await preparePlaybackUnits('Vẫn phải đọc.', 'vi', {
 		async normalize() {
-			return { text: ' \n\n ', diagnostics };
+			return { text: ' \n\n ', wordMap: [], diagnostics };
 		},
 	});
-	assert.deepEqual(units, [{ text: 'Vẫn phải đọc.', pauseAfterMs: 180 }]);
+	assert.deepEqual(withoutWordMap(units), [{ text: 'Vẫn phải đọc.', pauseAfterMs: 180 }]);
+});
+
+test('attaches a word map for both normalized Vietnamese text and plain Latin text', async () => {
+	const spokenDate = 'mười một tháng bảy năm hai nghìn không trăm hai mươi sáu';
+	const text = `Có ${spokenDate}.`;
+	const viUnits = await preparePlaybackUnits('Có 11/07/2026.', 'vi', {
+		async normalize() {
+			return {
+				text,
+				wordMap: [
+					{ originalText: 'Có', originalStart: 0, originalEnd: 2, spokenStart: 0, spokenEnd: 2 },
+					{ originalText: '11/07/2026', originalStart: 3, originalEnd: 13, spokenStart: 3, spokenEnd: 3 + spokenDate.length },
+				],
+				diagnostics,
+			};
+		},
+	});
+	assert.deepEqual(
+		viUnits[0].wordMap?.map(({ text: word }) => word),
+		['Có', '11/07/2026'],
+	);
+
+	const latinUnits = await preparePlaybackUnits('First sentence.', 'en', null);
+	assert.deepEqual(
+		latinUnits[0].wordMap?.map(({ text: word }) => word),
+		['First', 'sentence.'],
+	);
 });

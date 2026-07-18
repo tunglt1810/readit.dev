@@ -63,8 +63,17 @@ export interface NormalizationDiagnostics {
 	fallbackReason?: string;
 }
 
+export interface WordMapEntry {
+	originalText: string;
+	originalStart: number;
+	originalEnd: number;
+	spokenStart: number;
+	spokenEnd: number;
+}
+
 export interface NormalizationResult {
 	text: string;
+	wordMap: readonly WordMapEntry[];
 	diagnostics: NormalizationDiagnostics;
 }
 

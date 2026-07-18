@@ -1,4 +1,14 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { expect, installPopupRuntimeMock, test } from './fixtures';
+
+// package.json's version is the source of truth (see rsbuild.config.ts's manifest-version-sync
+// plugin, which copies it into dist/manifest.json at build time) — read it dynamically instead of
+// hardcoding a version string that goes stale on every version bump.
+const packageJsonPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../package.json');
+const expectedVersion = `v${(JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8')) as { version: string }).version}`;
 
 test.use({ browserLocale: 'en-US' });
 
@@ -27,7 +37,7 @@ test('shows privacy-safe support links and the exact extension version', async (
 	await expect(feedback).toHaveAttribute('target', '_blank');
 	await expect(page.getByRole('link', { name: 'Privacy Policy', exact: true })).toHaveAttribute('target', '_blank');
 	const header = page.locator('.app-header');
-	await expect(header.locator(':scope > .logo-group + .extension-version')).toHaveText('v1.0.0');
+	await expect(header.locator(':scope > .logo-group + .extension-version')).toHaveText(expectedVersion);
 	await expect(header).toHaveCSS('justify-content', 'space-between');
 	await expect(header.locator('.logo-group')).toHaveCSS('align-self', 'baseline');
 	await expect(header.locator('.extension-version')).toHaveCSS('align-self', 'baseline');
@@ -36,6 +46,6 @@ test('shows privacy-safe support links and the exact extension version', async (
 	await expect(page.locator('.app-footer .extension-version')).toHaveCount(0);
 	const href = (await feedback.getAttribute('href')) || '';
 	const feedbackBody = new URL(href).searchParams.get('body') || '';
-	expect(feedbackBody).toContain('Extension version: v1.0.0');
+	expect(feedbackBody).toContain(`Extension version: ${expectedVersion}`);
 	expect(feedbackBody).not.toContain('private.example.test');
 });

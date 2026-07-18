@@ -151,6 +151,48 @@ test.describe('Kịch bản 2: Trích xuất nội dung (Reader Mode)', () => {
 		expect(result.article?.content).not.toContain('Bài liên quan không thuộc nội dung chính');
 	});
 
+	test('Chèn khoảng trắng giữa text của span liền kề và text tiếp theo khi không có khoảng trắng thật trong DOM', async ({
+		context,
+		extensionId,
+	}) => {
+		// Tái hiện đúng cấu trúc DOM thật của vnexpress.net: badge địa danh (<span>) nằm ngay đầu
+		// đoạn văn, không có text node khoảng trắng nào phân cách nó với phần text tiếp theo — dấu
+		// "-" người dùng nhìn thấy chỉ là hiệu ứng CSS (border/background), không phải ký tự thật.
+		// element.textContent (và cả innerText) ghép hai đoạn này dính liền thành "GiangThấy", khiến
+		// TTS phát âm sai và làm hỏng việc tìm-từ để highlight (không có "GiangThấy" nào tồn tại
+		// trong DOM để khớp).
+		await context.route('https://example.com/adjacent-span', async (route) => {
+			await route.fulfill({
+				contentType: 'text/html; charset=utf-8',
+				body: `
+					<html lang="vi">
+						<head><title>Nỗ lực cứu du khách lật canô ở Phú Quốc</title></head>
+						<body>
+							<main>
+								<article>
+									<h1 id="main-title">Nỗ lực cứu du khách lật canô ở Phú Quốc</h1>
+									<p id="content"><span class="location-stamp">An Giang</span>Thấy nhiều du khách Ấn Độ bám trên thân canô lật úp, số khác trôi trên biển Phú Quốc, anh Hà Văn Lộc cố lái tàu tiếp cận giữa sóng lớn.</p>
+								</article>
+							</main>
+						</body>
+					</html>
+				`,
+			});
+		});
+
+		const page = await context.newPage();
+		await page.goto('https://example.com/adjacent-span');
+		const extPage = await context.newPage();
+		await extPage.goto(`chrome-extension://${extensionId}/src/popup/popup.html`);
+		await page.bringToFront();
+
+		const result = (await requestArticle(extPage)) as { success: boolean; article?: { content: string } };
+
+		expect(result.success).toBe(true);
+		expect(result.article?.content).toContain('An Giang Thấy nhiều du khách');
+		expect(result.article?.content).not.toContain('GiangThấy');
+	});
+
 	test('Từ chối trang chỉ chứa navigation thay vì đọc raw body', async ({ context, extensionId }) => {
 		await context.route('https://example.com/navigation-only', async (route) => {
 			await route.fulfill({

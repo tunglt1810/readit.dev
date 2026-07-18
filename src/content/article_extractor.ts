@@ -41,6 +41,31 @@ function isNoiseElement(element: Element): boolean {
 	return NOISE_IDENTITY_PATTERN.test(getElementIdentity(element));
 }
 
+/**
+ * Non-mutating equivalent of the ancestor-based noise checks in `cleanContentTree`
+ * (STRUCTURAL_NOISE_SELECTOR + isNoiseElement). Known limitation: does not replicate
+ * `trimAtArticleEnd`'s "everything after an article-end marker" rule, since that is a
+ * document-order exclusion rather than an ancestor check — content after such a marker
+ * on a live page will not be treated as noise here.
+ *
+ * The ancestor walk stops at `boundaryRoot` (defaults to `document.body`) instead of going
+ * all the way to `<html>`. Without a boundary, a real page's own OUTER layout wrapper can
+ * false-positive match `NOISE_IDENTITY_PATTERN` for reasons that have nothing to do with the
+ * article itself (e.g. a site naming its main-content grid column "sidebar-1"), which would
+ * incorrectly exclude the entire article. `cleanContentTree` never has this problem because it
+ * only ever inspects descendants of an already-chosen root, never that root's own ancestors.
+ */
+export function isWithinNoiseRegion(node: Node, boundaryRoot: Node = document.body): boolean {
+	let element: Element | null = node instanceof Element ? node : node.parentElement;
+	while (element && element !== boundaryRoot) {
+		if (element.matches(STRUCTURAL_NOISE_SELECTOR) || isNoiseElement(element)) {
+			return true;
+		}
+		element = element.parentElement;
+	}
+	return false;
+}
+
 function trimAtArticleEnd(root: Element): void {
 	const endMarker = Array.from(root.querySelectorAll('[id], [class]')).find((element) =>
 		ARTICLE_END_PATTERN.test(getElementIdentity(element)),
@@ -79,12 +104,37 @@ function normaliseText(text: string): string {
 	return text.replace(/\s+/g, ' ').trim();
 }
 
+// element.textContent concatenates every descendant text node with zero separator, even across
+// element boundaries that have no real whitespace text node between them in the source HTML (e.g.
+// a "<span>An Giang</span>Thấy nhiều..." location-stamp badge that relies purely on CSS
+// background/border for visual separation from the sentence that follows it). That silently fuses
+// two real words into one unpronounceable, unmatchable token ("GiangThấy") — breaking both TTS
+// pronunciation and word-highlight DOM lookup. Walking text nodes and inserting a boundary space
+// wherever one doesn't already exist keeps normal prose (which already has real whitespace at
+// every element boundary) unchanged while fixing this fusion.
+function extractBlockText(element: Element): string {
+	const walker = (element.ownerDocument ?? document).createTreeWalker(element, NodeFilter.SHOW_TEXT);
+	let result = '';
+	let node = walker.nextNode();
+	while (node) {
+		const text = node.textContent ?? '';
+		if (text) {
+			if (result && !/\s$/.test(result) && !/^\s/.test(text)) {
+				result += ' ';
+			}
+			result += text;
+		}
+		node = walker.nextNode();
+	}
+	return result;
+}
+
 function getTextBlocks(root: Element): string[] {
 	const seen = new Set<string>();
 	const blocks: string[] = [];
 
 	for (const element of Array.from(root.querySelectorAll(BLOCK_SELECTOR))) {
-		const text = normaliseText(element.textContent || '');
+		const text = normaliseText(extractBlockText(element));
 		if (text && !seen.has(text)) {
 			seen.add(text);
 			blocks.push(text);
@@ -135,7 +185,7 @@ function articleFromRoot(root: Element, sourceDocument: Document, fallbackTitle?
 	};
 }
 
-function findSemanticRoot(documentClone: Document): Element | null {
+export function findSemanticRoot(documentClone: Document): Element | null {
 	const candidates = [
 		...Array.from(documentClone.querySelectorAll('[itemprop="articleBody"]')).map((root) => ({ root, priority: 0 })),
 		...Array.from(documentClone.querySelectorAll('article')).map((root) => ({ root, priority: 1 })),

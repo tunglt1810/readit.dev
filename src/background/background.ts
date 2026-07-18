@@ -1,5 +1,5 @@
 import { STORAGE_KEYS } from '../shared/constants';
-import type { Article, PlaybackProgress, PlaybackSessionSnapshot, PlaybackStatus } from '../shared/types';
+import type { Article, PlaybackContentScope, PlaybackProgress, PlaybackSessionSnapshot, PlaybackStatus } from '../shared/types';
 import { requestActionPopup } from './action_popup';
 import { requestArticleFromTab } from './article_request';
 import { syncPlaybackBadge } from './badge';
@@ -52,6 +52,7 @@ function isPlaybackSessionSnapshot(value: unknown): value is PlaybackSessionSnap
 	return (
 		typeof session.sessionId === 'string' &&
 		isFiniteNumber(session.tabId) &&
+		(session.contentScope === undefined || session.contentScope === 'article' || session.contentScope === 'selection') &&
 		typeof session.title === 'string' &&
 		typeof session.url === 'string' &&
 		typeof session.lang === 'string' &&
@@ -141,6 +142,12 @@ async function clearSession(): Promise<PlaybackSessionSnapshot | null> {
 	activeSession = null;
 
 	if (session) {
+		try {
+			await chrome.tabs.sendMessage(session.tabId, { action: 'WORD_HIGHLIGHT_CLEAR', sessionId: session.sessionId });
+		} catch (_error) {
+			// The content script may not be listening (e.g. the tab navigated away); ignore.
+		}
+
 		const stoppedSession: PlaybackSessionSnapshot = {
 			...session,
 			status: 'stopped',
@@ -276,7 +283,13 @@ function isRestrictedUrl(url: string): boolean {
 	);
 }
 
-async function startArticlePlayback(tabId: number, fallbackTitle: string, fallbackUrl: string, article: Article): Promise<CommandResponse> {
+async function startArticlePlayback(
+	tabId: number,
+	fallbackTitle: string,
+	fallbackUrl: string,
+	article: Article,
+	contentScope: PlaybackContentScope = 'article',
+): Promise<CommandResponse> {
 	await ensureHydrated();
 	await stopActiveSession('session-replaced');
 
@@ -288,6 +301,7 @@ async function startArticlePlayback(tabId: number, fallbackTitle: string, fallba
 	const session = createPlaybackSession({
 		sessionId: crypto.randomUUID(),
 		tabId,
+		contentScope,
 		title: article.title || fallbackTitle || fallbackUrl,
 		url: article.url || fallbackUrl,
 		lang: article.lang,
@@ -300,6 +314,17 @@ async function startArticlePlayback(tabId: number, fallbackTitle: string, fallba
 	await publishSession(session);
 
 	try {
+		if (contentScope === 'selection') {
+			try {
+				await chrome.tabs.sendMessage(tabId, {
+					action: 'WORD_HIGHLIGHT_SET_SELECTION_SCOPE',
+					sessionId: session.sessionId,
+					selectionText: article.content,
+				});
+			} catch (_error) {
+				// Selected-text audio still plays when the page cannot bind a safe DOM range.
+			}
+		}
 		await setupOffscreen();
 		observeOffscreenPlay(session.sessionId, {
 			action: 'PLAY',
@@ -449,6 +474,40 @@ async function applyProgressMessage(message: Record<string, unknown>): Promise<v
 	await publishSession(updatedSession);
 }
 
+async function relayWordHighlightUpdate(message: Record<string, unknown>): Promise<void> {
+	await ensureHydrated();
+	if (
+		!activeSession ||
+		typeof message.sessionId !== 'string' ||
+		message.sessionId !== activeSession.sessionId ||
+		typeof message.word !== 'string'
+	) {
+		return;
+	}
+	try {
+		await chrome.tabs.sendMessage(activeSession.tabId, {
+			action: 'WORD_HIGHLIGHT_UPDATE',
+			sessionId: activeSession.sessionId,
+			word: message.word,
+			contentScope: activeSession.contentScope ?? 'article',
+		});
+	} catch (_error) {
+		// The content script may not be listening (e.g. the tab navigated away); ignore.
+	}
+}
+
+async function relayWordHighlightClear(message: Record<string, unknown>): Promise<void> {
+	await ensureHydrated();
+	if (!activeSession || typeof message.sessionId !== 'string' || message.sessionId !== activeSession.sessionId) {
+		return;
+	}
+	try {
+		await chrome.tabs.sendMessage(activeSession.tabId, { action: 'WORD_HIGHLIGHT_CLEAR', sessionId: activeSession.sessionId });
+	} catch (_error) {
+		// The content script may not be listening; ignore.
+	}
+}
+
 function respondFromQueue<T>(operation: () => Promise<T>, sendResponse: (response?: unknown) => void): true {
 	void enqueue(operation).then(
 		(response) => sendResponse(response),
@@ -492,7 +551,7 @@ chrome.runtime.onMessage.addListener(
 
 				void requestActionPopup(request.windowId, chrome.action);
 				return respondFromQueue(
-					() => startArticlePlayback(request.tabId, request.title, request.url, request.article),
+					() => startArticlePlayback(request.tabId, request.title, request.url, request.article, 'selection'),
 					sendResponse,
 				);
 			}
@@ -511,6 +570,14 @@ chrome.runtime.onMessage.addListener(
 
 			case 'PLAYBACK_PROGRESS_UPDATE':
 				void enqueue(() => applyProgressMessage(msg));
+				break;
+
+			case 'WORD_HIGHLIGHT_UPDATE':
+				void enqueue(() => relayWordHighlightUpdate(msg));
+				break;
+
+			case 'WORD_HIGHLIGHT_CLEAR':
+				void enqueue(() => relayWordHighlightClear(msg));
 				break;
 
 			default:
@@ -562,6 +629,6 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 		if (!article) {
 			return { success: true };
 		}
-		return startArticlePlayback(tab.id as number, tab.title || url, url, article);
+		return startArticlePlayback(tab.id as number, tab.title || url, url, article, 'selection');
 	});
 });

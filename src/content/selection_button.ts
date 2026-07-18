@@ -6,6 +6,7 @@ import {
 	SELECTION_BUTTON_SIZE,
 	type StartSelectedTextMessage,
 } from '../shared/selection_button';
+import { capturePendingSelectionRange } from './reading_anchor';
 import { computeSelectionButtonPosition } from './selection_button_position';
 
 type SelectionSource = 'pointer' | 'keyboard';
@@ -159,6 +160,10 @@ export async function installSelectionButton(): Promise<void> {
 			}
 			activated = true;
 			button.disabled = true;
+			const activeSelection = window.getSelection();
+			if (activeSelection && activeSelection.rangeCount > 0) {
+				capturePendingSelectionRange(activeSelection.getRangeAt(0).cloneRange());
+			}
 			const message: StartSelectedTextMessage = {
 				action: 'START_SELECTED_TEXT',
 				selectionText: snapshot.text,

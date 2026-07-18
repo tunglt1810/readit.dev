@@ -26,6 +26,23 @@ test('creates an Article from trimmed selected text and tab metadata', () => {
 	);
 });
 
+test('collapses internal whitespace (including NBSP) into single spaces', () => {
+	assert.deepEqual(
+		createSelectedTextArticle({
+			selectionText: 'Một câu \t\n có khoảng   trắng lạ',
+			title: 'Bài viết',
+			url: 'https://example.com/article',
+			pageLanguage: 'vi',
+		}),
+		{
+			title: 'Bài viết',
+			content: 'Một câu có khoảng trắng lạ',
+			url: 'https://example.com/article',
+			lang: 'vi',
+		},
+	);
+});
+
 test('uses the URL as title fallback and rejects whitespace-only text', () => {
 	assert.deepEqual(
 		createSelectedTextArticle({

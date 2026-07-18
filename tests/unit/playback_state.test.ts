@@ -17,6 +17,7 @@ test('creates a loading session with default progress', () => {
 	assert.deepEqual(createPlaybackSession(input), {
 		sessionId: 'session-1',
 		tabId: 42,
+		contentScope: 'article',
 		title: 'An article',
 		url: 'https://example.com/article',
 		lang: 'en',
@@ -45,6 +46,7 @@ test('creates a transient extraction error session from tab metadata only', () =
 		{
 			sessionId: 'session-2',
 			tabId: 42,
+			contentScope: 'article',
 			title: 'Unreadable page',
 			url: 'https://example.com/unreadable',
 			lang: 'und',
@@ -79,6 +81,20 @@ test('applies progress while preserving session metadata', () => {
 		error: undefined,
 		updatedAt: 2000,
 	});
+});
+
+test('creates and preserves a selected-text content scope', () => {
+	const session = createPlaybackSession({ ...input, contentScope: 'selection' });
+	assert.equal(session.contentScope, 'selection');
+
+	const updated = applyPlaybackProgress(
+		session,
+		session.sessionId,
+		{ status: 'playing', currentParagraphIndex: 1, totalParagraphs: 2, progressPercentage: 50 },
+		2000,
+	);
+
+	assert.equal(updated?.contentScope, 'selection');
 });
 
 test('rejects progress for another session', () => {

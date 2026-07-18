@@ -21,7 +21,7 @@ export function createSelectedTextArticle(input: SelectedTextInput): Article | n
 		return null;
 	}
 
-	const content = input.selectionText.trim();
+	const content = input.selectionText.replace(/\s+/g, ' ').trim();
 	if (!content) {
 		return null;
 	}

@@ -197,3 +197,51 @@ test('protects opaque identifiers and keeps an explicit version label determinis
 	const labels = detectVietnameseLabels(paragraph.tokens, dependencies.assets).labels;
 	assert.equal(labels[paragraph.tokens.findIndex(({ text }) => text === 'v1.2.3')], 'B-NVER');
 });
+
+test('builds a word map that groups an expanded date span back to its original token', async () => {
+	const dependencies = createTestNormalizationDependencies();
+	const result = await normalizeVietnameseText('Có 11/07/2026.', dependencies);
+	assert.equal(result.text, 'Có ngày mười một tháng bảy năm hai nghìn không trăm hai mươi sáu.');
+	const dateEntry = result.wordMap.find((entry) => entry.originalText === '11/07/2026');
+	assert.ok(dateEntry, 'expected a word map entry for the original date token');
+	assert.equal(
+		result.text.slice(dateEntry.spokenStart, dateEntry.spokenEnd),
+		'ngày mười một tháng bảy năm hai nghìn không trăm hai mươi sáu',
+	);
+	const plainEntry = result.wordMap.find((entry) => entry.originalText === 'Có');
+	assert.ok(plainEntry, 'expected a word map entry for the plain leading word');
+	assert.equal(result.text.slice(plainEntry.spokenStart, plainEntry.spokenEnd), 'Có');
+});
+
+test('excludes punctuation tokens from the word map, keeping them in the spoken text only', async () => {
+	// Punctuation tokens (",", ".") are always adjacent to a letter on at least one side (e.g.
+	// "úp,"), so a comma's own natural position can never satisfy a word-boundary-aware DOM search.
+	// If a comma is ever sent as a highlight target, the search is forced to skip ahead to some
+	// unrelated, distant comma that happens to be boundary-satisfying (e.g. one preceded by a
+	// closing quote) — silently eating every real word in between. Punctuation must never become a
+	// wordMap/highlight target in the first place.
+	const dependencies = createTestNormalizationDependencies();
+	const result = await normalizeVietnameseText('Có, khác.', dependencies);
+	assert.equal(result.text, 'Có, khác.');
+	assert.equal(
+		result.wordMap.find((entry) => entry.originalText === ','),
+		undefined,
+		'expected no word map entry for the comma punctuation token',
+	);
+	assert.equal(
+		result.wordMap.find((entry) => entry.originalText === '.'),
+		undefined,
+		'expected no word map entry for the period punctuation token',
+	);
+	const plainEntry = result.wordMap.find((entry) => entry.originalText === 'khác');
+	assert.ok(plainEntry, 'expected a word map entry for the plain word after the comma');
+	assert.equal(result.text.slice(plainEntry.spokenStart, plainEntry.spokenEnd), 'khác');
+});
+
+test('accounts for the paragraph separator when computing word map offsets across paragraphs', async () => {
+	const dependencies = createTestNormalizationDependencies();
+	const result = await normalizeVietnameseText('Mở đầu.\n\nĐH kết thúc.', dependencies);
+	const abbrevEntry = result.wordMap.find((entry) => entry.originalText === 'ĐH');
+	assert.ok(abbrevEntry, 'expected a word map entry for the abbreviation in the second paragraph');
+	assert.equal(result.text.slice(abbrevEntry.spokenStart, abbrevEntry.spokenEnd), 'đại học');
+});

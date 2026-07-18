@@ -8,6 +8,7 @@ import { loadTextToSpeech, loadVoiceStyle, Style, TextToSpeech, writeWavFile } f
 import { IndexedSynthesisCoordinator, type SynthesisKey } from './synthesis_coordinator';
 import { loadVietnameseNormalizerAssets } from './vietnamese/assets';
 import { normalizeVietnameseText } from './vietnamese/normalizer';
+import { computeWordTimings, findWordAtTime, type WordTimingWindow } from './word_timing';
 
 // Global Engine State
 let ttsEngine: TextToSpeech | null = null;
@@ -226,11 +227,44 @@ function stopCurrentSource() {
 	}
 }
 
+let wordHighlightTimer: ReturnType<typeof setInterval> | null = null;
+let lastHighlightedWord: string | null = null;
+
+function clearWordHighlightTracking() {
+	if (wordHighlightTimer !== null) {
+		clearInterval(wordHighlightTimer);
+		wordHighlightTimer = null;
+	}
+	if (lastHighlightedWord !== null) {
+		lastHighlightedWord = null;
+		chrome.runtime.sendMessage({ action: 'WORD_HIGHLIGHT_CLEAR', sessionId: currentExtensionSessionId });
+	}
+}
+
+function startWordHighlightTracking(windows: WordTimingWindow[], unitStartTime: number) {
+	clearWordHighlightTracking();
+	if (windows.length === 0 || !audioCtx) {
+		return;
+	}
+	wordHighlightTimer = setInterval(() => {
+		if (!audioCtx) {
+			return;
+		}
+		const elapsed = audioCtx.currentTime - unitStartTime;
+		const word = findWordAtTime(windows, elapsed);
+		if (word !== null && word !== lastHighlightedWord) {
+			lastHighlightedWord = word;
+			chrome.runtime.sendMessage({ action: 'WORD_HIGHLIGHT_UPDATE', sessionId: currentExtensionSessionId, word });
+		}
+	}, 50);
+}
+
 /**
  * Stop active audio and clear state
  */
 function stopAudio() {
 	stopCurrentSource();
+	clearWordHighlightTracking();
 	isPaused = false;
 	synthesisCoordinator.clear();
 	reportProgress('stopped');
@@ -274,7 +308,12 @@ function playAudioBuffer(buffer: AudioBuffer, lang: string, style: Style, sessio
 		}
 	};
 
+	const unit = speechUnits[unitIndex];
+	const spokenDurationSec = Math.max(buffer.duration - (unit?.pauseAfterMs ?? 0) / 1000, 0);
+	const windows = computeWordTimings(unit?.wordMap ?? [], spokenDurationSec);
+	const unitStartTime = audioCtx.currentTime;
 	source.start(0);
+	startWordHighlightTracking(windows, unitStartTime);
 }
 
 async function playNextUnit(lang: string, style: Style, session: number) {
@@ -314,6 +353,7 @@ async function playNextUnit(lang: string, style: Style, session: number) {
 			return;
 		}
 		if (isCurrentSynthesisKey(key)) {
+			clearWordHighlightTracking();
 			reportProgress('error', { error: (error as Error).message });
 		}
 	}

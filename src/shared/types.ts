@@ -13,6 +13,7 @@ export interface VoiceStyle {
 }
 
 export type PlaybackStatus = 'stopped' | 'loading' | 'playing' | 'paused' | 'error';
+export type PlaybackContentScope = 'article' | 'selection';
 
 export interface PlaybackProgress {
 	status: PlaybackStatus;
@@ -27,6 +28,7 @@ export interface PlaybackProgress {
 export interface PlaybackSessionSnapshot {
 	sessionId: string;
 	tabId: number;
+	contentScope?: PlaybackContentScope;
 	title: string;
 	url: string;
 	lang: string;

@@ -10,6 +10,7 @@ import {
 } from '../shared/constants';
 import { isSelectionButtonEnabled } from '../shared/selection_button';
 import type { PlaybackSessionSnapshot, PlaybackStateResponse, PlaybackStatus } from '../shared/types';
+import { isWordHighlightEnabled } from '../shared/word_highlight';
 import { buildFeedbackUrl } from './feedback';
 
 type CommandResponse = { success: boolean; error?: string };
@@ -137,6 +138,7 @@ export default function App() {
 	const [activeVoice, setActiveVoice] = useState('M1');
 	const [speed, setSpeed] = useState(1.05);
 	const [selectionButtonEnabled, setSelectionButtonEnabled] = useState(true);
+	const [wordHighlightEnabled, setWordHighlightEnabled] = useState(true);
 	const speedProgress = ((speed - 0.7) / (1.8 - 0.7)) * 100;
 
 	// Model Loading States
@@ -155,7 +157,13 @@ export default function App() {
 	useEffect(() => {
 		// Get stored voice, speed and theme
 		chrome.storage.local.get(
-			[STORAGE_KEYS.ACTIVE_VOICE, STORAGE_KEYS.SPEED, STORAGE_KEYS.THEME, STORAGE_KEYS.SELECTION_BUTTON_ENABLED],
+			[
+				STORAGE_KEYS.ACTIVE_VOICE,
+				STORAGE_KEYS.SPEED,
+				STORAGE_KEYS.THEME,
+				STORAGE_KEYS.SELECTION_BUTTON_ENABLED,
+				STORAGE_KEYS.WORD_HIGHLIGHT_ENABLED,
+			],
 			(result: { [key: string]: unknown }) => {
 				if (result[STORAGE_KEYS.ACTIVE_VOICE]) {
 					setActiveVoice(result[STORAGE_KEYS.ACTIVE_VOICE] as string);
@@ -167,6 +175,7 @@ export default function App() {
 					setActiveTheme(result[STORAGE_KEYS.THEME] as ThemeName);
 				}
 				setSelectionButtonEnabled(isSelectionButtonEnabled(result[STORAGE_KEYS.SELECTION_BUTTON_ENABLED]));
+				setWordHighlightEnabled(isWordHighlightEnabled(result[STORAGE_KEYS.WORD_HIGHLIGHT_ENABLED]));
 			},
 		);
 
@@ -293,6 +302,11 @@ export default function App() {
 	const handleSelectionButtonEnabledChange = (enabled: boolean) => {
 		setSelectionButtonEnabled(enabled);
 		void chrome.storage.local.set({ [STORAGE_KEYS.SELECTION_BUTTON_ENABLED]: enabled });
+	};
+
+	const handleWordHighlightEnabledChange = (enabled: boolean) => {
+		setWordHighlightEnabled(enabled);
+		void chrome.storage.local.set({ [STORAGE_KEYS.WORD_HIGHLIGHT_ENABLED]: enabled });
 	};
 
 	// Display text for active status
@@ -542,6 +556,16 @@ export default function App() {
 					className="selection-button-toggle"
 					checked={selectionButtonEnabled}
 					onChange={(event) => handleSelectionButtonEnabledChange(event.target.checked)}
+				/>
+			</label>
+
+			<label className="selection-button-setting">
+				<span>{t('showWordHighlight')}</span>
+				<input
+					type="checkbox"
+					className="selection-button-toggle"
+					checked={wordHighlightEnabled}
+					onChange={(event) => handleWordHighlightEnabledChange(event.target.checked)}
 				/>
 			</label>
 

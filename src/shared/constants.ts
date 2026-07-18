@@ -31,6 +31,7 @@ export const STORAGE_KEYS = {
 	PLAYBACK_SESSION: 'readit_playback_session',
 	THEME: 'readit_active_theme',
 	SELECTION_BUTTON_ENABLED: 'readit_selection_button_enabled',
+	WORD_HIGHLIGHT_ENABLED: 'readit_word_highlight_enabled',
 };
 
 export const PRIVACY_POLICY_URL = 'https://tunglt1810.github.io/readit.dev/privacy-policy/';
@@ -72,6 +73,7 @@ export const THEME_TRANSLATIONS = {
 		privacyPolicy: 'Chính sách quyền riêng tư',
 		showSelectionButton: 'Hiện nút đọc cạnh văn bản đã chọn',
 		readSelectedText: 'Đọc văn bản đã chọn',
+		showWordHighlight: 'Tô sáng từ đang đọc trên trang',
 	},
 	en: {
 		selectTheme: 'Select Theme',
@@ -107,6 +109,7 @@ export const THEME_TRANSLATIONS = {
 		privacyPolicy: 'Privacy Policy',
 		showSelectionButton: 'Show read button for selected text',
 		readSelectedText: 'Read selected text',
+		showWordHighlight: 'Highlight the word being read on the page',
 	},
 } as const;
 

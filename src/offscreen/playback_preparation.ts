@@ -2,6 +2,7 @@ import { isPredominantlyLatinText, planLatinSpeechUnits } from './latin/speech_u
 import type { SpeechUnit } from './speech_unit.ts';
 import { chunkText } from './supertonic_helper.ts';
 import type { NormalizationResult } from './vietnamese/types.ts';
+import { attachNormalizedWordMap, attachPlainWordMap } from './word_map.ts';
 
 export interface VietnameseTextNormalizer {
 	normalize(text: string): Promise<NormalizationResult>;
@@ -33,16 +34,19 @@ function vietnameseFallback(text: string): SpeechUnit[] {
 
 export async function preparePlaybackUnits(text: string, lang: string, normalizer: VietnameseTextNormalizer | null): Promise<SpeechUnit[]> {
 	if (!isVietnameseLanguage(lang)) {
-		return isPredominantlyLatinText(text) ? plannedUnits(text, null) : compatibilityUnits(text, null);
+		const units = isPredominantlyLatinText(text) ? plannedUnits(text, null) : compatibilityUnits(text, null);
+		return attachPlainWordMap(units);
 	}
 	if (!normalizer) {
-		return vietnameseFallback(text);
+		return attachPlainWordMap(vietnameseFallback(text));
 	}
 	try {
 		const result = await normalizer.normalize(text);
 		const units = planLatinSpeechUnits(result.text).filter(({ text: unit }) => unit.trim().length > 0);
-		return units.length > 0 ? units : vietnameseFallback(text);
+		return units.length > 0
+			? attachNormalizedWordMap(units, result.text, result.wordMap)
+			: attachPlainWordMap(vietnameseFallback(text));
 	} catch {
-		return vietnameseFallback(text);
+		return attachPlainWordMap(vietnameseFallback(text));
 	}
 }
