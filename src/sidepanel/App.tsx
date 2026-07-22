@@ -50,8 +50,13 @@ export default function App() {
 	const [theme, setTheme] = useState<ThemeName>('default');
 	const [pageInfo, setPageInfo] = useState<PageInfoResponse>(EMPTY_PAGE_INFO);
 	const readerRef = useRef<HTMLDivElement>(null);
+	const primaryButtonRef = useRef<HTMLButtonElement>(null);
 	const manualHighlightCursorRef = useRef<ReturnType<typeof createManualHighlightCursor> | null>(null);
 	const manualReaderSessionIdRef = useRef<string | null>(null);
+
+	useEffect(() => {
+		primaryButtonRef.current?.focus();
+	}, [session]);
 
 	const clearManualReader = () => {
 		setManualReaderText(null);
@@ -305,7 +310,12 @@ export default function App() {
 				) : (
 					<p>{t('currentPageUnavailable')}</p>
 				)}
-				<button className="primary-button" type="button" onClick={handleReadCurrentPage}>
+				<button
+					ref={session?.status === 'playing' || session?.status === 'paused' ? undefined : primaryButtonRef}
+					className="primary-button"
+					type="button"
+					onClick={handleReadCurrentPage}
+				>
 					{t('readPage')}
 				</button>
 			</section>
@@ -384,12 +394,12 @@ export default function App() {
 				)}
 				<div className="player-controls">
 					{session?.status === 'playing' && (
-						<button type="button" aria-label={t('pauseState')} onClick={() => handlePlaybackCommand('PAUSE_READING')}>
+						<button ref={primaryButtonRef} type="button" aria-label={t('pauseState')} onClick={() => handlePlaybackCommand('PAUSE_READING')}>
 							Ⅱ
 						</button>
 					)}
 					{session?.status === 'paused' && (
-						<button type="button" aria-label={t('resumeStatus')} onClick={() => handlePlaybackCommand('RESUME_READING')}>
+						<button ref={primaryButtonRef} type="button" aria-label={t('resumeStatus')} onClick={() => handlePlaybackCommand('RESUME_READING')}>
 							▶
 						</button>
 					)}

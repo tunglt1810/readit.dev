@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { openSidePanelForCurrentWindow } from '../../src/popup/side_panel.ts';
+import { handleOpenSidePanelCommand, openSidePanelForCurrentWindow } from '../../src/popup/side_panel.ts';
 
 test('opens the Side Panel immediately with the pre-resolved window ID', async () => {
 	const calls: unknown[] = [];
@@ -37,4 +37,32 @@ test('propagates the Chrome Side Panel rejection', async () => {
 		}),
 		error,
 	);
+});
+
+test('handleOpenSidePanelCommand invokes sidePanel.open synchronously when command is open_side_panel', () => {
+	const calls: unknown[] = [];
+	let calledSynchronously = false;
+	const handled = handleOpenSidePanelCommand('open_side_panel', { windowId: 42 }, (options) => {
+		calls.push(options);
+		calledSynchronously = true;
+	});
+
+	assert.equal(handled, true);
+	assert.equal(calledSynchronously, true);
+	assert.deepEqual(calls, [{ windowId: 42 }]);
+});
+
+test('handleOpenSidePanelCommand ignores non open_side_panel commands or missing tab windowId', () => {
+	const calls: unknown[] = [];
+	const handledWrongCommand = handleOpenSidePanelCommand('other_command', { windowId: 42 }, (options) => {
+		calls.push(options);
+	});
+	assert.equal(handledWrongCommand, false);
+	assert.deepEqual(calls, []);
+
+	const handledNoWindow = handleOpenSidePanelCommand('open_side_panel', undefined, (options) => {
+		calls.push(options);
+	});
+	assert.equal(handledNoWindow, false);
+	assert.deepEqual(calls, []);
 });

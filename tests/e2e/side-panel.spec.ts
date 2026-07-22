@@ -340,3 +340,12 @@ for (const theme of ['default', 'winamp', 'wmp12'] as ThemeName[]) {
 		await expect(page.locator('.side-panel-player')).toHaveCSS('position', 'sticky');
 	});
 }
+
+test('auto-focuses the primary action button when side panel opens', async ({ page, openSidePanel }) => {
+	await installExtensionUiRuntimeMock(page, { session: null }, pageInfo);
+	await openSidePanel(page);
+
+	const currentPageButton = page.getByRole('button', { name: 'Đọc trang hiện tại' });
+	await expect(currentPageButton).toBeFocused();
+});
+

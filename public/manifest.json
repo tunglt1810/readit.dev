@@ -11,8 +11,17 @@
 		"48": "assets/icon48.png",
 		"128": "assets/icon128.png"
 	},
-	"permissions": ["activeTab", "scripting", "storage", "offscreen", "contextMenus", "sidePanel"],
-	"host_permissions": ["https://huggingface.co/*"],
+	"permissions": [
+		"activeTab",
+		"scripting",
+		"storage",
+		"offscreen",
+		"contextMenus",
+		"sidePanel"
+	],
+	"host_permissions": [
+		"https://huggingface.co/*"
+	],
 	"content_security_policy": {
 		"extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
 	},
@@ -22,8 +31,12 @@
 	},
 	"content_scripts": [
 		{
-			"matches": ["<all_urls>"],
-			"js": ["content_script.js"],
+			"matches": [
+				"<all_urls>"
+			],
+			"js": [
+				"content_script.js"
+			],
 			"run_at": "document_idle"
 		}
 	],
@@ -40,14 +53,39 @@
 	"side_panel": {
 		"default_path": "src/sidepanel/sidepanel.html"
 	},
+	"commands": {
+		"_execute_action": {
+			"suggested_key": {
+				"default": "Ctrl+Shift+K",
+				"mac": "Command+Shift+K"
+			}
+		},
+		"open_side_panel": {
+			"suggested_key": {
+				"default": "Ctrl+Shift+E",
+				"mac": "Command+Shift+E"
+			},
+			"description": "Open side panel"
+		}
+	},
 	"web_accessible_resources": [
 		{
-			"resources": ["ort-wasm-simd-threaded.asyncify.wasm", "ort-wasm-simd-threaded.asyncify.mjs"],
-			"matches": ["<all_urls>"]
+			"resources": [
+				"ort-wasm-simd-threaded.asyncify.wasm",
+				"ort-wasm-simd-threaded.asyncify.mjs"
+			],
+			"matches": [
+				"<all_urls>"
+			]
 		},
 		{
-			"resources": ["assets/icon32.png"],
-			"matches": ["http://*/*", "https://*/*"]
+			"resources": [
+				"assets/icon32.png"
+			],
+			"matches": [
+				"http://*/*",
+				"https://*/*"
+			]
 		}
 	]
 }

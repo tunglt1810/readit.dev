@@ -119,6 +119,7 @@ export default function App() {
 	const [activeTheme, setActiveTheme] = useState<ThemeName>('default');
 	const [themeMenuOpen, setThemeMenuOpen] = useState(false);
 	const themeSelectorButtonRef = useRef<HTMLButtonElement>(null);
+	const primaryButtonRef = useRef<HTMLButtonElement>(null);
 
 	// Settings States
 	const [activeVoice, setActiveVoice] = useState('M1');
@@ -222,6 +223,11 @@ export default function App() {
 			chrome.runtime.onMessage.removeListener(messageListener);
 		};
 	}, []);
+
+	useEffect(() => {
+		primaryButtonRef.current?.focus();
+	}, [session, activeTheme]);
+
 
 	// Handler: Start/Stop Reading Page
 	const handleStartCurrentPage = () => {
@@ -428,6 +434,7 @@ export default function App() {
 					{usesThemedTransport ? (
 						<div className={`theme-transport ${activeTheme === 'wmp12' ? 'wmp-transport' : 'winamp-deck'}`}>
 							<button
+								ref={primaryButtonRef}
 								className="btn btn-icon-only theme-primary"
 								disabled={isThemedPrimaryDisabled}
 								onClick={handleThemedPrimaryPlayback}
@@ -460,6 +467,7 @@ export default function App() {
 						<div className="playback-controls">
 							{(status === 'playing' || status === 'paused') && (
 								<button
+									ref={primaryButtonRef}
 									className="btn btn-secondary btn-icon-only btn-playpause"
 									onClick={handlePlayPause}
 									aria-label={status === 'playing' ? t('pauseState') : t('resumeStatus')}
@@ -469,6 +477,7 @@ export default function App() {
 								</button>
 							)}
 							<button
+								ref={status === 'playing' || status === 'paused' ? undefined : primaryButtonRef}
 								className={`btn btn-primary btn-icon-only btn-read ${status !== 'stopped' && status !== 'error' ? 'active' : ''}`}
 								onClick={handleReadPage}
 								aria-label={status === 'stopped' || status === 'error' ? t('readPage') : t('stopReading')}

@@ -29,6 +29,7 @@ import {
 } from './playback_state';
 import { createSelectedTextArticle } from './selected_text';
 import { prepareSelectedTextRequest } from './selected_text_request';
+import { handleOpenSidePanelCommand } from '../popup/side_panel';
 
 const DEFAULT_VOICE_STYLE_ID = 'M1';
 const DEFAULT_SPEED = 1.05;
@@ -933,4 +934,8 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 			content: article,
 		});
 	});
+});
+
+chrome.commands.onCommand.addListener((command, tab) => {
+	handleOpenSidePanelCommand(command, tab);
 });
