@@ -5,6 +5,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const vietnameseBenchmark = process.env.READIT_VI_BENCHMARK === '1';
+const appVersion = JSON.parse(fs.readFileSync(new URL('package.json', import.meta.url), 'utf-8')).version as string;
+const buildVersion = process.env.BUILD_NUMBER ? `${appVersion}-dev.${process.env.BUILD_NUMBER}` : appVersion;
 
 export default defineConfig({
 	// Manifest-injected scripts have no HTML loader for async chunks.
@@ -26,6 +28,9 @@ export default defineConfig({
 						const packageJsonPath = path.resolve(api.context.rootPath, 'package.json');
 						const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
 						manifest.version = packageJson.version;
+						if (process.env.BUILD_NUMBER) {
+							manifest.version_name = `${packageJson.version}-dev.${process.env.BUILD_NUMBER}`;
+						}
 						fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, '\t'));
 					}
 				};
@@ -44,6 +49,9 @@ export default defineConfig({
 		conditionNames: ['onnxruntime-web-use-extern-wasm', 'import', 'module', 'browser', 'default'],
 	},
 	source: {
+		define: {
+			__BUILD_VERSION__: JSON.stringify(buildVersion),
+		},
 		entry: {
 			popup: './src/popup/index.tsx',
 			sidepanel: './src/sidepanel/index.tsx',

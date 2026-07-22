@@ -1,6 +1,6 @@
 import type { BrowserContext, Page } from '@playwright/test';
 
-import type { PlaybackStateResponse, TabPlaybackSessionSnapshot } from '../../src/shared/types';
+import type { ManualPlaybackSessionSnapshot, PlaybackStateResponse, TabPlaybackSessionSnapshot } from '../../src/shared/types';
 import { expect, installPopupRuntimeMock, test } from './fixtures';
 
 const activeSession = {
@@ -37,6 +37,8 @@ const replacementSession = {
 	progressPercentage: 0,
 	updatedAt: 2000,
 };
+
+const manualPanelInstanceId = 'ad6f72b4-2b6a-42c4-9d11-c3d6f07333cd';
 
 async function broadcastCoordinatorState(page: Page, session: PlaybackStateResponse['session']): Promise<void> {
 	await page.evaluate((nextSession) => {
@@ -154,7 +156,7 @@ test('manual session popup shows localized metadata without tab actions', async 
 		session: {
 			sessionId: 'manual-session',
 			contentScope: 'manual',
-			source: { kind: 'manual' },
+			source: { kind: 'manual', panelInstanceId: 'ad6f72b4-2b6a-42c4-9d11-c3d6f07333cd' },
 			lang: 'vi',
 			status: 'paused',
 			currentParagraphIndex: 0,
@@ -379,7 +381,7 @@ test.describe('Reading state lifecycle', () => {
 		const sentinel = 'READIT_MANUAL_PRIVACY_SENTINEL_7F3C2A';
 		const response = await sendCoordinatorCommand(controlPage, {
 			action: 'START_MANUAL_TEXT',
-			payload: { text: sentinel, language: 'auto' },
+			payload: { text: sentinel, language: 'auto', panelInstanceId: manualPanelInstanceId },
 		});
 		expect(response).toEqual({ success: true });
 		const state = await getBackgroundState(controlPage);
@@ -390,6 +392,172 @@ test.describe('Reading state lifecycle', () => {
 		}));
 		expect(JSON.stringify(stored.session)).not.toContain(sentinel);
 		expect(JSON.stringify(stored.local)).not.toContain(sentinel);
+	});
+
+	test('relays one manual word highlight from one internal offscreen timing event', async ({ context, extensionId }) => {
+		const controlPage = await context.newPage();
+		await controlPage.goto(`chrome-extension://${extensionId}/src/popup/popup.html`);
+		await controlPage.evaluate(() => {
+			(window as any).manualWordHighlightEvents = [];
+			chrome.runtime.onMessage.addListener((message) => {
+				if (message?.action === 'MANUAL_WORD_HIGHLIGHT_UPDATE') {
+					(window as any).manualWordHighlightEvents.push(message);
+				}
+			});
+		});
+		await expect(
+			sendCoordinatorCommand(controlPage, {
+				action: 'START_MANUAL_TEXT',
+				payload: { text: 'The cat sleeps.', language: 'en', panelInstanceId: manualPanelInstanceId },
+			}),
+		).resolves.toEqual({ success: true });
+		const sessionId = (await getBackgroundState(controlPage)).session?.sessionId;
+		expect(sessionId).toEqual(expect.any(String));
+
+		await sendBackgroundMessage(controlPage, {
+			action: 'OFFSCREEN_MANUAL_WORD_TIMING',
+			sessionId,
+			word: 'cat',
+			wordIndex: 1,
+		});
+
+		await expect
+			.poll(() => controlPage.evaluate(() => (window as any).manualWordHighlightEvents))
+			.toEqual([{ action: 'MANUAL_WORD_HIGHLIGHT_UPDATE', sessionId, word: 'cat', wordIndex: 1 }]);
+	});
+
+	test('a failed manual checkpoint leaves manual playback active and does not start web reading', async ({ context, extensionId }) => {
+		const targetPage = await createTargetPage(context);
+		const controlPage = await context.newPage();
+		await controlPage.goto(`chrome-extension://${extensionId}/src/popup/popup.html`);
+		const manualSession: ManualPlaybackSessionSnapshot = {
+			sessionId: 'manual-checkpoint-failure',
+			contentScope: 'manual',
+			source: { kind: 'manual', panelInstanceId: manualPanelInstanceId },
+			lang: 'en',
+			status: 'playing',
+			currentParagraphIndex: 0,
+			totalParagraphs: 1,
+			progressPercentage: 10,
+			voiceStyleId: 'M1',
+			speed: 1.05,
+			updatedAt: Date.now(),
+		};
+		await controlPage.evaluate(async (session) => {
+			await chrome.storage.session.set({ readit_playback_session: session });
+			chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+				if (message?.action === 'CHECKPOINT_MANUAL') {
+					sendResponse({ success: false });
+				}
+			});
+		}, manualSession);
+		const cdp = await context.newCDPSession(controlPage);
+		const { targetInfos } = await cdp.send('Target.getTargets');
+		const workerTarget = targetInfos.find(
+			(targetInfo) => targetInfo.type === 'service_worker' && targetInfo.url.startsWith(`chrome-extension://${extensionId}/`),
+		);
+		expect(workerTarget).toBeDefined();
+		await cdp.send('Target.closeTarget', { targetId: workerTarget?.targetId as string });
+		expect((await getBackgroundState(controlPage)).session?.sessionId).toBe(manualSession.sessionId);
+
+		await targetPage.bringToFront();
+		await expect(sendCoordinatorCommand(controlPage, { action: 'START_CURRENT_PAGE' })).resolves.toEqual({
+			success: false,
+			error: 'manualCheckpointFailed',
+		});
+		expect((await getBackgroundState(controlPage)).session?.sessionId).toBe(manualSession.sessionId);
+	});
+
+	test('manual loading is checkpointed before web reading starts', async ({ context, extensionId }) => {
+		const targetPage = await createTargetPage(context);
+		const controlPage = await context.newPage();
+		await controlPage.goto(`chrome-extension://${extensionId}/src/popup/popup.html`);
+		await expect(
+			sendCoordinatorCommand(controlPage, {
+				action: 'START_MANUAL_TEXT',
+				payload: { text: 'Manual loading can resume later.', language: 'en', panelInstanceId: manualPanelInstanceId },
+			}),
+		).resolves.toEqual({ success: true });
+
+		await targetPage.bringToFront();
+		await expect(sendCoordinatorCommand(controlPage, { action: 'START_CURRENT_PAGE' })).resolves.toEqual({ success: true });
+		expect((await getBackgroundState(controlPage)).session).toMatchObject({ contentScope: 'article', source: { kind: 'tab' } });
+	});
+
+	test('manual checkpoint preempts before a validated web reading starts', async ({ context, extensionId }) => {
+		const targetPage = await createTargetPage(context);
+		const controlPage = await context.newPage();
+		await controlPage.goto(`chrome-extension://${extensionId}/src/popup/popup.html`);
+		const manualSession: ManualPlaybackSessionSnapshot = {
+			sessionId: 'manual-checkpoint-session',
+			contentScope: 'manual',
+			source: { kind: 'manual', panelInstanceId: manualPanelInstanceId },
+			lang: 'en',
+			status: 'playing',
+			currentParagraphIndex: 0,
+			totalParagraphs: 1,
+			progressPercentage: 10,
+			voiceStyleId: 'M1',
+			speed: 1.05,
+			updatedAt: Date.now(),
+		};
+		await controlPage.evaluate(async (session) => {
+			await chrome.storage.session.set({ readit_playback_session: session });
+			(window as any).checkpointCalls = 0;
+			chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+				if (message?.action === 'CHECKPOINT_MANUAL') {
+					(window as any).checkpointCalls += 1;
+					sendResponse({
+						success: true,
+						checkpoint: {
+							sessionId: session.sessionId,
+							panelInstanceId: session.source.panelInstanceId,
+							lang: session.lang,
+							voiceStyleId: session.voiceStyleId,
+							speed: session.speed,
+						},
+					});
+					return true;
+				}
+				if (message?.action === 'RESUME_MANUAL_CHECKPOINT') {
+					sendResponse({ success: true });
+					return true;
+				}
+				return undefined;
+			});
+		}, manualSession);
+		const cdp = await context.newCDPSession(controlPage);
+		const { targetInfos } = await cdp.send('Target.getTargets');
+		const workerTarget = targetInfos.find(
+			(targetInfo) => targetInfo.type === 'service_worker' && targetInfo.url.startsWith(`chrome-extension://${extensionId}/`),
+		);
+		expect(workerTarget).toBeDefined();
+		await cdp.send('Target.closeTarget', { targetId: workerTarget?.targetId as string });
+		expect((await getBackgroundState(controlPage)).session?.sessionId).toBe(manualSession.sessionId);
+
+		await targetPage.bringToFront();
+		await expect(sendCoordinatorCommand(controlPage, { action: 'START_CURRENT_PAGE' })).resolves.toEqual({ success: true });
+		expect(await controlPage.evaluate(() => (window as any).checkpointCalls)).toBe(1);
+		const webSession = (await getBackgroundState(controlPage)).session;
+		expect(webSession).toMatchObject({ contentScope: 'article', source: { kind: 'tab' } });
+		await expect(
+			sendCoordinatorCommand(controlPage, {
+				action: 'STOP_SIDE_PANEL_AUDIO',
+				panelInstanceId: 'c45b5fc4-7d8a-4ab6-866d-53f17b29799d',
+			}),
+		).resolves.toEqual({ success: true });
+		expect((await getBackgroundState(controlPage)).session?.sessionId).toBe(webSession?.sessionId);
+		await controlPage.evaluate(async () => {
+			try {
+				await chrome.offscreen.closeDocument();
+			} catch {
+				// The coordinator still holds only checkpoint metadata after the document is gone.
+			}
+		});
+		await expect(
+			sendCoordinatorCommand(controlPage, { action: 'RESUME_MANUAL_CHECKPOINT', panelInstanceId: manualPanelInstanceId }),
+		).resolves.toEqual({ success: true });
+		expect((await getBackgroundState(controlPage)).session?.sessionId).toBe(manualSession.sessionId);
 	});
 
 	test('manual playback synchronizes real extension surfaces and never highlights the open article', async ({ context, extensionId }) => {
@@ -478,7 +646,7 @@ test.describe('Reading state lifecycle', () => {
 		expect(
 			await sendCoordinatorCommand(controlPage, {
 				action: 'START_MANUAL_TEXT',
-				payload: { text: 'First manual session', language: 'en' },
+				payload: { text: 'First manual session', language: 'en', panelInstanceId: manualPanelInstanceId },
 			}),
 		).toEqual({ success: true });
 		const firstSessionId = (await getBackgroundState(controlPage)).session?.sessionId;
@@ -487,7 +655,7 @@ test.describe('Reading state lifecycle', () => {
 		expect(
 			await sendCoordinatorCommand(controlPage, {
 				action: 'START_MANUAL_TEXT',
-				payload: { text: '第二个手动阅读会话。', language: 'auto' },
+				payload: { text: '第二个手动阅读会话。', language: 'auto', panelInstanceId: manualPanelInstanceId },
 			}),
 		).toEqual({ success: true });
 		const replacement = (await getBackgroundState(controlPage)).session;
@@ -501,14 +669,14 @@ test.describe('Reading state lifecycle', () => {
 		expect(
 			await sendCoordinatorCommand(controlPage, {
 				action: 'START_MANUAL_TEXT',
-				payload: { text: 'Existing manual session', language: 'en' },
+				payload: { text: 'Existing manual session', language: 'en', panelInstanceId: manualPanelInstanceId },
 			}),
 		).toEqual({ success: true });
 		const before = await getBackgroundState(controlPage);
 		expect(
 			await sendCoordinatorCommand(controlPage, {
 				action: 'START_MANUAL_TEXT',
-				payload: { text: '   ', language: 'auto' },
+				payload: { text: '   ', language: 'auto', panelInstanceId: manualPanelInstanceId },
 			}),
 		).toEqual({ success: false, error: 'invalidManualText' });
 		expect((await getBackgroundState(controlPage)).session?.sessionId).toBe(before.session?.sessionId);
@@ -521,7 +689,7 @@ test.describe('Reading state lifecycle', () => {
 		expect(
 			await sendCoordinatorCommand(controlPage, {
 				action: 'START_MANUAL_TEXT',
-				payload: { text: 'Manual playback must survive.', language: 'en' },
+				payload: { text: 'Manual playback must survive.', language: 'en', panelInstanceId: manualPanelInstanceId },
 			}),
 		).toEqual({ success: true });
 		const sessionId = (await getBackgroundState(controlPage)).session?.sessionId;

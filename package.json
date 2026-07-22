@@ -1,11 +1,12 @@
 {
 	"name": "readit.dev-extension",
-	"version": "1.0.2",
+	"version": "1.0.3",
 	"license": "AGPL-3.0-or-later",
 	"description": "Chrome extension to read web articles using Supertonic 3 local TTS",
 	"type": "module",
 	"scripts": {
 		"dev": "rsbuild dev",
+		"build-dev": "node scripts/build-dev.mjs",
 		"evaluate:vi": "node --experimental-strip-types scripts/evaluate-vietnamese-normalizer.ts",
 		"build": "tsc && rsbuild build",
 		"benchmark:vi": "node scripts/run-vietnamese-offscreen-benchmark.mjs",

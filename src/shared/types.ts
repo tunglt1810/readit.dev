@@ -20,6 +20,7 @@ export interface StartManualTextMessage {
 	payload: {
 		text: string;
 		language: ManualTextLanguage;
+		panelInstanceId: string;
 	};
 }
 
@@ -69,7 +70,7 @@ export interface TabPlaybackSessionSnapshot extends PlaybackSessionBase {
 
 export interface ManualPlaybackSessionSnapshot extends PlaybackSessionBase {
 	contentScope: 'manual';
-	source: { kind: 'manual' };
+	source: { kind: 'manual'; panelInstanceId: string };
 }
 
 export type PlaybackSessionSnapshot = TabPlaybackSessionSnapshot | ManualPlaybackSessionSnapshot;

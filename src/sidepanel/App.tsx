@@ -1,9 +1,11 @@
-import { type ChangeEvent, useEffect, useState } from 'react';
+import { type ChangeEvent, useEffect, useRef, useState } from 'react';
 
 import { BUY_ME_A_COFFEE_URL, STORAGE_KEYS, VOICE_STYLE_TRANSLATIONS, VOICE_STYLES } from '../shared/constants.ts';
 import { t, uiLang } from '../shared/i18n.ts';
+import { normalizeManualText } from '../shared/manual_text.ts';
 import { requestPlaybackState, sendPlaybackCommand, sendRuntimeRequest, subscribePlaybackState } from '../shared/playback_client.ts';
 import type { ManualTextLanguage, PageInfoResponse, PlaybackSessionSnapshot, ThemeName } from '../shared/types.ts';
+import { advanceManualHighlight, createManualHighlightCursor, type ManualWordRange } from './manual_word_highlight.ts';
 
 const EMPTY_PAGE_INFO: PageInfoResponse = { available: false };
 
@@ -35,7 +37,11 @@ function getStatusText(session: PlaybackSessionSnapshot | null): string {
 }
 
 export default function App() {
+	const [panelInstanceId] = useState(() => crypto.randomUUID());
 	const [draft, setDraft] = useState('');
+	const [manualReaderText, setManualReaderText] = useState<string | null>(null);
+	const [manualHighlight, setManualHighlight] = useState<ManualWordRange | null>(null);
+	const [manualCheckpointState, setManualCheckpointState] = useState<'suspended' | null>(null);
 	const [language, setLanguage] = useState<ManualTextLanguage>('auto');
 	const [commandError, setCommandError] = useState('');
 	const [session, setSession] = useState<PlaybackSessionSnapshot | null>(null);
@@ -43,6 +49,17 @@ export default function App() {
 	const [speed, setSpeed] = useState(1);
 	const [theme, setTheme] = useState<ThemeName>('default');
 	const [pageInfo, setPageInfo] = useState<PageInfoResponse>(EMPTY_PAGE_INFO);
+	const readerRef = useRef<HTMLDivElement>(null);
+	const manualHighlightCursorRef = useRef<ReturnType<typeof createManualHighlightCursor> | null>(null);
+	const manualReaderSessionIdRef = useRef<string | null>(null);
+
+	const clearManualReader = () => {
+		setManualReaderText(null);
+		manualReaderSessionIdRef.current = null;
+		setManualHighlight(null);
+		manualHighlightCursorRef.current = null;
+		setManualCheckpointState(null);
+	};
 
 	useEffect(() => {
 		chrome.storage.local.get([STORAGE_KEYS.ACTIVE_VOICE, STORAGE_KEYS.SPEED, STORAGE_KEYS.THEME], (result) => {
@@ -65,6 +82,58 @@ export default function App() {
 			setPageInfo(EMPTY_PAGE_INFO),
 		);
 		const unsubscribePlayback = subscribePlaybackState(chrome.runtime, setSession);
+		const handleManualPlaybackMessage = (message: unknown) => {
+			if (!message || typeof message !== 'object') {
+				return;
+			}
+			const value = message as Record<string, unknown>;
+			if (value.action === 'PLAYBACK_STATE_UPDATE') {
+				const nextSession = value.session as PlaybackSessionSnapshot | null;
+				if (
+					nextSession?.contentScope === 'manual' &&
+					nextSession.source.panelInstanceId === panelInstanceId
+				) {
+					manualReaderSessionIdRef.current = nextSession.sessionId;
+				}
+				return;
+			}
+			if (value.action === 'MANUAL_WORD_HIGHLIGHT_UPDATE') {
+				if (
+					typeof value.sessionId !== 'string' ||
+					value.sessionId !== manualReaderSessionIdRef.current ||
+					typeof value.word !== 'string' ||
+					typeof value.wordIndex !== 'number' ||
+					!Number.isInteger(value.wordIndex)
+				) {
+					return;
+				}
+				const cursor = manualHighlightCursorRef.current;
+				if (!cursor) {
+					return;
+				}
+				const result = advanceManualHighlight(cursor, { word: value.word, wordIndex: value.wordIndex });
+				if (result.kind === 'matched') {
+					setManualHighlight(result.range);
+				} else if (result.kind === 'unmatched') {
+					setManualHighlight(null);
+				}
+				return;
+			}
+			if (value.action !== 'MANUAL_CHECKPOINT_STATE_UPDATE' || value.panelInstanceId !== panelInstanceId) {
+				return;
+			}
+			if (value.state === 'suspended') {
+				setManualCheckpointState('suspended');
+			} else if (value.state === 'active') {
+				setManualCheckpointState(null);
+			} else if (value.state === 'discarded') {
+				clearManualReader();
+			} else if (value.state === 'unavailable') {
+				clearManualReader();
+				setCommandError(t('manualCheckpointUnavailable'));
+			}
+		};
+		chrome.runtime.onMessage.addListener(handleManualPlaybackMessage);
 		const handleStorageChange = (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => {
 			if (areaName !== 'local') {
 				return;
@@ -85,15 +154,55 @@ export default function App() {
 		chrome.storage.onChanged.addListener(handleStorageChange);
 		return () => {
 			unsubscribePlayback();
+			chrome.runtime.onMessage.removeListener(handleManualPlaybackMessage);
 			chrome.storage.onChanged.removeListener(handleStorageChange);
 		};
-	}, []);
+	}, [panelInstanceId]);
+
+	useEffect(() => {
+		if (!manualReaderText || !session || session.contentScope !== 'manual' || session.source.panelInstanceId !== panelInstanceId) {
+			return;
+		}
+		manualReaderSessionIdRef.current = session.sessionId;
+		if (session.status === 'stopped' || session.status === 'error') {
+			clearManualReader();
+		}
+	}, [manualReaderText, panelInstanceId, session]);
+
+	useEffect(() => {
+		const activeWord = readerRef.current?.querySelector<HTMLElement>('.manual-reader-active-word');
+		if (!activeWord || !readerRef.current) {
+			return;
+		}
+		const reader = readerRef.current;
+		const wordBounds = activeWord.getBoundingClientRect();
+		const readerBounds = reader.getBoundingClientRect();
+		if (wordBounds.top < readerBounds.top) {
+			reader.scrollTop += wordBounds.top - readerBounds.top;
+		} else if (wordBounds.bottom > readerBounds.bottom) {
+			reader.scrollTop += wordBounds.bottom - readerBounds.bottom;
+		}
+	}, [manualHighlight]);
+
+	useEffect(() => {
+		const handlePageHide = () => {
+			void sendPlaybackCommand({ action: 'STOP_SIDE_PANEL_AUDIO', panelInstanceId });
+		};
+		window.addEventListener('pagehide', handlePageHide);
+		return () => window.removeEventListener('pagehide', handlePageHide);
+	}, [panelInstanceId]);
 
 	const handleReadCurrentPage = async () => {
 		setCommandError('');
 		const response = await sendPlaybackCommand({ action: 'START_CURRENT_PAGE' });
 		if (!response.success) {
-			setCommandError(response.transportError ? t('startReadingFailed') : (response.error ?? t('startReadingFailed')));
+			setCommandError(
+				response.transportError
+					? t('startReadingFailed')
+					: response.error === 'manualCheckpointFailed'
+						? t('manualCheckpointFailed')
+						: (response.error ?? t('startReadingFailed')),
+			);
 		}
 	};
 
@@ -102,7 +211,10 @@ export default function App() {
 			return;
 		}
 		setCommandError('');
-		const response = await sendPlaybackCommand({ action: 'START_MANUAL_TEXT', payload: { text: draft, language } });
+		const response = await sendPlaybackCommand({
+			action: 'START_MANUAL_TEXT',
+			payload: { text: draft, language, panelInstanceId },
+		});
 		if (!response.success) {
 			setCommandError(
 				response.transportError
@@ -111,11 +223,35 @@ export default function App() {
 						? t('invalidManualText')
 						: t('startReadingFailed'),
 			);
+			return;
 		}
+		const normalizedDraft = normalizeManualText(draft);
+		setManualReaderText(normalizedDraft);
+		manualReaderSessionIdRef.current = null;
+		setManualHighlight(null);
+		manualHighlightCursorRef.current = createManualHighlightCursor(normalizedDraft);
 	};
 
 	const handlePlaybackCommand = (action: 'PAUSE_READING' | 'RESUME_READING' | 'STOP_READING') => {
 		void sendPlaybackCommand({ action });
+	};
+
+	const handleResumeManualCheckpoint = async () => {
+		setCommandError('');
+		const response = await sendPlaybackCommand({ action: 'RESUME_MANUAL_CHECKPOINT', panelInstanceId });
+		if (!response.success) {
+			setCommandError(response.error === 'manualCheckpointUnavailable' ? t('manualCheckpointUnavailable') : t('startReadingFailed'));
+		}
+	};
+
+	const handleDiscardManualCheckpoint = async () => {
+		setCommandError('');
+		const response = await sendPlaybackCommand({ action: 'DISCARD_MANUAL_CHECKPOINT', panelInstanceId });
+		if (response.success) {
+			clearManualReader();
+		} else {
+			setCommandError(t('manualCheckpointUnavailable'));
+		}
 	};
 
 	const handleVoiceChange = (event: ChangeEvent<HTMLSelectElement>) => {
@@ -133,6 +269,11 @@ export default function App() {
 	const tabSource = session?.source.kind === 'tab' ? session.source : null;
 	const sessionTitle = session?.contentScope === 'manual' ? t('pastedText') : (tabSource?.title ?? '');
 	const sessionHost = tabSource ? getHost(tabSource.url) : '';
+	const manualReaderLocked = manualReaderText !== null;
+	const manualText = manualReaderText ?? draft;
+	const readerBeforeHighlight = manualHighlight ? manualReaderText?.slice(0, manualHighlight.start) : null;
+	const readerActiveHighlight = manualHighlight ? manualReaderText?.slice(manualHighlight.start, manualHighlight.end) : null;
+	const readerAfterHighlight = manualHighlight ? manualReaderText?.slice(manualHighlight.end) : null;
 
 	return (
 		<main className="side-panel" data-theme={theme} aria-label="readit.dev Side Panel">
@@ -173,21 +314,35 @@ export default function App() {
 
 			<section className="manual-text-card" aria-labelledby="manual-text-title">
 				<h2 id="manual-text-title">{t('orPasteText')}</h2>
-				<textarea
-					aria-label={t('pasteTextPlaceholder')}
-					placeholder={t('pasteTextPlaceholder')}
-					value={draft}
-					onChange={(event) => setDraft(event.target.value)}
-				/>
+				{manualReaderLocked ? (
+					<div ref={readerRef} className="manual-reader" role="textbox" aria-label={t('manualReaderLabel')} aria-readonly="true">
+						{manualHighlight && readerBeforeHighlight !== null && readerActiveHighlight !== null && readerAfterHighlight !== null ? (
+							<>
+								{readerBeforeHighlight}
+								<mark className="manual-reader-active-word">{readerActiveHighlight}</mark>
+								{readerAfterHighlight}
+							</>
+						) : (
+							manualReaderText
+						)}
+					</div>
+				) : (
+					<textarea
+						aria-label={t('pasteTextPlaceholder')}
+						placeholder={t('pasteTextPlaceholder')}
+						value={draft}
+						onChange={(event) => setDraft(event.target.value)}
+					/>
+				)}
 				<div className="manual-meta">
 					<span>{t('textProcessedLocally')}</span>
 					<span>
-						{draft.length} {t('characters')}
+						{manualText.length} {t('characters')}
 					</span>
 				</div>
 				<label className="field-label">
 					<span>{t('manualLanguage')}</span>
-					<select value={language} onChange={(event) => setLanguage(event.target.value as ManualTextLanguage)}>
+					<select disabled={manualReaderLocked} value={language} onChange={(event) => setLanguage(event.target.value as ManualTextLanguage)}>
 						<option value="auto">{t('languageAuto')}</option>
 						<option value="en">{t('languageEnglish')}</option>
 						<option value="vi">{t('languageVietnamese')}</option>
@@ -195,13 +350,26 @@ export default function App() {
 					</select>
 				</label>
 				<div className="manual-actions">
-					<button className="secondary-button" type="button" onClick={() => setDraft('')}>
+					<button className="secondary-button" type="button" disabled={manualReaderLocked} onClick={() => setDraft('')}>
 						{t('clearText')}
 					</button>
-					<button className="primary-button" type="button" disabled={!draft.trim()} onClick={handleReadManualText}>
+					<button className="primary-button" type="button" disabled={manualReaderLocked || !draft.trim()} onClick={handleReadManualText}>
 						{t('readPastedText')}
 					</button>
 				</div>
+				{manualCheckpointState === 'suspended' && (
+					<div className="manual-checkpoint-actions">
+						<p>{t('manualPausedForWeb')}</p>
+						<div>
+							<button className="secondary-button" type="button" onClick={handleDiscardManualCheckpoint}>
+								{t('stopEditorReading')}
+							</button>
+							<button className="primary-button" type="button" onClick={handleResumeManualCheckpoint}>
+								{t('resumeEditorReading')}
+							</button>
+						</div>
+					</div>
+				)}
 			</section>
 
 			<section className="side-panel-player" aria-label={t('nowPlaying')}>

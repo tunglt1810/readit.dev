@@ -1,3 +1,4 @@
+import { isPanelInstanceId } from '../shared/manual_playback.ts';
 import type { PlaybackProgress, PlaybackSessionSnapshot, PlaybackStatus } from '../shared/types';
 
 type PlaybackSessionInputBase = {
@@ -11,7 +12,7 @@ type PlaybackSessionInputBase = {
 type CreatePlaybackSessionInput = PlaybackSessionInputBase &
 	(
 		| { contentScope: 'article' | 'selection'; source: { kind: 'tab'; tabId: number; title: string; url: string } }
-		| { contentScope: 'manual'; source: { kind: 'manual' } }
+		| { contentScope: 'manual'; source: { kind: 'manual'; panelInstanceId: string } }
 	);
 
 const MANUAL_PLAYBACK_SESSION_KEYS = new Set([
@@ -118,7 +119,8 @@ export function isPlaybackSessionSnapshot(value: unknown): value is PlaybackSess
 	if (source.kind === 'manual') {
 		return (
 			session.contentScope === 'manual' &&
-			Object.keys(source).length === 1 &&
+			isPanelInstanceId(source.panelInstanceId) &&
+			Object.keys(source).length === 2 &&
 			Object.keys(session).every((key) => MANUAL_PLAYBACK_SESSION_KEYS.has(key))
 		);
 	}

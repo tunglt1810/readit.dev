@@ -138,8 +138,10 @@ export default function App() {
 	const sessionTitle = session?.contentScope === 'manual' ? t('pastedText') : (tabSource?.title ?? '');
 	const errorMsg = commandError || session?.error || modelError;
 	const sessionHost = tabSource ? getHost(tabSource.url) : '';
-	const manifestVersion = chrome.runtime.getManifest().version;
-	const feedbackUrl = buildFeedbackUrl(manifestVersion);
+	const manifest = chrome.runtime.getManifest();
+	const displayVersion = manifest.version_name ?? manifest.version;
+	const feedbackUrl = buildFeedbackUrl(manifest.version);
+
 
 	// Fetch initial states on mount
 	useEffect(() => {
@@ -345,7 +347,7 @@ export default function App() {
 						readit<span>.dev</span>
 					</h1>
 					</div>
-					<span className="extension-version">v{manifestVersion}</span>
+					<span className="extension-version">v{displayVersion}</span>
 					<a className="support-link header-support-link" href={BUY_ME_A_COFFEE_URL} target="_blank" rel="noreferrer">
 						<span aria-hidden="true">☕</span> {t('buyMeCoffee')}
 					</a>

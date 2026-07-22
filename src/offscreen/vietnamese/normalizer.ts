@@ -191,13 +191,32 @@ async function expandParagraph(
 		cursor += token.leading.length;
 		const spanStartToken = paragraph.tokens[span.startToken];
 		const spanEndToken = paragraph.tokens[span.endToken - 1];
-		wordMap.push({
-			originalText: source,
-			originalStart: spanStartToken.start,
-			originalEnd: spanEndToken.end,
-			spokenStart: cursor,
-			spokenEnd: cursor + piece.length,
-		});
+		if (piece === source) {
+			let pieceOffset = 0;
+			for (const [relativeIndex, sourceToken] of paragraph.tokens.slice(span.startToken, span.endToken).entries()) {
+				if (relativeIndex > 0) {
+					pieceOffset += sourceToken.leading.length;
+				}
+				if (sourceToken.kind !== 'punctuation') {
+					wordMap.push({
+						originalText: sourceToken.original,
+						originalStart: sourceToken.start,
+						originalEnd: sourceToken.end,
+						spokenStart: cursor + pieceOffset,
+						spokenEnd: cursor + pieceOffset + sourceToken.original.length,
+					});
+				}
+				pieceOffset += sourceToken.original.length;
+			}
+		} else {
+			wordMap.push({
+				originalText: source,
+				originalStart: spanStartToken.start,
+				originalEnd: spanEndToken.end,
+				spokenStart: cursor,
+				spokenEnd: cursor + piece.length,
+			});
+		}
 		cursor += piece.length;
 		index = span.endToken;
 	}

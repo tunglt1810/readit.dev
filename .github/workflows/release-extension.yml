@@ -122,6 +122,7 @@ jobs:
             -d "refresh_token=$CWS_REFRESH_TOKEN" \
             -d 'grant_type=refresh_token')"
           access_token="$(jq -er '.access_token' <<< "$response")"
+          echo "::add-mask::$access_token"
           echo "access_token=$access_token" >> "$GITHUB_OUTPUT"
 
       - name: Upload package to Chrome Web Store
@@ -133,10 +134,13 @@ jobs:
           set -euo pipefail
           base="https://chromewebstore.googleapis.com"
           name="publishers/$CWS_PUBLISHER_ID/items/$CWS_EXTENSION_ID"
-          curl --fail-with-body --silent --show-error -X POST \
+          echo "Uploading $archive to Chrome Web Store..."
+          upload_response="$(curl --fail-with-body --silent --show-error -X POST \
             -H "Authorization: Bearer $CWS_ACCESS_TOKEN" \
             --data-binary "@$archive" \
-            "$base/upload/v2/$name:upload"
+            "$base/upload/v2/$name:upload")"
+          echo "Upload response:"
+          echo "$upload_response" | jq .
 
       - name: Wait for Chrome Web Store upload
         env:
@@ -147,21 +151,41 @@ jobs:
           set -euo pipefail
           base="https://chromewebstore.googleapis.com"
           name="publishers/$CWS_PUBLISHER_ID/items/$CWS_EXTENSION_ID"
-          for attempt in {1..30}; do
+          max_attempts=60
+          for attempt in $(seq 1 $max_attempts); do
             status="$(curl --fail-with-body --silent --show-error \
               -H "Authorization: Bearer $CWS_ACCESS_TOKEN" \
               "$base/v2/$name:fetchStatus")"
             state="$(jq -r '.lastAsyncUploadState // "UNKNOWN"' <<< "$status")"
+            echo "Attempt $attempt/$max_attempts — state: $state"
             case "$state" in
-              SUCCEEDED) exit 0 ;;
-              FAILED|NOT_FOUND)
-                echo "$status" >&2
+              SUCCEEDED)
+                echo "Upload succeeded."
+                exit 0
+                ;;
+              FAILED)
+                echo "Upload failed:" >&2
+                echo "$status" | jq . >&2
                 exit 1
                 ;;
-              *) sleep 10 ;;
+              NOT_FOUND)
+                echo "Item not found:" >&2
+                echo "$status" | jq . >&2
+                exit 1
+                ;;
+              IN_PROGRESS)
+                sleep 10
+                ;;
+              *)
+                echo "Unknown state '$state', treating as in-progress. Response:" >&2
+                echo "$status" | jq . >&2
+                sleep 10
+                ;;
             esac
           done
-          echo 'Timed out waiting for Chrome Web Store upload.' >&2
+          echo "Timed out after $((max_attempts * 10))s waiting for Chrome Web Store upload." >&2
+          echo "Last state: $state" >&2
+          echo "$status" | jq . >&2
           exit 1
 
       - name: Submit package for publication
@@ -173,8 +197,34 @@ jobs:
           set -euo pipefail
           base="https://chromewebstore.googleapis.com"
           name="publishers/$CWS_PUBLISHER_ID/items/$CWS_EXTENSION_ID"
-          curl --fail-with-body --silent --show-error -X POST \
+          publish_response="$(curl --fail-with-body --silent --show-error -X POST \
             -H "Authorization: Bearer $CWS_ACCESS_TOKEN" \
             -H 'Content-Type: application/json' \
             -d '{"publishType":"DEFAULT_PUBLISH","blockOnWarnings":true}' \
-            "$base/v2/$name:publish"
+            "$base/v2/$name:publish")"
+
+          echo "Publish response:"
+          echo "$publish_response" | jq .
+
+          # Extract status codes from response
+          statuses="$(jq -r '.status // [] | .[]' <<< "$publish_response" 2>/dev/null || echo "")"
+
+          if echo "$statuses" | grep -q 'OK'; then
+            echo "✅ Published successfully."
+          elif echo "$statuses" | grep -q 'ITEM_PENDING_REVIEW'; then
+            echo "⏳ Published but pending Chrome Web Store review (e.g. permission changes)."
+            echo "The extension will go live automatically once the review is approved."
+          elif echo "$statuses" | grep -q 'PUBLISHED_WITH_FRICTION_WARNING'; then
+            echo "⚠️ Published with friction warnings. Check the Developer Dashboard for details."
+          else
+            echo "Publish status: $statuses"
+            # If no explicit error status, check for error fields
+            has_error="$(jq -r '.error // empty' <<< "$publish_response" 2>/dev/null || echo "")"
+            if [ -n "$has_error" ]; then
+              echo "❌ Publish failed:" >&2
+              echo "$publish_response" | jq . >&2
+              exit 1
+            fi
+            echo "✅ Publish request accepted."
+          fi
+

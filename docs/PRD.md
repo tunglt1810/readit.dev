@@ -34,10 +34,14 @@ Supertonic 3 runtime.
   Panel for current-page reading and pasted text.
 - Default manual-text language to Auto and support explicit EN, VI, and ZH
   selection.
-- Keep manual playback independent from tab switches, navigation, reload, and
-  closure while sharing the single background-owned playback session.
+- Keep manual playback independent from browser-tab switches, navigation, and
+  closure while sharing the single background-owned playback session. Closing
+  or reloading its owning Side Panel stops audio and discards its local state.
 - Keep pasted-text drafts in the active Side Panel document only. Do not
   persist pasted text in extension storage or session snapshots.
+- Lock pasted text into a local reader while it is being read, highlight the
+  spoken word, and allow an explicit editor resume after a web reading
+  temporarily preempts it.
 - Show a clear localized error when the page is not readable.
 - Send no article or pasted content, audio, analytics, or crash reports to a
   remote service.

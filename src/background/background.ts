@@ -1,7 +1,9 @@
 import { STORAGE_KEYS } from '../shared/constants';
+import { isManualPlaybackControlMessage, isManualWordTimingMessage } from '../shared/manual_playback';
 import type {
 	Article,
 	CommandResponse,
+	ManualPlaybackSessionSnapshot,
 	PageInfoResponse,
 	PlaybackContent,
 	PlaybackProgress,
@@ -11,8 +13,12 @@ import type {
 import { requestActionPopup } from './action_popup';
 import { requestArticleFromTab } from './article_request';
 import { syncPlaybackBadge } from './badge';
-import { prepareManualText } from './manual_text';
-import { type OffscreenCommand, sendOffscreenCommand } from './offscreen_transport';
+import { prepareManualStart } from './manual_text';
+import {
+	type ManualCheckpointMetadata,
+	type OffscreenCommand,
+	sendOffscreenCommand,
+} from './offscreen_transport';
 import { requestPageInfoFromTab } from './page_info';
 import {
 	applyPlaybackProgress,
@@ -42,9 +48,11 @@ type StartPlaybackInput =
 			source: { kind: 'tab'; tabId: number; title: string; url: string };
 			content: PlaybackContent;
 	  }
-	| { contentScope: 'manual'; source: { kind: 'manual' }; content: PlaybackContent };
+	| { contentScope: 'manual'; source: { kind: 'manual'; panelInstanceId: string }; content: PlaybackContent };
 
 let activeSession: PlaybackSessionSnapshot | null = null;
+let suspendedManualCheckpoint: ManualCheckpointMetadata | null = null;
+let suspendedManualSession: ManualPlaybackSessionSnapshot | null = null;
 let hydrated = false;
 let stateQueue = Promise.resolve();
 
@@ -127,6 +135,17 @@ async function broadcastSession(session: PlaybackSessionSnapshot | null): Promis
 		await chrome.runtime.sendMessage({ action: 'PLAYBACK_STATE_UPDATE', session });
 	} catch (_error) {
 		// The popup may be closed, so there may be no receiver for this broadcast.
+	}
+}
+
+async function broadcastManualCheckpointState(
+	panelInstanceId: string,
+	state: 'suspended' | 'active' | 'discarded' | 'unavailable',
+): Promise<void> {
+	try {
+		await chrome.runtime.sendMessage({ action: 'MANUAL_CHECKPOINT_STATE_UPDATE', panelInstanceId, state });
+	} catch (_error) {
+		// The Side Panel may be closed while its owner-scoped state is cleaned up.
 	}
 }
 
@@ -243,6 +262,46 @@ async function closeOffscreen(): Promise<void> {
 	}
 }
 
+function snapshotFromCheckpoint(checkpoint: ManualCheckpointMetadata): ManualPlaybackSessionSnapshot {
+	return createPlaybackSession({
+		sessionId: checkpoint.sessionId,
+		contentScope: 'manual',
+		source: { kind: 'manual', panelInstanceId: checkpoint.panelInstanceId },
+		lang: checkpoint.lang,
+		voiceStyleId: checkpoint.voiceStyleId,
+		speed: checkpoint.speed,
+		now: Date.now(),
+	}) as ManualPlaybackSessionSnapshot;
+}
+
+async function getSuspendedManualCheckpoint(): Promise<ManualCheckpointMetadata | null> {
+	if (suspendedManualCheckpoint) {
+		return suspendedManualCheckpoint;
+	}
+	if (!(await hasOffscreenDocument())) {
+		return null;
+	}
+	try {
+		const response = await sendOffscreenCommand({ action: 'GET_MANUAL_CHECKPOINT_METADATA' }, (message) =>
+			chrome.runtime.sendMessage(message),
+		);
+		if (!response.success || !response.checkpoint) {
+			return null;
+		}
+		suspendedManualCheckpoint = response.checkpoint;
+		suspendedManualSession = snapshotFromCheckpoint(response.checkpoint);
+		return response.checkpoint;
+	} catch (_error) {
+		return null;
+	}
+}
+
+async function closeOffscreenWhenIdle(): Promise<void> {
+	if (!(await getSuspendedManualCheckpoint())) {
+		await closeOffscreen();
+	}
+}
+
 async function stopActiveSession(_reason: string): Promise<void> {
 	const session = await clearSession();
 	if (!session) {
@@ -254,7 +313,7 @@ async function stopActiveSession(_reason: string): Promise<void> {
 	} catch (_error) {
 		// Session state is already invalidated; tolerate a missing offscreen receiver.
 	} finally {
-		await closeOffscreen();
+		await closeOffscreenWhenIdle();
 	}
 }
 
@@ -276,9 +335,66 @@ function isRestrictedUrl(url: string): boolean {
 	);
 }
 
+async function preemptManualForWeb(): Promise<CommandResponse> {
+	const manual = activeSession;
+	if (manual?.contentScope !== 'manual') {
+		return { success: true };
+	}
+	const panelInstanceId = manual.source.panelInstanceId;
+	try {
+		const response = await sendOffscreenCommand(
+			{ action: 'CHECKPOINT_MANUAL', payload: { sessionId: manual.sessionId, panelInstanceId } },
+			(message) => chrome.runtime.sendMessage(message),
+		);
+		if (!response.success || !response.checkpoint) {
+			return { success: false, error: 'manualCheckpointFailed' };
+		}
+		suspendedManualCheckpoint = response.checkpoint;
+		suspendedManualSession = manual;
+		activeSession = null;
+		await chrome.storage.session.remove(STORAGE_KEYS.PLAYBACK_SESSION);
+		await broadcastSession(null);
+		await broadcastManualCheckpointState(panelInstanceId, 'suspended');
+		return { success: true };
+	} catch (_error) {
+		return { success: false, error: 'manualCheckpointFailed' };
+	}
+}
+
+async function discardManualCheckpoint(panelInstanceId: string): Promise<boolean> {
+	const checkpoint = await getSuspendedManualCheckpoint();
+	if (!checkpoint || checkpoint.panelInstanceId !== panelInstanceId) {
+		return false;
+	}
+	try {
+		await sendOffscreenCommand(
+			{ action: 'DISCARD_MANUAL_CHECKPOINT', payload: { panelInstanceId } },
+			(message) => chrome.runtime.sendMessage(message),
+		);
+	} catch (_error) {
+		// Closing the Side Panel still needs to discard the background-only owner state.
+	}
+	suspendedManualCheckpoint = null;
+	suspendedManualSession = null;
+	await broadcastManualCheckpointState(panelInstanceId, 'discarded');
+	return true;
+}
+
 async function startPlayback(input: StartPlaybackInput): Promise<CommandResponse> {
 	await ensureHydrated();
-	await stopActiveSession('session-replaced');
+	if (input.contentScope === 'manual') {
+		const checkpoint = await getSuspendedManualCheckpoint();
+		if (checkpoint) {
+			await discardManualCheckpoint(checkpoint.panelInstanceId);
+		}
+		await stopActiveSession('session-replaced');
+	} else {
+		const preemption = await preemptManualForWeb();
+		if (!preemption.success) {
+			return preemption;
+		}
+		await stopActiveSession('session-replaced');
+	}
 
 	const preferences = (await chrome.storage.local.get([STORAGE_KEYS.ACTIVE_VOICE, STORAGE_KEYS.SPEED])) as Record<string, unknown>;
 	const storedVoiceStyleId = preferences[STORAGE_KEYS.ACTIVE_VOICE];
@@ -315,12 +431,18 @@ async function startPlayback(input: StartPlaybackInput): Promise<CommandResponse
 		await setupOffscreen();
 		observeOffscreenPlay(session.sessionId, {
 			action: 'PLAY',
-			payload: { sessionId: session.sessionId, article: input.content, voiceStyleId, speed },
+			payload: {
+				sessionId: session.sessionId,
+				article: input.content,
+				voiceStyleId,
+				speed,
+				...(input.contentScope === 'manual' ? { panelInstanceId: input.source.panelInstanceId } : {}),
+			},
 		});
 		return { success: true };
 	} catch (_error) {
 		await failSession(ERROR_MESSAGES.setup);
-		await closeOffscreen();
+		await closeOffscreenWhenIdle();
 		return { success: false, error: ERROR_MESSAGES.setup };
 	}
 }
@@ -348,12 +470,18 @@ async function startCurrentPage(): Promise<CommandResponse> {
 		if (!url) {
 			return { success: false, error: ERROR_MESSAGES.restrictedPage };
 		}
+		if (activeSession?.contentScope === 'manual') {
+			return { success: false, error: ERROR_MESSAGES.extraction };
+		}
 		await stopActiveSession('session-replaced');
 		await publishExtractionFailure(activeTab.id, activeTab.title, url);
 		return { success: false, error: ERROR_MESSAGES.extraction };
 	}
 
 	if (!articleResponse.success || !isArticle(articleResponse.article)) {
+		if (activeSession?.contentScope === 'manual') {
+			return { success: false, error: ERROR_MESSAGES.extraction };
+		}
 		await stopActiveSession('session-replaced');
 		await publishExtractionFailure(activeTab.id, activeTab.title, url);
 		return { success: false, error: ERROR_MESSAGES.extraction };
@@ -372,11 +500,12 @@ async function startCurrentPage(): Promise<CommandResponse> {
 }
 
 async function startManualText(payload: unknown): Promise<CommandResponse> {
-	const content = prepareManualText(payload);
-	if (!content) {
+	const prepared = prepareManualStart(payload);
+	if (!prepared) {
 		return { success: false, error: 'invalidManualText' };
 	}
-	return startPlayback({ contentScope: 'manual', source: { kind: 'manual' }, content });
+	const { panelInstanceId, ...content } = prepared;
+	return startPlayback({ contentScope: 'manual', source: { kind: 'manual', panelInstanceId }, content });
 }
 
 async function getCurrentPageInfo(): Promise<PageInfoResponse> {
@@ -415,7 +544,7 @@ async function failPendingStart(sessionId: string): Promise<void> {
 			return;
 		}
 		await failSession(ERROR_MESSAGES.setup);
-		await closeOffscreen();
+		await closeOffscreenWhenIdle();
 	});
 }
 
@@ -439,7 +568,7 @@ async function routeSessionCommand(action: 'PAUSE' | 'PLAY'): Promise<CommandRes
 		return await sendOffscreenCommand({ action, ...(payload ? { payload } : {}) }, (message) => chrome.runtime.sendMessage(message));
 	} catch (_error) {
 		await failSession(ERROR_MESSAGES.setup);
-		await closeOffscreen();
+		await closeOffscreenWhenIdle();
 		return { success: false, error: ERROR_MESSAGES.setup };
 	}
 }
@@ -466,7 +595,7 @@ async function changeSpeed(payload: unknown): Promise<CommandResponse> {
 		return response;
 	} catch (_error) {
 		await failSession(ERROR_MESSAGES.setup);
-		await closeOffscreen();
+		await closeOffscreenWhenIdle();
 		return { success: false, error: ERROR_MESSAGES.setup };
 	}
 }
@@ -474,6 +603,87 @@ async function changeSpeed(payload: unknown): Promise<CommandResponse> {
 async function stopReading(): Promise<CommandResponse> {
 	await ensureHydrated();
 	await stopActiveSession('user-stop');
+	await closeOffscreenWhenIdle();
+	return { success: true };
+}
+
+async function resumeManualCheckpoint(panelInstanceId: string): Promise<CommandResponse> {
+	await ensureHydrated();
+	const checkpoint = await getSuspendedManualCheckpoint();
+	if (!checkpoint) {
+		await broadcastManualCheckpointState(panelInstanceId, 'unavailable');
+		return { success: false, error: 'manualCheckpointUnavailable' };
+	}
+	if (checkpoint.panelInstanceId !== panelInstanceId) {
+		return { success: true };
+	}
+	const manual = suspendedManualSession ?? snapshotFromCheckpoint(checkpoint);
+	if (activeSession) {
+		await stopActiveSession('manual-resume');
+	}
+	activeSession = {
+		...manual,
+		status: 'loading',
+		currentParagraphIndex: 0,
+		totalParagraphs: 0,
+		progressPercentage: 0,
+		error: undefined,
+		updatedAt: Date.now(),
+	};
+	await publishSession(activeSession);
+	try {
+		const response = await sendOffscreenCommand(
+			{ action: 'RESUME_MANUAL_CHECKPOINT', payload: { panelInstanceId } },
+			(message) => chrome.runtime.sendMessage(message),
+		);
+		if (!response.success) {
+			throw new Error('Manual checkpoint is unavailable');
+		}
+		suspendedManualCheckpoint = null;
+		suspendedManualSession = null;
+		await broadcastManualCheckpointState(panelInstanceId, 'active');
+		return { success: true };
+	} catch (_error) {
+		activeSession = null;
+		await chrome.storage.session.remove(STORAGE_KEYS.PLAYBACK_SESSION);
+		await broadcastSession(null);
+		suspendedManualCheckpoint = null;
+		suspendedManualSession = null;
+		await broadcastManualCheckpointState(panelInstanceId, 'unavailable');
+		await closeOffscreen();
+		return { success: false, error: 'manualCheckpointUnavailable' };
+	}
+}
+
+async function discardManualCheckpointForOwner(panelInstanceId: string): Promise<CommandResponse> {
+	await ensureHydrated();
+	const checkpoint = await getSuspendedManualCheckpoint();
+	if (!checkpoint) {
+		await broadcastManualCheckpointState(panelInstanceId, 'discarded');
+		return { success: true };
+	}
+	if (checkpoint.panelInstanceId !== panelInstanceId) {
+		return { success: true };
+	}
+	await discardManualCheckpoint(panelInstanceId);
+	await closeOffscreenWhenIdle();
+	return { success: true };
+}
+
+async function stopSidePanelAudio(panelInstanceId: string): Promise<CommandResponse> {
+	await ensureHydrated();
+	const checkpoint = await getSuspendedManualCheckpoint();
+	const ownsActiveManual = activeSession?.contentScope === 'manual' && activeSession.source.panelInstanceId === panelInstanceId;
+	const ownsCheckpoint = checkpoint?.panelInstanceId === panelInstanceId;
+	if (!ownsActiveManual && !ownsCheckpoint) {
+		return { success: true };
+	}
+	if (activeSession) {
+		await stopActiveSession('side-panel-closed');
+	}
+	if (ownsCheckpoint) {
+		await discardManualCheckpoint(panelInstanceId);
+	}
 	await closeOffscreen();
 	return { success: true };
 }
@@ -491,7 +701,7 @@ async function applyProgressMessage(message: Record<string, unknown>): Promise<v
 
 	if (updatedSession.status === 'stopped') {
 		await clearSession();
-		await closeOffscreen();
+		await closeOffscreenWhenIdle();
 		return;
 	}
 
@@ -530,6 +740,23 @@ async function relayWordHighlightClear(message: Record<string, unknown>): Promis
 		await chrome.tabs.sendMessage(activeSession.source.tabId, { action: 'WORD_HIGHLIGHT_CLEAR', sessionId: activeSession.sessionId });
 	} catch (_error) {
 		// The content script may not be listening; ignore.
+	}
+}
+
+async function relayManualWordHighlight(message: Record<string, unknown>): Promise<void> {
+	await ensureHydrated();
+	if (activeSession?.contentScope !== 'manual' || !isManualWordTimingMessage(message) || message.sessionId !== activeSession.sessionId) {
+		return;
+	}
+	try {
+		await chrome.runtime.sendMessage({
+			action: 'MANUAL_WORD_HIGHLIGHT_UPDATE',
+			sessionId: activeSession.sessionId,
+			word: message.word,
+			wordIndex: message.wordIndex,
+		});
+	} catch (_error) {
+		// The Side Panel may be closed between the audible word event and the relay.
 	}
 }
 
@@ -597,6 +824,27 @@ chrome.runtime.onMessage.addListener(
 			case 'START_MANUAL_TEXT':
 				return respondFromQueue(() => startManualText(msg.payload), sendResponse);
 
+			case 'RESUME_MANUAL_CHECKPOINT':
+				if (!isManualPlaybackControlMessage(msg)) {
+					sendResponse({ success: false });
+					return undefined;
+				}
+				return respondFromQueue(() => resumeManualCheckpoint(msg.panelInstanceId), sendResponse);
+
+			case 'DISCARD_MANUAL_CHECKPOINT':
+				if (!isManualPlaybackControlMessage(msg)) {
+					sendResponse({ success: false });
+					return undefined;
+				}
+				return respondFromQueue(() => discardManualCheckpointForOwner(msg.panelInstanceId), sendResponse);
+
+			case 'STOP_SIDE_PANEL_AUDIO':
+				if (!isManualPlaybackControlMessage(msg)) {
+					sendResponse({ success: false });
+					return undefined;
+				}
+				return respondFromQueue(() => stopSidePanelAudio(msg.panelInstanceId), sendResponse);
+
 			case 'PAUSE_READING':
 				return respondFromQueue(() => routeSessionCommand('PAUSE'), sendResponse);
 
@@ -619,6 +867,10 @@ chrome.runtime.onMessage.addListener(
 
 			case 'WORD_HIGHLIGHT_CLEAR':
 				void enqueue(() => relayWordHighlightClear(msg));
+				break;
+
+			case 'OFFSCREEN_MANUAL_WORD_TIMING':
+				void enqueue(() => relayManualWordHighlight(msg));
 				break;
 
 			default:

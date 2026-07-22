@@ -273,6 +273,20 @@ export class Style {
 	}
 }
 
+function repeatStyleBatch(tensor: ort.Tensor, batchSize: number): ort.Tensor {
+	if (tensor.dims[0] === batchSize) {
+		return tensor;
+	}
+	if (tensor.dims[0] !== 1 || tensor.type !== 'float32' || !(tensor.data instanceof Float32Array)) {
+		throw new Error('Duration prediction requires one float32 style tensor to repeat across the text batch');
+	}
+	const repeated = new Float32Array(tensor.data.length * batchSize);
+	for (let batchIndex = 0; batchIndex < batchSize; batchIndex++) {
+		repeated.set(tensor.data, batchIndex * tensor.data.length);
+	}
+	return new ort.Tensor('float32', repeated, [batchSize, ...tensor.dims.slice(1)]);
+}
+
 /**
  * Text-to-Speech class
  */
@@ -302,17 +316,8 @@ export class TextToSpeech {
 		this.sampleRate = cfgs.ae.sample_rate;
 	}
 
-	async _infer(
-		textList: string[],
-		langList: string[],
-		style: Style,
-		totalStep: number,
-		speed = 1.05,
-		progressCallback?: (step: number, total: number) => void,
-	) {
+	private async prepareDurationPrediction(textList: string[], langList: string[], style: Style, speed: number) {
 		const bsz = textList.length;
-
-		// Process text
 		const { textIds, textMask } = this.textProcessor.call(textList, langList);
 
 		const textIdsFlat = new BigInt64Array(textIds.flat().map((x) => BigInt(x)));
@@ -323,18 +328,31 @@ export class TextToSpeech {
 		const textMaskShape = [bsz, 1, textMask[0][0].length];
 		const textMaskTensor = new ort.Tensor('float32', textMaskFlat, textMaskShape);
 
-		// Predict duration
 		const dpOutputs = await this.dpOrt.run({
 			text_ids: textIdsTensor,
-			style_dp: style.dp,
+			style_dp: repeatStyleBatch(style.dp, bsz),
 			text_mask: textMaskTensor,
 		});
-		const duration = Array.from(dpOutputs.duration.data as Float32Array);
+		const duration = Array.from(dpOutputs.duration.data as Float32Array, (value) => value / speed);
 
-		// Apply speed factor to duration
-		for (let i = 0; i < duration.length; i++) {
-			duration[i] /= speed;
-		}
+		return { duration, textIdsTensor, textMaskTensor };
+	}
+
+	async predictDurations(textList: string[], langList: string[], style: Style, speed = 1.05): Promise<number[]> {
+		const { duration } = await this.prepareDurationPrediction(textList, langList, style, speed);
+		return duration;
+	}
+
+	async _infer(
+		textList: string[],
+		langList: string[],
+		style: Style,
+		totalStep: number,
+		speed = 1.05,
+		progressCallback?: (step: number, total: number) => void,
+	) {
+		const bsz = textList.length;
+		const { duration, textIdsTensor, textMaskTensor } = await this.prepareDurationPrediction(textList, langList, style, speed);
 
 		// Encode text
 		const textEncOutputs = await this.textEncOrt.run({

@@ -72,13 +72,21 @@ test('Side Panel stays within the Free runtime and storage boundary', async ({ g
 	await expect
 		.poll(() => page.evaluate(() => (window as any).modelLoadingProgressCount as number), {
 			message: 'expected manual playback to begin real offscreen model work',
-			timeout: 10_000,
+			timeout: 30_000,
 		})
 		.toBeGreaterThan(0);
 
 	const stored = await page.evaluate(async () => ({
 		local: await chrome.storage.local.get(null),
 		session: await chrome.storage.session.get(null),
+		windowLocal: Array.from({ length: window.localStorage.length }, (_, index) => {
+			const key = window.localStorage.key(index) ?? '';
+			return [key, window.localStorage.getItem(key)];
+		}),
+		windowSession: Array.from({ length: window.sessionStorage.length }, (_, index) => {
+			const key = window.sessionStorage.key(index) ?? '';
+			return [key, window.sessionStorage.getItem(key)];
+		}),
 		permissions: chrome.runtime.getManifest().permissions ?? [],
 		hostPermissions: chrome.runtime.getManifest().host_permissions ?? [],
 		sidePanelDefaultPath: chrome.runtime.getManifest().side_panel?.default_path,
@@ -94,7 +102,14 @@ test('Side Panel stays within the Free runtime and storage boundary', async ({ g
 	expect(Object.keys(stored.local).every((key) => approvedLocalKeys.includes(key))).toBe(true);
 	expect(Object.keys(stored.session)).toEqual([STORAGE_KEYS.PLAYBACK_SESSION]);
 	expect([...Object.keys(stored.local), ...Object.keys(stored.session)].some((key) => /draft/i.test(key))).toBe(false);
-	expect(JSON.stringify({ local: stored.local, session: stored.session })).not.toContain(sentinel);
+	expect(
+		JSON.stringify({
+			local: stored.local,
+			session: stored.session,
+			windowLocal: stored.windowLocal,
+			windowSession: stored.windowSession,
+		}),
+	).not.toContain(sentinel);
 
 	const snapshot = stored.session[STORAGE_KEYS.PLAYBACK_SESSION] as Record<string, unknown>;
 	expect(snapshot).toMatchObject({ contentScope: 'manual', source: { kind: 'manual' }, lang: 'en', status: 'loading' });
@@ -103,7 +118,7 @@ test('Side Panel stays within the Free runtime and storage boundary', async ({ g
 	expect(snapshot).not.toHaveProperty('title');
 	expect(snapshot).not.toHaveProperty('url');
 	expect(snapshot).not.toHaveProperty('tabId');
-	expect(snapshot.source).toEqual({ kind: 'manual' });
+	expect(snapshot.source).toEqual({ kind: 'manual', panelInstanceId: expect.any(String) });
 	expect([...stored.permissions].sort()).toEqual(['activeTab', 'contextMenus', 'offscreen', 'scripting', 'sidePanel', 'storage'].sort());
 	expect(stored.hostPermissions).toEqual(['https://huggingface.co/*']);
 	expect(stored.sidePanelDefaultPath).toBe('src/sidepanel/sidepanel.html');

@@ -50,10 +50,10 @@ audio are not included in this snapshot and are not stored as product data.
 
 For manual playback, the session snapshot contains only playback metadata,
 including the resolved language, playback status and progress, selected voice,
-speed, and update time. It contains no page URL, tab ID, text-derived title, or
-pasted content. The pasted-text draft remains only in the active Side Panel
-document; closing or reloading the Side Panel discards the draft while active
-audio may continue through the background-owned session.
+speed, update time, and a random Side Panel owner ID. It contains no page URL,
+tab ID, text-derived title, or pasted content. The pasted-text draft remains
+only in the active Side Panel document. Closing or reloading that Side Panel
+stops owned audio and discards the draft and any manual checkpoint.
 
 Do not use the extension on pages containing information that you are not permitted to process. The extension does not bypass paywalls, login restrictions, DRM, or other technical access controls.
 
@@ -75,7 +75,10 @@ passwords, form submissions, email addresses, license keys, device identifiers, 
 ## Security and retention
 
 Article and pasted text are processed locally and are not retained by a readit.dev backend. Pasted-text drafts are discarded when their Side
-Panel document closes or reloads. The model files are cached locally by the browser after download.
+Panel document closes or reloads. During a same-document web-reading
+preemption, a decoded manual-audio checkpoint may exist only in live extension
+memory until it is resumed, discarded, or the Side Panel closes or reloads.
+The model files are cached locally by the browser after download.
 
 You can remove locally cached extension data by uninstalling the extension or clearing its storage in Chrome.
 

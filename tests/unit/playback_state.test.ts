@@ -18,6 +18,8 @@ const tabInput = {
 	now: 1000,
 };
 
+const manualSource = { kind: 'manual' as const, panelInstanceId: 'ad6f72b4-2b6a-42c4-9d11-c3d6f07333cd' };
+
 test('creates a tab-owned loading session', () => {
 	assert.deepEqual(createPlaybackSession(tabInput), {
 		sessionId: 'session-1',
@@ -38,13 +40,13 @@ test('creates a manual loading session without tab metadata', () => {
 	const session = createPlaybackSession({
 		sessionId: 'manual-1',
 		contentScope: 'manual',
-		source: { kind: 'manual' },
+		source: manualSource,
 		lang: 'vi',
 		voiceStyleId: 'F1',
 		speed: 1.1,
 		now: 2000,
 	});
-	assert.deepEqual(session.source, { kind: 'manual' });
+	assert.deepEqual(session.source, manualSource);
 	assert.equal('tabId' in session.source, false);
 	assert.equal(isPlaybackSessionSnapshot(session), true);
 	assert.equal(isPlaybackSessionSnapshot({ ...session, error: 'Expected manual error' }), true);
@@ -54,7 +56,7 @@ test('rejects forbidden top-level fields on manual sessions', () => {
 	const manual = createPlaybackSession({
 		sessionId: 'manual-1',
 		contentScope: 'manual',
-		source: { kind: 'manual' },
+		source: manualSource,
 		lang: 'en',
 		voiceStyleId: 'M1',
 		speed: 1.05,
@@ -73,7 +75,7 @@ test('validates only legal source and scope combinations', () => {
 		true,
 	);
 	assert.equal(isPlaybackSessionSnapshot({ ...createPlaybackSession(tabInput), contentScope: 'manual' }), false);
-	assert.equal(isPlaybackSessionSnapshot({ ...createPlaybackSession(tabInput), source: { kind: 'manual' } }), false);
+	assert.equal(isPlaybackSessionSnapshot({ ...createPlaybackSession(tabInput), source: manualSource }), false);
 });
 
 test('creates a transient extraction error session from tab metadata only', () => {
@@ -162,13 +164,31 @@ test('manual sessions never own browser tabs', () => {
 	const manual = createPlaybackSession({
 		sessionId: 'manual-1',
 		contentScope: 'manual',
-		source: { kind: 'manual' },
+		source: manualSource,
 		lang: 'en',
 		voiceStyleId: 'M1',
 		speed: 1.05,
 		now: 1000,
 	});
 	assert.equal(ownsTab(manual, 42), false);
+});
+
+test('rejects manual snapshots with invalid owners or extra source fields', () => {
+	const manual = createPlaybackSession({
+		sessionId: 'manual-1',
+		contentScope: 'manual',
+		source: manualSource,
+		lang: 'en',
+		voiceStyleId: 'M1',
+		speed: 1.05,
+		now: 1000,
+	});
+
+	assert.equal(isPlaybackSessionSnapshot({ ...manual, source: { kind: 'manual', panelInstanceId: '' } }), false);
+	assert.equal(
+		isPlaybackSessionSnapshot({ ...manual, source: { ...manualSource, text: 'forbidden' } }),
+		false,
+	);
 });
 
 test('does not apply stale progress after the active session has been cleared', () => {

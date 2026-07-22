@@ -46,6 +46,12 @@ test('THEME_TRANSLATIONS dịch ngôn ngữ vi và en hoạt động chính xác
 	assert.strictEqual(vi.textProcessedLocally, 'Nội dung chỉ được xử lý trên thiết bị.');
 	assert.strictEqual(vi.currentPageUnavailable, 'Không thể đọc trang hiện tại');
 	assert.strictEqual(vi.invalidManualText, 'Hãy nhập văn bản cần đọc.');
+	assert.strictEqual(vi.manualReaderLabel, 'Văn bản đang đọc');
+	assert.strictEqual(vi.manualPausedForWeb, 'Đọc trong editor đã tạm dừng để đọc web.');
+	assert.strictEqual(vi.resumeEditorReading, 'Tiếp tục đọc trong editor');
+	assert.strictEqual(vi.stopEditorReading, 'Dừng đọc trong editor');
+	assert.strictEqual(vi.manualCheckpointUnavailable, 'Phiên đọc trong editor không còn khả dụng. Hãy bắt đầu lại.');
+	assert.strictEqual(vi.manualCheckpointFailed, 'Không thể tạm dừng đọc trong editor. Chưa bắt đầu đọc web.');
 
 	assert.strictEqual(en.selectTheme, 'Select Theme');
 	assert.strictEqual(en.themeWinamp, '🕹️ Classic (1998)');
@@ -78,6 +84,12 @@ test('THEME_TRANSLATIONS dịch ngôn ngữ vi và en hoạt động chính xác
 	assert.strictEqual(en.textProcessedLocally, 'Text is processed only on this device.');
 	assert.strictEqual(en.currentPageUnavailable, 'Current page unavailable');
 	assert.strictEqual(en.invalidManualText, 'Enter text to read.');
+	assert.strictEqual(en.manualReaderLabel, 'Text being read');
+	assert.strictEqual(en.manualPausedForWeb, 'Editor reading is paused while web reading plays.');
+	assert.strictEqual(en.resumeEditorReading, 'Resume editor reading');
+	assert.strictEqual(en.stopEditorReading, 'Stop editor reading');
+	assert.strictEqual(en.manualCheckpointUnavailable, 'Editor reading is no longer available. Start it again.');
+	assert.strictEqual(en.manualCheckpointFailed, 'Unable to pause editor reading. Web reading was not started.');
 
 	assert.strictEqual(vi.loadingModel, 'Đang tải model');
 	assert.strictEqual(vi.modelLoadFailed, 'Không thể tải model');

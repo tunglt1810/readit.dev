@@ -1,3 +1,6 @@
+import { isPanelInstanceId } from '../shared/manual_playback.ts';
+import { normalizeManualText } from '../shared/manual_text.ts';
+import type { ManualPlaybackStartPayload } from '../shared/manual_playback.ts';
 import type { ManualTextLanguage, PlaybackContent, ResolvedManualTextLanguage } from '../shared/types.ts';
 
 const MANUAL_LANGUAGES = new Set<ManualTextLanguage>(['auto', 'en', 'vi', 'zh']);
@@ -22,16 +25,6 @@ const VIETNAMESE_FUNCTION_WORDS = new Set([
 	'cac',
 	'các',
 ]);
-
-function normalizeManualText(text: string): string {
-	return text
-		.normalize('NFKC')
-		.replace(/\r\n?/gu, '\n')
-		.split('\n')
-		.map((line) => line.replace(/[\t ]+/gu, ' ').trimEnd())
-		.join('\n')
-		.trim();
-}
 
 export function detectManualTextLanguage(text: string): ResolvedManualTextLanguage {
 	const normalized = text.normalize('NFKC').toLocaleLowerCase();
@@ -63,4 +56,16 @@ export function prepareManualText(payload: unknown): PlaybackContent | null {
 	}
 	const language = input.language as ManualTextLanguage;
 	return { content, lang: language === 'auto' ? detectManualTextLanguage(content) : language };
+}
+
+export function prepareManualStart(payload: unknown): (PlaybackContent & { panelInstanceId: string }) | null {
+	if (!payload || typeof payload !== 'object') {
+		return null;
+	}
+	const input = payload as Partial<ManualPlaybackStartPayload>;
+	if (!isPanelInstanceId(input.panelInstanceId)) {
+		return null;
+	}
+	const prepared = prepareManualText(input);
+	return prepared ? { ...prepared, panelInstanceId: input.panelInstanceId } : null;
 }

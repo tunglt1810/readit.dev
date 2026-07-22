@@ -238,6 +238,28 @@ test('excludes punctuation tokens from the word map, keeping them in the spoken 
 	assert.equal(result.text.slice(plainEntry.spokenStart, plainEntry.spokenEnd), 'khác');
 });
 
+test('keeps words separate when a detected abbreviation span is not expanded', async () => {
+	const dependencies = createTestNormalizationDependencies();
+	dependencies.assets.detector = {
+		detect(tokens) {
+			return tokens.map((token, index) => {
+				if (token.text === 'Channel') {
+					return 'B-LABB';
+				}
+				return index > 2 && index <= 5 ? 'I-LABB' : 'O';
+			});
+		},
+	};
+	const source = '**Channel Activity Analysis (4.6.6):** Phân tích';
+	const result = await normalizeVietnameseText(source, dependencies);
+
+	assert.equal(result.text, '**Channel Activity Analysis (4.6.sáu):** Phân tích');
+	assert.deepEqual(
+		result.wordMap.slice(0, 3).map((entry) => entry.originalText),
+		['Channel', 'Activity', 'Analysis'],
+	);
+});
+
 test('accounts for the paragraph separator when computing word map offsets across paragraphs', async () => {
 	const dependencies = createTestNormalizationDependencies();
 	const result = await normalizeVietnameseText('Mở đầu.\n\nĐH kết thúc.', dependencies);

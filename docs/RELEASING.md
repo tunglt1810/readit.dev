@@ -32,6 +32,9 @@ is future-Pro source and must not be included in the extension build or ZIP.
 - [ ] Verify `dist/src/sidepanel/sidepanel.html` exists in the built extension
   and release archive, and confirm the Chrome Web Store privacy disclosure
   states that user-pasted text stays local and is not persisted.
+- [ ] In both English and Vietnamese, verify the locked pasted-text reader
+  highlights the spoken word, web playback can preempt and explicitly resume
+  editor reading, and closing or reloading the Side Panel stops owned audio.
 
 ## First Chrome Web Store release
 

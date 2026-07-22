@@ -13,8 +13,11 @@ reading action followed by a persistent manual-text input for locally reading
 pasted or typed content.
 
 Manual text uses the existing background-owned playback coordinator and
-offscreen TTS pipeline. It replaces the active session when started, remains
-independent from any browser tab, and is never written to extension storage.
+offscreen TTS pipeline. It is independent from browser-tab lifecycle and is
+never written to extension storage. While it is being read, the Side Panel
+shows a locked local reader with spoken-word highlighting. A web reading can
+checkpoint the manual audio in memory and the same open Side Panel can
+explicitly resume it.
 
 ## 2. Product decisions
 
@@ -25,10 +28,12 @@ independent from any browser tab, and is never written to extension storage.
   branching the popup application.
 - Place current-page reading before manual-text input in the Side Panel.
 - Keep the player visible at the bottom of the Side Panel.
-- Let a valid manual-text request immediately replace the active session. Do
-  not add a queue.
-- Keep manual sessions independent from tab navigation, replacement, and
-  closure.
+- Let a valid manual-text request replace the active session. A valid web
+  request checkpoints an active manual session before it replaces it; do not
+  add a queue.
+- Keep manual sessions independent from browser-tab navigation and closure.
+  Closing or reloading the owning Side Panel stops audio and discards manual
+  state.
 - Default manual-text language selection to `Auto`, with explicit English,
   Vietnamese, and Chinese overrides.
 - Keep the manual-text draft only in the active Side Panel document's memory.
@@ -56,7 +61,7 @@ independent from any browser tab, and is never written to extension storage.
 - Persisting pasted text, generated audio, or detected language results.
 - Per-sentence language detection or mixed-language voice switching.
 - Translation, summaries, cloud AI, cloud TTS, or backend integration.
-- Highlighting manual text in a webpage or adding a custom reader-mode page.
+- Highlighting manual text in a webpage or adding a separate reader-mode page.
 - Refactoring unrelated popup controls or theme implementation.
 
 ## 4. User experience
@@ -116,14 +121,17 @@ The character count is informational. The first version adds no manual-specific
 length limit beyond the capacity already supported by the Article playback
 pipeline.
 
-A valid request stops the active session and starts manual playback through
-the shared coordinator. The draft remains editable after a successful start so
-the user can correct and replay it. Clear removes only the local draft and does
-not stop playback.
+A valid request locks the normalized text in a read-only reader and starts
+manual playback through the shared coordinator. The reader highlights spoken
+words locally, including repeated words in source order; Stop returns the same
+draft to the editable textarea. Clear and language selection are locked while
+the reader is active.
 
-Closing or reloading the Side Panel discards the draft. If manual audio is
-already playing, playback continues. Reopening the Side Panel hydrates the
-shared playback snapshot without reconstructing the discarded draft.
+A valid web reading checkpoints manual audio in offscreen memory before it
+starts. The locked reader then offers explicit Resume editor reading and Stop
+editor reading controls. Web completion and normal web Stop do not auto-resume
+manual audio. Closing or reloading the owning Side Panel stops active audio,
+discards the checkpoint and draft, and leaves the next Side Panel empty.
 
 ### 4.5 Language selection
 
@@ -208,6 +216,7 @@ interface StartManualTextMessage {
 	payload: {
 		text: string;
 		language: 'auto' | 'en' | 'vi' | 'zh';
+		panelInstanceId: string;
 	};
 }
 ```
@@ -239,7 +248,7 @@ type PlaybackSessionSnapshot =
 	  })
 	| (PlaybackSessionBase & {
 			contentScope: 'manual';
-			source: { kind: 'manual' };
+			source: { kind: 'manual'; panelInstanceId: string };
 	  });
 ```
 
@@ -259,7 +268,7 @@ Popup user gesture
     -> Side Panel hydrates shared playback and local preferences
 
 Manual read activation
-    -> Side Panel sends START_MANUAL_TEXT { text, language }
+    -> Side Panel sends START_MANUAL_TEXT { text, language, panelInstanceId }
     -> background validates and normalizes text
     -> background resolves Auto or explicit language locally
     -> valid input stops the previous session
@@ -283,8 +292,9 @@ or `chrome.storage.session`.
 | Auto detection is uncertain | Resolve to English and continue without a translation claim. |
 | Model or TTS setup fails after replacement | Publish the shared localized error state and retain the Side Panel draft for retry. |
 | Stop is requested during loading | Invalidate the manual session and stop through the existing coordinator. |
-| Side Panel closes during manual playback | Continue playback and discard only the local draft. |
-| Side Panel reopens during manual playback | Hydrate generic playback state without restoring draft text. |
+| Web start while manual is active | Checkpoint manual in memory; reject the web start if checkpointing fails. |
+| Side Panel closes or reloads during owned manual playback | Stop audio, discard the checkpoint and draft, and clear the reader. |
+| Side Panel reopens after close or reload | Start with an empty editable draft and no manual checkpoint. |
 | Active tab changes before current-page activation | Resolve the active tab at activation time. |
 | Active tab navigates or closes during manual playback | Ignore the tab event and continue manual playback. |
 | Restricted or unreadable current page | Fail only current-page reading; manual-text reading remains available. |
@@ -324,9 +334,9 @@ dependency.
 - Side Panel renders current-page reading before manual-text reading.
 - Valid manual text starts locally and replaces the previous session.
 - Empty manual text preserves active playback.
-- Manual playback survives active-tab changes, navigation, reload, and tab
-  closure.
-- Closing and reopening the Side Panel discards the draft but hydrates playback.
+- Manual playback survives active-tab changes, navigation, and tab closure.
+- Locked manual reader highlights spoken words, supports explicit web
+  preemption/resume, and side-panel close/reload stops owned audio.
 - Popup, Side Panel, session storage snapshot, and badge show consistent state.
 - Manual text remains usable when current-page extraction is restricted.
 - Default, Winamp, and WMP12 preferences apply without changing the approved
