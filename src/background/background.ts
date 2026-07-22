@@ -934,3 +934,14 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 		});
 	});
 });
+
+chrome.commands.onCommand.addListener((command) => {
+	if (command === 'open_side_panel') {
+		void chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
+			if (tab?.windowId) {
+				void chrome.sidePanel.open({ windowId: tab.windowId });
+			}
+		});
+	}
+});
+

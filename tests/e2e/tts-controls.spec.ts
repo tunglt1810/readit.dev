@@ -207,4 +207,10 @@ test.describe('Kịch bản 3: Điều khiển TTS (TTS Controls)', () => {
 		await expect(progressBar).not.toBeVisible();
 		await expect(page.locator('.btn-playpause')).not.toBeVisible();
 	});
+
+	test('tự động focus vào nút đọc trang khi mở popup', async ({ page }) => {
+		const readButton = page.locator('.btn-read');
+		await expect(readButton).toBeFocused();
+	});
 });
+
