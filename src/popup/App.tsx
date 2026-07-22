@@ -1,21 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 
-import {
-	BUY_ME_A_COFFEE_URL,
-	PRIVACY_POLICY_URL,
-	STORAGE_KEYS,
-	THEME_TRANSLATIONS,
-	VOICE_STYLE_TRANSLATIONS,
-	VOICE_STYLES,
-} from '../shared/constants';
+import { BUY_ME_A_COFFEE_URL, PRIVACY_POLICY_URL, STORAGE_KEYS, VOICE_STYLE_TRANSLATIONS, VOICE_STYLES } from '../shared/constants';
+import { t, uiLang } from '../shared/i18n';
+import { requestPlaybackState, sendPlaybackCommand, subscribePlaybackState } from '../shared/playback_client';
 import { isSelectionButtonEnabled } from '../shared/selection_button';
-import type { PlaybackSessionSnapshot, PlaybackStateResponse, PlaybackStatus } from '../shared/types';
+import type { PlaybackSessionSnapshot, PlaybackStatus, ThemeName } from '../shared/types';
 import { isWordHighlightEnabled } from '../shared/word_highlight';
 import { buildFeedbackUrl } from './feedback';
+import { openSidePanelForCurrentWindow } from './side_panel';
 
-type CommandResponse = { success: boolean; error?: string };
 type PlaybackIconName = 'read' | 'stop' | 'pause' | 'resume';
-type ThemeName = 'default' | 'winamp' | 'wmp12';
 
 type ReadingSpeedControlProps = {
 	theme: ThemeName;
@@ -31,15 +25,6 @@ type VoiceControlProps = {
 	disabled: boolean;
 	onVoiceChange: (value: string) => void;
 };
-
-const uiLang =
-	typeof chrome !== 'undefined' && chrome.i18n && chrome.i18n.getUILanguage
-		? chrome.i18n.getUILanguage().startsWith('vi')
-			? 'vi'
-			: 'en'
-		: 'en';
-
-const t = (key: keyof typeof THEME_TRANSLATIONS.en) => THEME_TRANSLATIONS[uiLang][key];
 
 function PlaybackIcon({ name }: { name: PlaybackIconName }) {
 	const commonProps = {
@@ -130,6 +115,7 @@ export default function App() {
 	// Playback state is owned by the background coordinator.
 	const [session, setSession] = useState<PlaybackSessionSnapshot | null>(null);
 	const [currentTabId, setCurrentTabId] = useState<number | undefined>();
+	const [sidePanelWindowId, setSidePanelWindowId] = useState<number | undefined>();
 	const [activeTheme, setActiveTheme] = useState<ThemeName>('default');
 	const [themeMenuOpen, setThemeMenuOpen] = useState(false);
 	const themeSelectorButtonRef = useRef<HTMLButtonElement>(null);
@@ -147,9 +133,11 @@ export default function App() {
 	const [modelError, setModelError] = useState('');
 	const [commandError, setCommandError] = useState('');
 	const status: PlaybackStatus = session?.status ?? 'stopped';
-	const isSessionOnAnotherTab = session?.tabId !== currentTabId;
+	const tabSource = session?.source.kind === 'tab' ? session.source : null;
+	const isSessionOnAnotherTab = tabSource !== null && tabSource.tabId !== currentTabId;
+	const sessionTitle = session?.contentScope === 'manual' ? t('pastedText') : (tabSource?.title ?? '');
 	const errorMsg = commandError || session?.error || modelError;
-	const sessionHost = session ? getHost(session.url) : '';
+	const sessionHost = tabSource ? getHost(tabSource.url) : '';
 	const manifestVersion = chrome.runtime.getManifest().version;
 	const feedbackUrl = buildFeedbackUrl(manifestVersion);
 
@@ -179,11 +167,7 @@ export default function App() {
 			},
 		);
 
-		chrome.runtime.sendMessage({ action: 'GET_PLAYBACK_STATE' }, (response: PlaybackStateResponse | undefined) => {
-			if (!response) {
-				return;
-			}
-
+		void requestPlaybackState().then((response) => {
 			setSession(response.session);
 			setCurrentTabId(response.currentTabId);
 			if (response.session === null) {
@@ -191,24 +175,27 @@ export default function App() {
 				setCommandError('');
 			}
 		});
+		const unsubscribePlayback = subscribePlaybackState(chrome.runtime, (nextSession) => {
+			setSession(nextSession);
+			setCommandError('');
+			if (nextSession === null) {
+				setModelError('');
+			}
+		});
+
+		void chrome.tabs.query({ active: true, currentWindow: true }).then(
+			([tab]) => setSidePanelWindowId(tab?.windowId),
+			() => setSidePanelWindowId(undefined),
+		);
 
 		// Listen to messages from background/offscreen
 		const messageListener = (message: unknown) => {
 			const msg = message as {
 				action: string;
-				session?: PlaybackSessionSnapshot | null;
 				progress?: { loaded: number; total: number; modelName: string };
 				error?: string;
 			};
 			const { action, progress, error } = msg;
-
-			if (action === 'PLAYBACK_STATE_UPDATE') {
-				setSession(msg.session ?? null);
-				setCommandError('');
-				if (msg.session === null) {
-					setModelError('');
-				}
-			}
 
 			if (action === 'MODEL_LOADING_PROGRESS' && progress) {
 				const p = progress as { loaded: number; total: number; modelName: string };
@@ -228,15 +215,18 @@ export default function App() {
 		};
 
 		chrome.runtime.onMessage.addListener(messageListener);
-		return () => chrome.runtime.onMessage.removeListener(messageListener);
+		return () => {
+			unsubscribePlayback();
+			chrome.runtime.onMessage.removeListener(messageListener);
+		};
 	}, []);
 
 	// Handler: Start/Stop Reading Page
 	const handleStartCurrentPage = () => {
 		setCommandError('');
-		chrome.runtime.sendMessage({ action: 'START_CURRENT_PAGE' }, (response: CommandResponse | undefined) => {
+		void sendPlaybackCommand({ action: 'START_CURRENT_PAGE' }).then((response) => {
 			if (response?.success === false) {
-				setCommandError(response.error || t('startReadingFailed'));
+				setCommandError(response.transportError ? t('startReadingFailed') : response.error || t('startReadingFailed'));
 				return;
 			}
 			setCommandError('');
@@ -248,16 +238,16 @@ export default function App() {
 			setModelError('');
 			handleStartCurrentPage();
 		} else {
-			chrome.runtime.sendMessage({ action: 'STOP_READING' });
+			void sendPlaybackCommand({ action: 'STOP_READING' });
 		}
 	};
 
 	// Handler: Play/Pause Audio
 	const handlePlayPause = () => {
 		if (status === 'playing') {
-			chrome.runtime.sendMessage({ action: 'PAUSE_READING' });
+			void sendPlaybackCommand({ action: 'PAUSE_READING' });
 		} else if (status === 'paused') {
-			chrome.runtime.sendMessage({ action: 'RESUME_READING' });
+			void sendPlaybackCommand({ action: 'RESUME_READING' });
 		}
 	};
 
@@ -266,17 +256,25 @@ export default function App() {
 			setModelError('');
 			handleStartCurrentPage();
 		} else if (status === 'playing') {
-			chrome.runtime.sendMessage({ action: 'PAUSE_READING' });
+			void sendPlaybackCommand({ action: 'PAUSE_READING' });
 		} else if (status === 'paused') {
-			chrome.runtime.sendMessage({ action: 'RESUME_READING' });
+			void sendPlaybackCommand({ action: 'RESUME_READING' });
 		}
 	};
 
-	const handleStopReading = () => chrome.runtime.sendMessage({ action: 'STOP_READING' });
+	const handleStopReading = () => void sendPlaybackCommand({ action: 'STOP_READING' });
 
 	const handleReadCurrentPage = () => {
 		setModelError('');
 		handleStartCurrentPage();
+	};
+
+	const handleOpenSidePanel = () => {
+		setCommandError('');
+		void openSidePanelForCurrentWindow({
+			windowId: sidePanelWindowId,
+			open: (options) => chrome.sidePanel.open(options),
+		}).catch(() => setCommandError(t('openSidePanelFailed')));
 	};
 
 	// Handler: Change Voice
@@ -289,7 +287,7 @@ export default function App() {
 	const handleSpeedChange = (val: number) => {
 		setSpeed(val);
 		chrome.storage.local.set({ [STORAGE_KEYS.SPEED]: val });
-		chrome.runtime.sendMessage({ action: 'CHANGE_SPEED', payload: { speed: val } });
+		void sendPlaybackCommand({ action: 'CHANGE_SPEED', payload: { speed: val } });
 	};
 
 	// Handler: Change Theme
@@ -335,6 +333,8 @@ export default function App() {
 	const isThemedPrimaryDisabled = status === 'loading';
 	const canStopThemedPlayback = status === 'loading' || status === 'playing' || status === 'paused';
 	const themedPrimaryLabel = status === 'playing' ? t('pauseState') : status === 'paused' ? t('resumeStatus') : t('readPage');
+	const activeThemeName =
+		activeTheme === 'winamp' ? t('themeWinampName') : activeTheme === 'wmp12' ? t('themeWmp12Name') : t('themeDefaultName');
 
 	return (
 		<div className="app-container" data-theme={activeTheme}>
@@ -344,54 +344,12 @@ export default function App() {
 					<h1 className="logo-text">
 						readit<span>.dev</span>
 					</h1>
-				</div>
-				<span className="extension-version">v{manifestVersion}</span>
-				<div
-					className="theme-selector-container"
-					onBlur={(event) => {
-						if (!event.currentTarget.contains(event.relatedTarget)) {
-							setThemeMenuOpen(false);
-						}
-					}}
-					onKeyDown={(event) => {
-						if (event.key === 'Escape') {
-							setThemeMenuOpen(false);
-							themeSelectorButtonRef.current?.focus();
-						}
-					}}
-				>
-					<button
-						ref={themeSelectorButtonRef}
-						className="theme-selector-btn"
-						aria-label={t('selectTheme')}
-						aria-controls="theme-options"
-						aria-expanded={themeMenuOpen}
-						onClick={() => setThemeMenuOpen((open) => !open)}
-					>
-						🎨
-					</button>
-					<div id="theme-options" className={`theme-dropdown ${themeMenuOpen ? 'open' : ''}`} hidden={!themeMenuOpen}>
-						<button
-							className={`theme-opt-btn ${activeTheme === 'default' ? 'active' : ''}`}
-							onClick={() => handleThemeChange('default')}
-						>
-							{t('themeDefault')}
-						</button>
-						<button
-							className={`theme-opt-btn ${activeTheme === 'winamp' ? 'active' : ''}`}
-							onClick={() => handleThemeChange('winamp')}
-						>
-							{t('themeWinamp')}
-						</button>
-						<button
-							className={`theme-opt-btn ${activeTheme === 'wmp12' ? 'active' : ''}`}
-							onClick={() => handleThemeChange('wmp12')}
-						>
-							{t('themeWmp12')}
-						</button>
 					</div>
-				</div>
-			</header>
+					<span className="extension-version">v{manifestVersion}</span>
+					<a className="support-link header-support-link" href={BUY_ME_A_COFFEE_URL} target="_blank" rel="noreferrer">
+						<span aria-hidden="true">☕</span> {t('buyMeCoffee')}
+					</a>
+				</header>
 
 			{/* Main Playback Area */}
 			<main className="app-main">
@@ -426,17 +384,23 @@ export default function App() {
 
 				{session && (
 					<div className="session-meta">
-						<span className="session-title" title={session.title}>
-							{session.title}
+						<span className="session-title" title={sessionTitle}>
+							{sessionTitle}
 						</span>
-						<span className="session-host">{sessionHost}</span>
+						{sessionHost && <span className="session-host">{sessionHost}</span>}
 						<div className="session-context">
 							<span>
 								{session.totalParagraphs > 0
 									? `${t('paragraphLabel')} ${session.currentParagraphIndex + 1}/${session.totalParagraphs} • ${Math.round(session.progressPercentage)}%`
 									: t('preparingContent')}
 							</span>
-							<span>{isSessionOnAnotherTab ? t('readingOtherTab') : t('readingThisTab')}</span>
+							<span>
+								{session.contentScope === 'manual'
+									? t('manualSession')
+									: isSessionOnAnotherTab
+										? t('readingOtherTab')
+										: t('readingThisTab')}
+							</span>
 						</div>
 					</div>
 				)}
@@ -513,6 +477,11 @@ export default function App() {
 						</div>
 					)}
 
+					<button className="btn btn-secondary open-side-panel" type="button" onClick={handleOpenSidePanel}>
+						<span aria-hidden="true">▱</span>
+						{t('openSidePanel')}
+					</button>
+
 					{session && isSessionOnAnotherTab && (
 						<button className="btn btn-secondary btn-read-current-page" onClick={handleReadCurrentPage}>
 							{t('readCurrentPage')}
@@ -529,9 +498,9 @@ export default function App() {
 						</span>
 					</div>
 				</div>
-			</main>
+				</main>
 
-			{/* Settings Section */}
+				{/* Settings Section */}
 			{activeTheme !== 'wmp12' && (
 				<section className="app-section">
 					<h2 className="section-title">{t('voiceConfig')}</h2>
@@ -569,13 +538,59 @@ export default function App() {
 				/>
 			</label>
 
-			{/* Footer */}
-			<footer className="app-footer">
-				<div className="footer-links">
-					<a className="support-link" href={BUY_ME_A_COFFEE_URL} target="_blank" rel="noreferrer">
-						<span aria-hidden="true">☕</span> {t('buyMeCoffee')}
-					</a>
-					<a className="support-link feedback-link" href={feedbackUrl} target="_blank" rel="noreferrer">
+			<div className="selection-button-setting theme-setting">
+				<span>{t('selectTheme')}</span>
+				<div
+					className="theme-selector-container"
+					onBlur={(event) => {
+						if (!event.currentTarget.contains(event.relatedTarget)) {
+							setThemeMenuOpen(false);
+						}
+					}}
+					onKeyDown={(event) => {
+						if (event.key === 'Escape') {
+							setThemeMenuOpen(false);
+							themeSelectorButtonRef.current?.focus();
+						}
+					}}
+				>
+					<button
+						ref={themeSelectorButtonRef}
+						className="theme-selector-btn"
+						aria-label={t('selectTheme')}
+						aria-controls="theme-options"
+						aria-expanded={themeMenuOpen}
+						onClick={() => setThemeMenuOpen((open) => !open)}
+					>
+						{activeThemeName}
+					</button>
+					<div id="theme-options" className={`theme-dropdown ${themeMenuOpen ? 'open' : ''}`} hidden={!themeMenuOpen}>
+						<button
+							className={`theme-opt-btn ${activeTheme === 'default' ? 'active' : ''}`}
+							onClick={() => handleThemeChange('default')}
+						>
+							{t('themeDefault')}
+						</button>
+						<button
+							className={`theme-opt-btn ${activeTheme === 'winamp' ? 'active' : ''}`}
+							onClick={() => handleThemeChange('winamp')}
+						>
+							{t('themeWinamp')}
+						</button>
+						<button
+							className={`theme-opt-btn ${activeTheme === 'wmp12' ? 'active' : ''}`}
+							onClick={() => handleThemeChange('wmp12')}
+						>
+							{t('themeWmp12')}
+						</button>
+					</div>
+				</div>
+			</div>
+
+				{/* Footer */}
+				<footer className="app-footer">
+					<div className="footer-links">
+						<a className="support-link feedback-link" href={feedbackUrl} target="_blank" rel="noreferrer">
 						{t('feedback')}
 					</a>
 					<a className="privacy-link" href={PRIVACY_POLICY_URL} target="_blank" rel="noreferrer">

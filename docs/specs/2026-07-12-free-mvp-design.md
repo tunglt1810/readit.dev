@@ -24,14 +24,17 @@ The release must let a user:
 
 1. Open a supported web page and start reading the current article.
 2. Read a text selection from the supported page's context menu.
-3. Hear locally generated audio without sending the article to readit.dev or
-   another application service.
-4. Pause, resume, stop, select one of ten voice styles, and adjust playback
+3. Open an optional Side Panel and read pasted or typed text independently of
+   the active tab.
+4. Hear locally generated audio without sending the article or pasted text to
+   readit.dev or another application service.
+5. Pause, resume, stop, select one of ten voice styles, and adjust playback
    speed.
-5. Understand playback state from the popup and extension toolbar badge.
-6. Use the popup in English or Vietnamese.
-7. See the installed extension version and open a privacy-safe Feedback link.
-8. Understand what the extension accesses, where model files come from, and
+6. Understand playback state from the popup, Side Panel, and extension toolbar
+   badge.
+7. Use the popup and Side Panel in English or Vietnamese.
+8. See the installed extension version and open a privacy-safe Feedback link.
+9. Understand what the extension accesses, where model files come from, and
    what is not collected.
 
 ## 3. Non-goals
@@ -46,7 +49,7 @@ The Free MVP does not include:
 - synchronized word highlighting, vocabulary tools, or learning mode;
 - summaries, cloud AI, cloud TTS, or cross-device synchronization;
 - telemetry, Google Analytics, Sentry, crash reporting, or advertising;
-- a custom reader-mode screen or manual text-input fallback;
+- a custom reader-mode screen;
 - Firefox support in this release.
 
 ## 4. User experience
@@ -87,7 +90,29 @@ single-session coordinator used by full-page and context-menu starts. The
 button is not shown in editable content or child frames, and disabling the
 setting removes only the affordance without stopping playback.
 
-### 4.3 Controls, status, and settings
+### 4.3 Side Panel and pasted text
+
+The popup keeps its existing quick-control role and adds a localized secondary
+action below the playback controls to open the extension Side Panel. The Side
+Panel is an optional persistent surface; it does not replace the popup.
+
+The Side Panel presents current-page reading first and a manual-text area below
+it. A valid pasted-text start replaces the active single session through the
+same background/offscreen coordinator. The manual session is independent from
+the active tab and continues across tab switches, navigation, reload, and tab
+closure until it is stopped or replaced.
+
+Manual text is validated and its language is resolved before the active session
+is replaced. The language selector defaults to local automatic detection and
+allows explicit English, Vietnamese, or Chinese selection. Uncertain automatic
+detection falls back to English and never claims that translation occurred.
+
+The draft remains only in the active Side Panel document's memory. Closing or
+reloading the Side Panel discards the draft without stopping audio. Reopening
+the Side Panel hydrates the shared playback snapshot but does not restore the
+discarded text.
+
+### 4.4 Controls, status, and settings
 
 The popup must provide:
 
@@ -100,6 +125,7 @@ The popup must provide:
 - a toolbar badge for loading, playing, paused, error, and stopped states;
 - translated error states;
 - a language selector for the popup UI;
+- a secondary action that opens the Side Panel;
 - a privacy disclosure link;
 - one combined Feedback link for bug reports and feature requests;
 - the standalone extension version in `v<version>` format.
@@ -108,25 +134,27 @@ Voice IDs are stable configuration values. Display names and gender labels are
 translatable and must not be used as identifiers.
 
 Voice and speed preferences may be persisted locally. The currently extracted
-article and generated audio may not be persisted as product data.
+article, pasted-text draft, and generated audio may not be persisted as product
+data.
 
-### 4.4 UI internationalization
+### 4.5 UI internationalization
 
-The popup supports English (`en`) and Vietnamese (`vi`). UI locale selection is
-independent from article-language detection.
+The popup and Side Panel support English (`en`) and Vietnamese (`vi`). UI locale
+selection is independent from article- and manual-text-language detection.
 
 - First launch uses the browser locale when it is Vietnamese; all other browser
   locales default to English.
 - The user can change the locale in the popup.
 - The selected locale is persisted in `chrome.storage.local`.
 - Every visible label, button, status, error, tooltip, disclosure, link label,
-  context-menu label, and accessibility label uses a translation key.
+  Side Panel label, context-menu label, and accessibility label uses a
+  translation key.
 - English is the fallback for a missing key or invalid stored locale.
 - Translation keys must have English and Vietnamese entries before release.
 - Changing the UI locale must not change the voice language used for the
   current or next article.
 
-### 4.5 Article language behavior
+### 4.6 Content language behavior
 
 The content script starts with `document.documentElement.lang` and normalizes
 regional values such as `en-US` to `en`.
@@ -137,23 +165,26 @@ does not translate an article. If the detected language is unsupported or
 missing, the runtime uses its `na`/fallback behavior and the UI must not claim
 that translation occurred.
 
+Manual text uses a local `Auto` mode with explicit English, Vietnamese, and
+Chinese overrides. The first release resolves one language for the full manual
+input and falls back to English when automatic detection is uncertain. It does
+not detect or switch language per sentence.
+
 ## 5. Architecture and boundaries
 
 ```text
-Active tab
-  │
-  ▼
-Content script ── Readability extraction ── Article message
-  │                                      │
-  └────────────── error response        ▼
-Popup ◄──── status/messages ───── Background service worker
-                                             │
-                                             ▼
-                                      Offscreen document
-                                             │
-                                             ▼
-                                  Supertonic 3 / ONNX Runtime
-                                  WebGPU first, WASM fallback
+Active tab ── Content script ── Article/selection ──┐
+                                                    │
+Popup ── Open Side Panel / playback commands ──────┤
+                                                    ▼
+Side Panel ── current page or manual text ── Background service worker
+                                                    │
+                                                    ▼
+                                             Offscreen document
+                                                    │
+                                                    ▼
+                                         Supertonic 3 / ONNX Runtime
+                                         WebGPU first, WASM fallback
 ```
 
 ### 5.1 Content script
@@ -177,10 +208,12 @@ lifecycle. It must remain Free-only: no license checks, activation calls,
 backend URLs, or Pro state machine.
 
 It also owns context-menu registration, selected-text playback coordination,
-and the global toolbar badge. Full-page and selected-text inputs must converge
-on one session-start pipeline after producing a valid `Article`. Badge updates
-must follow the serialized playback state so stale asynchronous updates cannot
-overwrite the latest state.
+manual-text validation and language resolution, and the global toolbar badge.
+Full-page, selected-text, and manual-text inputs must converge on one
+session-start pipeline after producing valid playback content. A session source
+must distinguish tab-owned playback from manual playback so tab lifecycle
+cleanup cannot stop manual audio. Badge updates must follow the serialized
+playback state so stale asynchronous updates cannot overwrite the latest state.
 
 ### 5.3 Offscreen TTS
 
@@ -219,6 +252,10 @@ Required cases:
 | Article text is empty                  | Treat as extraction failure.                                                          |
 | Selected text is empty after trimming  | Ignore it and preserve the active session.                                            |
 | Selected-page language is unavailable  | Use the documented `na` fallback and continue.                                        |
+| Pasted text is empty after trimming    | Ignore it and preserve the active session.                                            |
+| Automatic manual language is uncertain | Use English and continue without claiming translation.                               |
+| Side Panel is closed during playback   | Discard only its draft; keep the manual session playing.                              |
+| Side Panel cannot be opened            | Show a translated popup error and preserve playback.                                  |
 | Model download fails                   | Show a translated retryable model-download error; do not send article data elsewhere. |
 | WebGPU unavailable or fails            | Fall back to WASM and continue when possible.                                         |
 | TTS/playback failure                   | Stop safely, show a translated playback error, and allow retry.                       |
@@ -233,14 +270,15 @@ used during development but must not ship as telemetry.
 ### 7.1 Data contract
 
 The extension may temporarily access the active tab's title, readable text,
-URL, and language after the user starts reading. The data is processed inside
-the browser and is not sent to readit.dev, Google Analytics, Sentry, or any
-other telemetry/crash-reporting service.
+URL, and language after the user starts reading. It may also process text that
+the user explicitly types or pastes into the Side Panel. The data is processed
+inside the browser and is not sent to readit.dev, Google Analytics, Sentry, or
+any other telemetry/crash-reporting service.
 
-The extension stores only user settings such as voice, speed, and UI locale.
-It does not intentionally collect or transmit article text, generated audio,
-browsing history, passwords, form data, email addresses, license keys, device
-identifiers, or advertising profiles.
+The extension stores only user settings such as voice, speed, theme, and UI
+locale. It does not intentionally collect, persist, or transmit article text,
+pasted text, generated audio, browsing history, passwords, form data, email
+addresses, license keys, device identifiers, or advertising profiles.
 
 ### 7.2 External services
 
@@ -266,6 +304,7 @@ The release must justify and periodically review the permissions used for:
   pages;
 - one-time content-script recovery after the user starts reading;
 - local settings storage;
+- the local extension Side Panel used for current-page and manual-text reading;
 - the MV3 offscreen document and audio playback;
 - model downloads from Hugging Face.
 
@@ -307,6 +346,8 @@ The implementation is ready for release only when the following are verified:
 | Extraction         | A readable article starts; an unreadable/empty page shows a localized error and never falls back to raw text.                         |
 | Playback           | Play, pause, resume, stop, speed, voice selection, progress, and retry work in the popup.                                             |
 | Selection          | Valid selected text uses the shared playback pipeline; whitespace-only input preserves the active session.                            |
+| Side Panel         | The popup opens a localized Side Panel whose current-page action precedes manual-text input and whose state stays synchronized.       |
+| Manual text        | Valid text replaces playback, empty text preserves it, drafts are not persisted, and manual sessions survive tab lifecycle events.     |
 | Toolbar badge      | Loading, playing, paused, and error states map deterministically; stopped or no session clears the badge.                             |
 | Popup interactions | Controls are icon-only and accessible, Stop works during loading, the footer shows `v<version>`, and Feedback supports bugs/features. |
 | Runtime            | WebGPU is preferred and WASM fallback works. Model download failure is recoverable.                                                   |

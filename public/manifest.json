@@ -1,16 +1,17 @@
 {
 	"manifest_version": 3,
 	"minimum_chrome_version": "127",
-	"name": "readit.dev",
+	"default_locale": "en",
+	"name": "__MSG_appName__",
 	"version": "1.0.0",
-	"description": "Read the web for you. No LLM API Key need.",
+	"description": "__MSG_appDescription__",
 	"icons": {
 		"16": "assets/icon16.png",
 		"32": "assets/icon32.png",
 		"48": "assets/icon48.png",
 		"128": "assets/icon128.png"
 	},
-	"permissions": ["activeTab", "scripting", "storage", "offscreen", "contextMenus"],
+	"permissions": ["activeTab", "scripting", "storage", "offscreen", "contextMenus", "sidePanel"],
 	"host_permissions": ["https://huggingface.co/*"],
 	"content_security_policy": {
 		"extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
@@ -35,6 +36,9 @@
 			"48": "assets/icon48.png",
 			"128": "assets/icon128.png"
 		}
+	},
+	"side_panel": {
+		"default_path": "src/sidepanel/sidepanel.html"
 	},
 	"web_accessible_resources": [
 		{

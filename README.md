@@ -5,25 +5,29 @@
 ## Technology
 
 - **Frontend (Chrome Extension)**: React 19, TypeScript 6, Rsbuild, and Supertonic TTS running through ONNX Runtime Web.
-- **Backend**: Hono, Cloudflare Workers, and Cloudflare D1 (SQLite at the edge).
+- **Future Pro backend**: Hono, Cloudflare Workers, and Cloudflare D1 (SQLite at the edge).
 
 ## How it works
 
 ```mermaid
 flowchart TD
-	A["Popup<br/>Read current page"] --> B["Background service worker<br/>Coordinate playback session"]
-	C["Selection button or context menu<br/>Read selected text"] --> B
-	B -->|Current page only| D["Content script<br/>Extract Article"]
-	D -->|Article| B
-	B --> E["Offscreen document<br/>Normalize and segment Article"]
-	E --> F["Supertonic TTS<br/>Local synthesis and audio playback"]
-	F --> G["Audio output"]
-	F -. Playback progress .-> B
-	B -.-> H["Session state<br/>Popup and toolbar badge"]
-	F -. Word timing .-> I["Content script<br/>Highlight spoken word"]
+	A["Popup<br/>Quick controls"] -->|Open| C["Side Panel<br/>Current page or pasted text"]
+	A -->|Current page and controls| B["Background service worker<br/>Coordinate one playback session"]
+	C -->|Current page, pasted text, and controls| B
+	D["Selection button or context menu<br/>Selected text"] --> B
+	B -->|Current-page and selection inputs only| E["Content script<br/>Extract Article and highlight spoken words"]
+	E -->|Article or selected text| B
+	B --> F["Offscreen document<br/>Normalize and segment local text"]
+	F --> G["Supertonic TTS<br/>Local synthesis and audio playback"]
+	G --> H["Audio output"]
+	G -. Playback progress and word timing .-> B
+	B -. Session state .-> A
+	B -. Session state .-> C
+	B -. Badge state .-> I["Toolbar badge"]
 ```
 
-The Free extension keeps Article processing and speech synthesis on the user's device.
+The Free extension keeps Article and pasted-text processing and speech synthesis on the user's device. Pasted text passes only between
+extension contexts for playback and is never written to extension storage.
 
 ## Quick start
 

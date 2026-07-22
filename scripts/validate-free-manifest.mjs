@@ -2,9 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const REQUIRED_PERMISSIONS = ['activeTab', 'contextMenus', 'offscreen', 'scripting', 'storage'];
+const REQUIRED_PERMISSIONS = ['activeTab', 'contextMenus', 'offscreen', 'scripting', 'sidePanel', 'storage'];
 const REQUIRED_HOST_PERMISSIONS = ['https://huggingface.co/*'];
 const REQUIRED_MINIMUM_CHROME_VERSION = '127';
+const REQUIRED_SIDE_PANEL_PATH = 'src/sidepanel/sidepanel.html';
 const REQUIRED_WEB_ACCESSIBLE_RESOURCES = [
 	{
 		resources: ['ort-wasm-simd-threaded.asyncify.mjs', 'ort-wasm-simd-threaded.asyncify.wasm'],
@@ -57,6 +58,9 @@ export function validateFreeManifest(manifest) {
 	compareResourceEntries(manifest.web_accessible_resources, REQUIRED_WEB_ACCESSIBLE_RESOURCES);
 	compareExact(manifest.permissions, REQUIRED_PERMISSIONS, 'permissions');
 	compareExact(manifest.host_permissions, REQUIRED_HOST_PERMISSIONS, 'host_permissions');
+	if (manifest.side_panel?.default_path !== REQUIRED_SIDE_PANEL_PATH) {
+		throw new Error(`Expected side_panel.default_path ${REQUIRED_SIDE_PANEL_PATH}`);
+	}
 }
 
 const scriptPath = process.argv[1] ? path.resolve(process.argv[1]) : '';

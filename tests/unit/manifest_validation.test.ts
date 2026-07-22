@@ -5,7 +5,8 @@ import { validateFreeManifest } from '../../scripts/validate-free-manifest.mjs';
 const validManifest = {
 	manifest_version: 3,
 	minimum_chrome_version: '127',
-	permissions: ['activeTab', 'scripting', 'storage', 'offscreen', 'contextMenus'],
+	permissions: ['activeTab', 'scripting', 'storage', 'offscreen', 'contextMenus', 'sidePanel'],
+	side_panel: { default_path: 'src/sidepanel/sidepanel.html' },
 	host_permissions: ['https://huggingface.co/*'],
 	web_accessible_resources: [
 		{
@@ -31,6 +32,14 @@ test('rejects a missing contextMenus permission', () => {
 				permissions: validManifest.permissions.filter((value) => value !== 'contextMenus'),
 			}),
 		/contextMenus/,
+	);
+});
+
+test('rejects a missing or remote Side Panel path', () => {
+	assert.throws(() => validateFreeManifest({ ...validManifest, side_panel: undefined }), /side_panel/);
+	assert.throws(
+		() => validateFreeManifest({ ...validManifest, side_panel: { default_path: 'https://example.com/panel' } }),
+		/src\/sidepanel\/sidepanel\.html/,
 	);
 });
 

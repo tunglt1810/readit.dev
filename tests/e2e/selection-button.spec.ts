@@ -218,7 +218,11 @@ test('opens the action popup and replaces the active session with a new selectio
 	const firstState = await statePage.evaluate(
 		() => new Promise<any>((resolve) => chrome.runtime.sendMessage({ action: 'GET_PLAYBACK_STATE' }, resolve)),
 	);
-	expect(firstState.session).toMatchObject({ status: 'loading', title: 'Selection page' });
+	expect(firstState.session).toMatchObject({
+		contentScope: 'selection',
+		source: { kind: 'tab', title: 'Selection page' },
+		status: 'loading',
+	});
 
 	await page.bringToFront();
 	await selectNodeText(page, '#second', 'pointer');
@@ -227,7 +231,11 @@ test('opens the action popup and replaces the active session with a new selectio
 	const secondState = await statePage.evaluate(
 		() => new Promise<any>((resolve) => chrome.runtime.sendMessage({ action: 'GET_PLAYBACK_STATE' }, resolve)),
 	);
-	expect(secondState.session).toMatchObject({ status: 'loading', title: 'Selection page' });
+	expect(secondState.session).toMatchObject({
+		contentScope: 'selection',
+		source: { kind: 'tab', title: 'Selection page' },
+		status: 'loading',
+	});
 	expect(secondState.session.sessionId).not.toBe(firstState.session.sessionId);
 
 	await statePage.evaluate((oldSessionId) => {
@@ -300,7 +308,11 @@ test('popup setting disables and re-enables the affordance in an open tab', asyn
 
 	await expect.poll(async () => (await getPlaybackState()).session?.sessionId).toBeTruthy();
 	const activeState = await getPlaybackState();
-	expect(activeState.session).toMatchObject({ status: 'loading', title: 'Selection page' });
+	expect(activeState.session).toMatchObject({
+		contentScope: 'selection',
+		source: { kind: 'tab', title: 'Selection page' },
+		status: 'loading',
+	});
 	const activeSessionId = activeState.session.sessionId;
 
 	await popup.bringToFront();

@@ -3,7 +3,8 @@
 ## Free MVP
 
 The current product is a free Chrome extension that reads the readable article
-from the active tab aloud with Supertonic 3 running locally in the browser.
+from the active tab or user-pasted text aloud with Supertonic 3 running locally
+in the browser.
 
 The canonical product and technical requirements are maintained in:
 
@@ -29,15 +30,23 @@ Supertonic 3 runtime.
 - Provide play, pause, resume, stop, progress, and `0.70x`–`1.80x` speed.
 - Provide an English/Vietnamese localized popup with browser-locale default and
   a persisted manual selector.
+- Keep the popup as the quick-control surface and provide an optional Side
+  Panel for current-page reading and pasted text.
+- Default manual-text language to Auto and support explicit EN, VI, and ZH
+  selection.
+- Keep manual playback independent from tab switches, navigation, reload, and
+  closure while sharing the single background-owned playback session.
+- Keep pasted-text drafts in the active Side Panel document only. Do not
+  persist pasted text in extension storage or session snapshots.
 - Show a clear localized error when the page is not readable.
-- Send no article content, audio, analytics, or crash reports to a remote
-  service.
+- Send no article or pasted content, audio, analytics, or crash reports to a
+  remote service.
 
 ### Explicitly future
 
 The following are not part of the Free MVP: accounts, licensing, Pro UI,
 `api.readit.dev`, backend deployment, translation, cloud TTS, summaries,
-highlighting, learning tools, synchronization, and Firefox support.
+learning tools, synchronization, and Firefox support.
 
 The `backend/` directory may remain in the repository as future-Pro source, but
 it is not part of the Free runtime or extension release package.

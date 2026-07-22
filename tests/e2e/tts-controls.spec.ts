@@ -2,9 +2,8 @@ import { expect, installPopupRuntimeMock, test } from './fixtures';
 
 const session = {
 	sessionId: 'session-1',
-	tabId: 7,
-	title: 'An article',
-	url: 'https://example.com/article',
+	contentScope: 'article' as const,
+	source: { kind: 'tab' as const, tabId: 7, title: 'An article', url: 'https://example.com/article' },
 	lang: 'en',
 	status: 'loading' as const,
 	currentParagraphIndex: 0,
@@ -69,6 +68,27 @@ test.describe('Kịch bản 3: Điều khiển TTS (TTS Controls)', () => {
 			});
 		});
 		expect(savedVoice).toBe('F1');
+	});
+
+	test('opens the Side Panel from a labeled secondary action', async ({ page }) => {
+		const button = page.getByRole('button', { name: 'Mở Side Panel' });
+		await expect(button).toBeVisible();
+		await expect(page.locator('.playback-controls + .open-side-panel')).toHaveCount(1);
+		await expect.poll(() => page.evaluate(() => (window as any).tabsQueryCalls)).toBe(1);
+		await button.click();
+		expect(await page.evaluate(() => (window as any).sidePanelOpenCalls)).toEqual([{ windowId: 7 }]);
+		expect(await page.evaluate(() => (window as any).tabsQueryCalls)).toBe(1);
+	});
+
+	test('shows a localized error when the Side Panel cannot be opened', async ({ page }) => {
+		await page.evaluate(() => {
+			chrome.sidePanel.open = async () => {
+				throw new Error('Side Panel unavailable');
+			};
+		});
+
+		await page.getByRole('button', { name: 'Mở Side Panel' }).click();
+		await expect(page.locator('.alert-danger')).toHaveText('Không thể mở Side Panel. Vui lòng thử lại.');
 	});
 
 	test('Điều khiển Play/Pause/Stop và hiển thị trạng thái UI tương ứng', async ({ page }) => {

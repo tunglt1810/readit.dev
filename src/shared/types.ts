@@ -1,8 +1,32 @@
-export interface Article {
-	title: string;
+export interface PlaybackContent {
 	content: string;
-	url: string;
 	lang: string;
+}
+
+export type ThemeName = 'default' | 'winamp' | 'wmp12';
+
+export interface Article extends PlaybackContent {
+	title: string;
+	url: string;
+}
+
+export type ManualTextLanguage = 'auto' | 'en' | 'vi' | 'zh';
+export type ResolvedManualTextLanguage = Exclude<ManualTextLanguage, 'auto'>;
+
+export type PageInfoResponse = { available: true; title: string; url: string; lang: string } | { available: false };
+
+export interface StartManualTextMessage {
+	action: 'START_MANUAL_TEXT';
+	payload: {
+		text: string;
+		language: ManualTextLanguage;
+	};
+}
+
+export interface CommandResponse {
+	success: boolean;
+	error?: string;
+	transportError?: true;
 }
 
 export interface VoiceStyle {
@@ -13,7 +37,7 @@ export interface VoiceStyle {
 }
 
 export type PlaybackStatus = 'stopped' | 'loading' | 'playing' | 'paused' | 'error';
-export type PlaybackContentScope = 'article' | 'selection';
+export type PlaybackContentScope = 'article' | 'selection' | 'manual';
 
 export interface PlaybackProgress {
 	status: PlaybackStatus;
@@ -25,12 +49,8 @@ export interface PlaybackProgress {
 	error?: string;
 }
 
-export interface PlaybackSessionSnapshot {
+export interface PlaybackSessionBase {
 	sessionId: string;
-	tabId: number;
-	contentScope?: PlaybackContentScope;
-	title: string;
-	url: string;
 	lang: string;
 	status: PlaybackStatus;
 	currentParagraphIndex: number;
@@ -41,6 +61,18 @@ export interface PlaybackSessionSnapshot {
 	error?: string;
 	updatedAt: number;
 }
+
+export interface TabPlaybackSessionSnapshot extends PlaybackSessionBase {
+	contentScope: 'article' | 'selection';
+	source: { kind: 'tab'; tabId: number; title: string; url: string };
+}
+
+export interface ManualPlaybackSessionSnapshot extends PlaybackSessionBase {
+	contentScope: 'manual';
+	source: { kind: 'manual' };
+}
+
+export type PlaybackSessionSnapshot = TabPlaybackSessionSnapshot | ManualPlaybackSessionSnapshot;
 
 export interface PlaybackProgressUpdateMessage {
 	action: 'PLAYBACK_PROGRESS_UPDATE';

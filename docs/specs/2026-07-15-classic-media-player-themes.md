@@ -63,7 +63,7 @@ Tài liệu này đặc tả chi tiết thiết kế hệ thống giao diện (T
 
 ## 2. Giao diện Bộ chọn Theme (Theme Selector UI)
 
-Bộ chọn theme sẽ được tích hợp ở góc trên bên phải của Header trong [src/popup/App.tsx](file:///Users/bez/Workspace/repos/bez/readit.dev/src/popup/App.tsx). Thứ tự hiển thị là tiêu đề, số phiên bản extension (`v1.0.0`), rồi nút chọn theme ở sát mép phải.
+Bộ chọn theme nằm ở hàng Settings cuối cùng trong [src/popup/App.tsx](file:///Users/bez/Workspace/repos/bez/readit.dev/src/popup/App.tsx), sau hai toggle chọn văn bản và tô sáng từ đang đọc, không nằm trong Header. Mục này luôn hiển thị ở cả ba theme để người dùng đang dùng WMP12 vẫn có thể chọn một giao diện khác.
 
 * **Cấu trúc HTML:**
   ```tsx

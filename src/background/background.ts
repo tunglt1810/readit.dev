@@ -1,9 +1,26 @@
 import { STORAGE_KEYS } from '../shared/constants';
-import type { Article, PlaybackContentScope, PlaybackProgress, PlaybackSessionSnapshot, PlaybackStatus } from '../shared/types';
+import type {
+	Article,
+	CommandResponse,
+	PageInfoResponse,
+	PlaybackContent,
+	PlaybackProgress,
+	PlaybackSessionSnapshot,
+	PlaybackStatus,
+} from '../shared/types';
 import { requestActionPopup } from './action_popup';
 import { requestArticleFromTab } from './article_request';
 import { syncPlaybackBadge } from './badge';
-import { applyPlaybackProgress, createPlaybackErrorSession, createPlaybackSession, ownsTab } from './playback_state';
+import { prepareManualText } from './manual_text';
+import { type OffscreenCommand, sendOffscreenCommand } from './offscreen_transport';
+import { requestPageInfoFromTab } from './page_info';
+import {
+	applyPlaybackProgress,
+	createPlaybackErrorSession,
+	createPlaybackSession,
+	isPlaybackSessionSnapshot,
+	ownsTab,
+} from './playback_state';
 import { createSelectedTextArticle } from './selected_text';
 import { prepareSelectedTextRequest } from './selected_text_request';
 
@@ -19,8 +36,13 @@ const ERROR_MESSAGES = {
 	invalidSpeed: 'Tốc độ đọc không hợp lệ.',
 } as const;
 
-type CommandResponse = { success: boolean; error?: string };
-type OffscreenCommand = { action: string; payload?: unknown };
+type StartPlaybackInput =
+	| {
+			contentScope: 'article' | 'selection';
+			source: { kind: 'tab'; tabId: number; title: string; url: string };
+			content: PlaybackContent;
+	  }
+	| { contentScope: 'manual'; source: { kind: 'manual' }; content: PlaybackContent };
 
 let activeSession: PlaybackSessionSnapshot | null = null;
 let hydrated = false;
@@ -41,30 +63,6 @@ function isPlaybackStatus(value: unknown): value is PlaybackStatus {
 
 function isFiniteNumber(value: unknown): value is number {
 	return typeof value === 'number' && Number.isFinite(value);
-}
-
-function isPlaybackSessionSnapshot(value: unknown): value is PlaybackSessionSnapshot {
-	if (!value || typeof value !== 'object') {
-		return false;
-	}
-
-	const session = value as Record<string, unknown>;
-	return (
-		typeof session.sessionId === 'string' &&
-		isFiniteNumber(session.tabId) &&
-		(session.contentScope === undefined || session.contentScope === 'article' || session.contentScope === 'selection') &&
-		typeof session.title === 'string' &&
-		typeof session.url === 'string' &&
-		typeof session.lang === 'string' &&
-		isPlaybackStatus(session.status) &&
-		isFiniteNumber(session.currentParagraphIndex) &&
-		isFiniteNumber(session.totalParagraphs) &&
-		isFiniteNumber(session.progressPercentage) &&
-		typeof session.voiceStyleId === 'string' &&
-		isFiniteNumber(session.speed) &&
-		(session.error === undefined || typeof session.error === 'string') &&
-		isFiniteNumber(session.updatedAt)
-	);
 }
 
 function isPlaybackProgress(value: unknown): value is PlaybackProgress {
@@ -141,13 +139,15 @@ async function clearSession(): Promise<PlaybackSessionSnapshot | null> {
 	const session = activeSession;
 	activeSession = null;
 
-	if (session) {
+	if (session?.source.kind === 'tab') {
 		try {
-			await chrome.tabs.sendMessage(session.tabId, { action: 'WORD_HIGHLIGHT_CLEAR', sessionId: session.sessionId });
+			await chrome.tabs.sendMessage(session.source.tabId, { action: 'WORD_HIGHLIGHT_CLEAR', sessionId: session.sessionId });
 		} catch (_error) {
 			// The content script may not be listening (e.g. the tab navigated away); ignore.
 		}
+	}
 
+	if (session) {
 		const stoppedSession: PlaybackSessionSnapshot = {
 			...session,
 			status: 'stopped',
@@ -182,9 +182,7 @@ async function publishExtractionFailure(tabId: number, title: string | undefined
 	await publishSession(
 		createPlaybackErrorSession({
 			sessionId: crypto.randomUUID(),
-			tabId,
-			title: title || url,
-			url,
+			source: { kind: 'tab', tabId, title: title || url, url },
 			voiceStyleId: DEFAULT_VOICE_STYLE_ID,
 			speed: DEFAULT_SPEED,
 			error: ERROR_MESSAGES.extraction,
@@ -245,11 +243,6 @@ async function closeOffscreen(): Promise<void> {
 	}
 }
 
-async function sendOffscreenCommand(message: OffscreenCommand): Promise<CommandResponse> {
-	const response = (await chrome.runtime.sendMessage(message)) as CommandResponse | undefined;
-	return response ?? { success: true };
-}
-
 async function stopActiveSession(_reason: string): Promise<void> {
 	const session = await clearSession();
 	if (!session) {
@@ -257,7 +250,7 @@ async function stopActiveSession(_reason: string): Promise<void> {
 	}
 
 	try {
-		await sendOffscreenCommand({ action: 'STOP' });
+		await sendOffscreenCommand({ action: 'STOP' }, (message) => chrome.runtime.sendMessage(message));
 	} catch (_error) {
 		// Session state is already invalidated; tolerate a missing offscreen receiver.
 	} finally {
@@ -283,13 +276,7 @@ function isRestrictedUrl(url: string): boolean {
 	);
 }
 
-async function startArticlePlayback(
-	tabId: number,
-	fallbackTitle: string,
-	fallbackUrl: string,
-	article: Article,
-	contentScope: PlaybackContentScope = 'article',
-): Promise<CommandResponse> {
+async function startPlayback(input: StartPlaybackInput): Promise<CommandResponse> {
 	await ensureHydrated();
 	await stopActiveSession('session-replaced');
 
@@ -298,28 +285,28 @@ async function startArticlePlayback(
 	const storedSpeed = preferences[STORAGE_KEYS.SPEED];
 	const voiceStyleId = typeof storedVoiceStyleId === 'string' ? storedVoiceStyleId : DEFAULT_VOICE_STYLE_ID;
 	const speed = isFiniteNumber(storedSpeed) ? storedSpeed : DEFAULT_SPEED;
-	const session = createPlaybackSession({
+	const sessionInput = {
 		sessionId: crypto.randomUUID(),
-		tabId,
-		contentScope,
-		title: article.title || fallbackTitle || fallbackUrl,
-		url: article.url || fallbackUrl,
-		lang: article.lang,
+		lang: input.content.lang,
 		voiceStyleId,
 		speed,
 		now: Date.now(),
-	});
+	};
+	const session =
+		input.contentScope === 'manual'
+			? createPlaybackSession({ ...sessionInput, contentScope: 'manual', source: input.source })
+			: createPlaybackSession({ ...sessionInput, contentScope: input.contentScope, source: input.source });
 
 	activeSession = session;
 	await publishSession(session);
 
 	try {
-		if (contentScope === 'selection') {
+		if (input.contentScope === 'selection' && input.source.kind === 'tab') {
 			try {
-				await chrome.tabs.sendMessage(tabId, {
+				await chrome.tabs.sendMessage(input.source.tabId, {
 					action: 'WORD_HIGHLIGHT_SET_SELECTION_SCOPE',
 					sessionId: session.sessionId,
-					selectionText: article.content,
+					selectionText: input.content.content,
 				});
 			} catch (_error) {
 				// Selected-text audio still plays when the page cannot bind a safe DOM range.
@@ -328,7 +315,7 @@ async function startArticlePlayback(
 		await setupOffscreen();
 		observeOffscreenPlay(session.sessionId, {
 			action: 'PLAY',
-			payload: { sessionId: session.sessionId, article, voiceStyleId, speed },
+			payload: { sessionId: session.sessionId, article: input.content, voiceStyleId, speed },
 		});
 		return { success: true };
 	} catch (_error) {
@@ -358,6 +345,9 @@ async function startCurrentPage(): Promise<CommandResponse> {
 			executeScript: (options) => chrome.scripting.executeScript(options),
 		});
 	} catch (_error) {
+		if (!url) {
+			return { success: false, error: ERROR_MESSAGES.restrictedPage };
+		}
 		await stopActiveSession('session-replaced');
 		await publishExtractionFailure(activeTab.id, activeTab.title, url);
 		return { success: false, error: ERROR_MESSAGES.extraction };
@@ -369,11 +359,44 @@ async function startCurrentPage(): Promise<CommandResponse> {
 		return { success: false, error: ERROR_MESSAGES.extraction };
 	}
 
-	return startArticlePlayback(activeTab.id, activeTab.title || url, url, articleResponse.article);
+	return startPlayback({
+		contentScope: 'article',
+		source: {
+			kind: 'tab',
+			tabId: activeTab.id,
+			title: articleResponse.article.title || activeTab.title || url,
+			url: articleResponse.article.url || url,
+		},
+		content: articleResponse.article,
+	});
+}
+
+async function startManualText(payload: unknown): Promise<CommandResponse> {
+	const content = prepareManualText(payload);
+	if (!content) {
+		return { success: false, error: 'invalidManualText' };
+	}
+	return startPlayback({ contentScope: 'manual', source: { kind: 'manual' }, content });
+}
+
+async function getCurrentPageInfo(): Promise<PageInfoResponse> {
+	const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+	if (!activeTab || typeof activeTab.id !== 'number' || isRestrictedUrl(activeTab.url ?? '')) {
+		return { available: false };
+	}
+
+	try {
+		return await requestPageInfoFromTab(activeTab.id, {
+			sendMessage: (tabId, message) => chrome.tabs.sendMessage(tabId, message),
+			executeScript: (options) => chrome.scripting.executeScript(options),
+		});
+	} catch (_error) {
+		return { available: false };
+	}
 }
 
 function observeOffscreenPlay(sessionId: string, command: OffscreenCommand): void {
-	void sendOffscreenCommand(command).then(
+	void sendOffscreenCommand(command, (message) => chrome.runtime.sendMessage(message)).then(
 		(response) => {
 			if (!response.success) {
 				void failPendingStart(sessionId);
@@ -413,7 +436,7 @@ async function routeSessionCommand(action: 'PAUSE' | 'PLAY'): Promise<CommandRes
 
 	const payload = action === 'PLAY' ? { sessionId: activeSession.sessionId } : undefined;
 	try {
-		return await sendOffscreenCommand({ action, ...(payload ? { payload } : {}) });
+		return await sendOffscreenCommand({ action, ...(payload ? { payload } : {}) }, (message) => chrome.runtime.sendMessage(message));
 	} catch (_error) {
 		await failSession(ERROR_MESSAGES.setup);
 		await closeOffscreen();
@@ -433,7 +456,9 @@ async function changeSpeed(payload: unknown): Promise<CommandResponse> {
 	}
 
 	try {
-		const response = await sendOffscreenCommand({ action: 'CHANGE_SPEED', payload: { speed } });
+		const response = await sendOffscreenCommand({ action: 'CHANGE_SPEED', payload: { speed } }, (message) =>
+			chrome.runtime.sendMessage(message),
+		);
 		if (response.success && activeSession) {
 			activeSession = { ...activeSession, speed, updatedAt: Date.now() };
 			await publishSession(activeSession);
@@ -477,7 +502,7 @@ async function applyProgressMessage(message: Record<string, unknown>): Promise<v
 async function relayWordHighlightUpdate(message: Record<string, unknown>): Promise<void> {
 	await ensureHydrated();
 	if (
-		!activeSession ||
+		activeSession?.source.kind !== 'tab' ||
 		typeof message.sessionId !== 'string' ||
 		message.sessionId !== activeSession.sessionId ||
 		typeof message.word !== 'string'
@@ -485,11 +510,11 @@ async function relayWordHighlightUpdate(message: Record<string, unknown>): Promi
 		return;
 	}
 	try {
-		await chrome.tabs.sendMessage(activeSession.tabId, {
+		await chrome.tabs.sendMessage(activeSession.source.tabId, {
 			action: 'WORD_HIGHLIGHT_UPDATE',
 			sessionId: activeSession.sessionId,
 			word: message.word,
-			contentScope: activeSession.contentScope ?? 'article',
+			contentScope: activeSession.contentScope,
 		});
 	} catch (_error) {
 		// The content script may not be listening (e.g. the tab navigated away); ignore.
@@ -498,11 +523,11 @@ async function relayWordHighlightUpdate(message: Record<string, unknown>): Promi
 
 async function relayWordHighlightClear(message: Record<string, unknown>): Promise<void> {
 	await ensureHydrated();
-	if (!activeSession || typeof message.sessionId !== 'string' || message.sessionId !== activeSession.sessionId) {
+	if (activeSession?.source.kind !== 'tab' || typeof message.sessionId !== 'string' || message.sessionId !== activeSession.sessionId) {
 		return;
 	}
 	try {
-		await chrome.tabs.sendMessage(activeSession.tabId, { action: 'WORD_HIGHLIGHT_CLEAR', sessionId: activeSession.sessionId });
+		await chrome.tabs.sendMessage(activeSession.source.tabId, { action: 'WORD_HIGHLIGHT_CLEAR', sessionId: activeSession.sessionId });
 	} catch (_error) {
 		// The content script may not be listening; ignore.
 	}
@@ -530,6 +555,9 @@ chrome.runtime.onMessage.addListener(
 			case 'GET_PLAYBACK_STATE':
 				return respondFromQueue(getPlaybackState, sendResponse);
 
+			case 'GET_CURRENT_PAGE_INFO':
+				return respondFromQueue(getCurrentPageInfo, sendResponse);
+
 			case 'START_CURRENT_PAGE':
 				return respondFromQueue(startCurrentPage, sendResponse);
 
@@ -551,10 +579,23 @@ chrome.runtime.onMessage.addListener(
 
 				void requestActionPopup(request.windowId, chrome.action);
 				return respondFromQueue(
-					() => startArticlePlayback(request.tabId, request.title, request.url, request.article, 'selection'),
+					() =>
+						startPlayback({
+							contentScope: 'selection',
+							source: {
+								kind: 'tab',
+								tabId: request.tabId,
+								title: request.article.title || request.title || request.url,
+								url: request.article.url || request.url,
+							},
+							content: request.article,
+						}),
 					sendResponse,
 				);
 			}
+
+			case 'START_MANUAL_TEXT':
+				return respondFromQueue(() => startManualText(msg.payload), sendResponse);
 
 			case 'PAUSE_READING':
 				return respondFromQueue(() => routeSessionCommand('PAUSE'), sendResponse);
@@ -629,6 +670,15 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 		if (!article) {
 			return { success: true };
 		}
-		return startArticlePlayback(tab.id as number, tab.title || url, url, article, 'selection');
+		return startPlayback({
+			contentScope: 'selection',
+			source: {
+				kind: 'tab',
+				tabId: tab.id as number,
+				title: article.title || tab.title || url,
+				url: article.url || url,
+			},
+			content: article,
+		});
 	});
 });

@@ -1,33 +1,3 @@
-/* Core Variables and Colors (Dark Glassmorphism Theme) */
-:root {
-	--font-sans: "Inter", system-ui, -apple-system, sans-serif;
-	--font-display: "Outfit", var(--font-sans);
-
-	--bg-app: #09090b; /* Zinc 950 */
-	--bg-glass: rgba(18, 18, 24, 0.78);
-	--bg-theme-dropdown: #18181c;
-	--border-glass: rgba(255, 255, 255, 0.07);
-	--border-glass-focus: rgba(0, 135, 113, 0.5);
-
-	--color-text-primary: #f4f4f5;
-	--color-text-secondary: #a1a1aa;
-
-	/* Brand Gradients – Teal to Blue (matches logo) */
-	--gradient-brand: linear-gradient(135deg, #008771, #0461a3);
-	--gradient-brand-hover: linear-gradient(135deg, #099fb5, #1a6ac6);
-	/* Status Colors */
-	--color-success: #10b981;
-	--color-danger: #ef4444;
-	--color-warning: #f59e0b;
-
-	/* Consistent spacing scale */
-	--space-1: 4px;
-	--space-2: 8px;
-	--space-3: 12px;
-	--space-4: 16px;
-	--space-5: 20px;
-}
-
 /* Reset and Global Styles */
 * {
 	box-sizing: border-box;
@@ -75,7 +45,7 @@ body::before {
 .app-header {
 	display: flex;
 	justify-content: space-between;
-	align-items: center;
+	align-items: baseline;
 	padding: 2px 2px 14px;
 	border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
@@ -257,6 +227,12 @@ body::before {
 	justify-content: center;
 	align-items: center;
 	gap: 16px;
+}
+
+.open-side-panel {
+	align-self: stretch;
+	justify-content: center;
+	gap: var(--space-2);
 }
 
 .privacy-disclosure {
@@ -573,10 +549,17 @@ body::before {
 	transform: translateY(-1px);
 }
 
+.header-support-link {
+	margin-left: auto;
+	align-self: baseline;
+}
+
 .extension-version {
 	font-size: 10px;
 	color: var(--color-text-secondary);
 	letter-spacing: 0.2px;
+	margin-left: var(--space-2);
+	align-self: baseline;
 }
 
 /* --- Keyframe Animations --- */
@@ -620,24 +603,20 @@ body::before {
 .theme-selector-container {
 	position: relative;
 	display: inline-block;
-	margin-left: auto;
-	order: 3;
-}
-.extension-version {
-	order: 2;
-	margin-left: var(--space-2);
-	align-self: baseline;
+	flex: 0 0 auto;
 }
 .theme-selector-btn {
 	background: transparent;
 	border: none;
-	font-size: 16px;
+	color: inherit;
+	font: inherit;
 	cursor: pointer;
-	padding: var(--space-1);
-	transition: transform 0.2s ease;
+	padding: var(--space-1) 0;
+	white-space: nowrap;
+	transition: color 0.2s ease;
 }
 .theme-selector-btn:hover {
-	transform: scale(1.15);
+	color: var(--color-text-primary);
 }
 .theme-dropdown {
 	position: absolute;
@@ -675,19 +654,6 @@ body::before {
 .theme-opt-btn.active {
 	background: var(--gradient-brand);
 	color: #fff;
-}
-
-/* WINAMP THEME VARIABLES */
-[data-theme="winamp"] {
-	--bg-app: #25272b;
-	--bg-glass: #020303;
-	--bg-theme-dropdown: #050505;
-	--border-glass: #8d8d8d;
-	--border-glass-focus: #8fdf53;
-	--color-text-primary: #71ea64;
-	--color-text-secondary: #3d9840;
-	--font-sans: "Courier New", Courier, monospace;
-	--font-display: "Courier New", Courier, monospace;
 }
 
 .app-container[data-theme="winamp"] {
@@ -813,19 +779,6 @@ body::before {
 	.winamp-visualizer .v-bar {
 		animation: none;
 	}
-}
-
-/* WMP12 NOW PLAYING */
-[data-theme="wmp12"] {
-	--bg-app: #05080a;
-	--bg-glass: #05080a;
-	--bg-theme-dropdown: #101517;
-	--border-glass: #43525b;
-	--border-glass-focus: #56c6fb;
-	--color-text-primary: #eaf8ff;
-	--color-text-secondary: #a8c9db;
-	--font-sans: "Segoe UI", system-ui, sans-serif;
-	--font-display: "Segoe UI", system-ui, sans-serif;
 }
 
 .app-container[data-theme="wmp12"] {

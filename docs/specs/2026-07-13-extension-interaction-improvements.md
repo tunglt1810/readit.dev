@@ -132,17 +132,16 @@ Until that work lands, new user-facing strings follow the popup's current
 language. The later i18n implementation must include the context-menu label,
 button tooltips, accessibility labels, Feedback label, and error text.
 
-## 6. Footer and feedback
+## 6. Header, footer, and feedback
 
-The footer contains:
+The header presents the product identity, the installed version
+`v<manifest version>`, and Buy Me a Coffee. The version comes from
+`chrome.runtime.getManifest().version`; Buy Me a Coffee is shown once and
+opens from that header.
 
-1. Buy Me a Coffee;
-2. Feedback;
-3. Privacy Policy;
-4. the standalone version text `v<manifest version>`.
-
-The version comes from `chrome.runtime.getManifest().version`. The footer does
-not repeat the extension name or show a separate copyright line beside it.
+The footer contains Feedback and Privacy Policy only. It does not repeat the
+extension name, installed version, or Buy Me a Coffee, and it shows no separate
+copyright line.
 
 The `Feedback` link opens a new GitHub issue with a neutral template for either
 a bug report or a feature request. The template may contain:

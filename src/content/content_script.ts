@@ -19,6 +19,15 @@ if (claimContentScriptInitialization(globalThis as unknown as Record<string, unk
 	chrome.runtime.onMessage.addListener(
 		(message: unknown, _sender: chrome.runtime.MessageSender, sendResponse: (response?: unknown) => void) => {
 			const msg = message as { action: string };
+			if (msg.action === 'GET_PAGE_INFO') {
+				sendResponse({
+					available: true,
+					title: document.title,
+					url: document.location.href,
+					lang: document.documentElement.lang.trim().toLowerCase().replace('_', '-').split('-')[0] || 'na',
+				});
+				return true;
+			}
 			if (msg.action === 'EXTRACT_ARTICLE') {
 				const article = extractArticle();
 				if (article) {

@@ -2,9 +2,8 @@ import { expect, installPopupRuntimeMock, test } from './fixtures';
 
 const playingSession = {
 	sessionId: 'theme-session',
-	tabId: 7,
-	title: 'Theme article',
-	url: 'https://example.com/theme-article',
+	contentScope: 'article' as const,
+	source: { kind: 'tab' as const, tabId: 7, title: 'Theme article', url: 'https://example.com/theme-article' },
 	lang: 'en',
 	status: 'playing' as const,
 	currentParagraphIndex: 0,
@@ -143,7 +142,15 @@ test('theme selector supports keyboard interaction and persists the selected the
 
 	const selector = page.getByRole('button', { name: 'Chọn giao diện' });
 	const winampOption = page.getByRole('button', { name: '🕹️ Classic (1998)' });
+	const wmpOption = page.getByRole('button', { name: '💿 Vista Aero (2006)' });
 
+	await expect(page.locator('.app-header .theme-selector-container')).toHaveCount(0);
+	await expect(page.locator('.theme-setting .theme-selector-container')).toHaveCount(1);
+	await expect(page.locator('.app-section.theme-setting')).toHaveCount(0);
+	await expect(page.locator('.selection-button-setting.theme-setting')).toHaveCount(1);
+	await expect(page.locator('.selection-button-setting + .theme-setting')).toHaveCount(1);
+	await expect(selector).toHaveText('Hiện đại');
+	await expect(selector).not.toContainText('🎨');
 	await expect(selector).toHaveAttribute('aria-expanded', 'false');
 	await selector.hover();
 	await expect(selector).toHaveAttribute('aria-expanded', 'false');
@@ -159,17 +166,23 @@ test('theme selector supports keyboard interaction and persists the selected the
 
 	await selector.press('Enter');
 	await winampOption.click();
-	await expect(page.locator('.app-container')).toHaveAttribute('data-theme', 'winamp');
+	await expect(selector).toHaveText('Classic (1998)');
+
+	await selector.press('Enter');
+	await wmpOption.click();
+	await expect(page.locator('.app-container')).toHaveAttribute('data-theme', 'wmp12');
+	await expect(selector).toBeVisible();
+	await expect(selector).toHaveText('Vista Aero (2006)');
 	await expect(selector).toHaveAttribute('aria-expanded', 'false');
 
 	const savedTheme = await page.evaluate(async () => {
 		const result = await chrome.storage.local.get('readit_active_theme');
 		return result.readit_active_theme;
 	});
-	expect(savedTheme).toBe('winamp');
+	expect(savedTheme).toBe('wmp12');
 
 	await page.reload();
-	await expect(page.locator('.app-container')).toHaveAttribute('data-theme', 'winamp');
+	await expect(page.locator('.app-container')).toHaveAttribute('data-theme', 'wmp12');
 });
 
 test('Winamp applies its mechanical chassis background', async ({ page, openPopup }) => {
@@ -231,6 +244,7 @@ test.describe('English popup locale', () => {
 		await openPopup(page);
 
 		await expect(page.getByRole('button', { name: 'Select Theme' })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Open Side Panel' })).toBeVisible();
 		await expect(page.locator('.status-text')).toHaveText('Preparing voice...');
 		await expect(page.locator('.session-context')).toContainText('Paragraph 1/5 • 20%');
 		await expect(page.locator('.session-context')).toContainText('Reading in this tab');

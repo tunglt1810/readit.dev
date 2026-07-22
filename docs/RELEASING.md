@@ -9,10 +9,10 @@ git push origin v1.0.0
 
 `.github/workflows/release-extension.yml` builds the extension with the tag
 version, enforces the exact Free manifest permission and host boundary
-(`activeTab`, `contextMenus`, `offscreen`, `scripting`, `storage`, and only the
-Hugging Face model host), runs tests, creates `readit.dev-VERSION.zip`, creates
-a GitHub Release, uploads the package to Chrome Web Store, and submits it for
-review.
+(`activeTab`, `contextMenus`, `offscreen`, `scripting`, `sidePanel`, `storage`,
+and only the Hugging Face model host), runs tests, creates
+`readit.dev-VERSION.zip`, creates a GitHub Release, uploads the package to
+Chrome Web Store, and submits it for review.
 
 The Free release does not require `api.readit.dev`, Cloudflare Workers, D1,
 license secrets, analytics, or crash-reporting services. The `backend/` folder
@@ -21,9 +21,17 @@ is future-Pro source and must not be included in the extension build or ZIP.
 `pnpm validate:manifest` asserts:
 
 - `minimum_chrome_version` is exactly `127`;
+- `side_panel.default_path` is exactly the local
+  `src/sidepanel/sidepanel.html` extension page;
 - `assets/icon32.png` is exposed only to `http://*/*` and `https://*/*`;
 - the existing ONNX web-accessible resources remain exact; and
 - permissions and host permissions remain at the documented Free boundary.
+
+## Free Side Panel release checklist
+
+- [ ] Verify `dist/src/sidepanel/sidepanel.html` exists in the built extension
+  and release archive, and confirm the Chrome Web Store privacy disclosure
+  states that user-pasted text stays local and is not persisted.
 
 ## First Chrome Web Store release
 
