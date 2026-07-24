@@ -1,27 +1,27 @@
-# Tài liệu thiết kế: Bộ Theme Cổ điển Winamp & Windows Media Player 12 (Vista Aero)
+# Classic Media Player Themes Design Specification (Winamp & Windows Media Player 12)
 
-Tài liệu này đặc tả chi tiết thiết kế hệ thống giao diện (Theme System) cho tiện ích mở rộng `readit.dev`, bổ sung hai giao diện hoài niệm: Winamp Classic (1998) và Windows Media Player 12 (Windows Vista Aero, 2006).
+This specification details the theme system architecture for the `readit.dev` Chrome extension, introducing two nostalgia themes: Winamp Classic (1998) and Windows Media Player 12 (Windows Vista Aero, 2006).
 
 ---
 
-## 1. Lưu trữ và Quản lý Trạng thái (State & Storage)
+## 1. State & Storage Management
 
-### Khóa Storage mới
+### New Storage Key
 * **Key:** `readit_active_theme`
-* **Vị trí định nghĩa:** [src/shared/constants.ts](file:///Users/bez/Workspace/repos/bez/readit.dev/src/shared/constants.ts)
-* **Giá trị hợp lệ:** `'default' | 'winamp' | 'wmp12'`
-* **Hành vi:** Lưu trữ lựa chọn của người dùng trong `chrome.storage.local`. Khi mở popup, extension sẽ đọc giá trị này để tải giao diện tương ứng.
+* **Defined in:** [src/shared/constants.ts](file:///Users/bez/Workspace/repos/bez/readit.dev/src/shared/constants.ts)
+* **Valid Values:** `'default' | 'winamp' | 'wmp12'`
+* **Behavior:** Stores user theme selection in `chrome.storage.local`. Upon popup mount, the extension reads this key to render the selected theme.
 
-### Thay đổi cấu trúc DOM trong React
-* Bọc phần tử ngoài cùng của ứng dụng bằng thuộc tính `data-theme`:
+### React DOM Structure Changes
+* Wraps the top-level app element with a `data-theme` attribute:
   ```tsx
   <div className="app-container" data-theme={activeTheme}>
   ```
 
-### 1.2. Cơ chế Đa ngôn ngữ (i18n Localization)
-Để đảm bảo tất cả các nhãn text mới không bị hardcode và hỗ trợ i18n, chúng ta sẽ định nghĩa một bản dịch tĩnh cục bộ (Localization Dictionary) ngay trong popup hoặc shared helpers:
+### 1.2. Internationalization (i18n Localization)
+To ensure all newly added text labels are not hardcoded and fully support i18n, a static local translation dictionary (Localization Dictionary) is defined directly in the popup or shared helpers:
 
-* **Từ điển dịch thuật (Translation Dictionary):**
+* **Translation Dictionary:**
   ```typescript
   const THEME_TRANSLATIONS = {
     vi: {
@@ -53,7 +53,7 @@ Tài liệu này đặc tả chi tiết thiết kế hệ thống giao diện (T
   };
   ```
 
-* **Helper dịch thuật (t):**
+* **Translation Helper (t):**
   ```typescript
   const uiLang = (chrome.i18n.getUILanguage?.() || navigator.language || 'en').startsWith('vi') ? 'vi' : 'en';
   const t = (key: keyof typeof THEME_TRANSLATIONS.en) => THEME_TRANSLATIONS[uiLang][key];
@@ -61,11 +61,11 @@ Tài liệu này đặc tả chi tiết thiết kế hệ thống giao diện (T
 
 ---
 
-## 2. Giao diện Bộ chọn Theme (Theme Selector UI)
+## 2. Theme Selector UI
 
-Bộ chọn theme nằm ở hàng Settings cuối cùng trong [src/popup/App.tsx](file:///Users/bez/Workspace/repos/bez/readit.dev/src/popup/App.tsx), sau hai toggle chọn văn bản và tô sáng từ đang đọc, không nằm trong Header. Mục này luôn hiển thị ở cả ba theme để người dùng đang dùng WMP12 vẫn có thể chọn một giao diện khác.
+The theme selector is located in the bottom Settings row in [src/popup/App.tsx](file:///Users/bez/Workspace/repos/bez/readit.dev/src/popup/App.tsx), positioned after the text selection and word highlight toggles, outside the Header. This item remains visible across all three themes so users using WMP12 can select a different theme.
 
-* **Cấu trúc HTML:**
+* **HTML Structure:**
   ```tsx
   <div className="theme-selector">
     <button className="theme-btn active-theme-indicator" aria-label={t('selectTheme')}>🎨</button>
@@ -76,59 +76,59 @@ Bộ chọn theme nằm ở hàng Settings cuối cùng trong [src/popup/App.tsx
     </div>
   </div>
   ```
-* **CSS bổ sung:** Dropdown menu sẽ ẩn mặc định và chỉ mở/đóng khi toggle nút bảng màu 🎨 hoặc dùng bàn phím. Nền dropdown phải đục, không dùng opacity hoặc backdrop blur, để lựa chọn dễ đọc trên mọi theme.
+* **Additional CSS:** The dropdown menu is hidden by default and toggles open/closed via the palette button 🎨 or keyboard interaction. The dropdown background must be opaque without opacity or backdrop blur to ensure legibility across all themes.
 
 ---
 
-## 3. Đặc tả Giao diện Winamp Classic (Retro Player 1998)
+## 3. Winamp Classic Theme Specification (Retro Player 1998)
 
-Khi `data-theme="winamp"`, giao diện chuyển sang kết cấu cơ khí 3D nổi và màn hình hiển thị LED đặc trưng:
+When `data-theme="winamp"`, the interface switches to a 3D mechanical chassis texture and signature LED display screen:
 
-### 3.1. Màu sắc và Họa tiết kim loại (CSS Variables)
+### 3.1. Colors & Metallic Textures (CSS Variables)
 ```css
 [data-theme="winamp"] {
-  --bg-app: #28282b; /* Màu xám kim loại tối */
-  --bg-glass: #1c1c1f; /* Hộp đen bên trong */
-  --border-glass: #8e8e93; /* Gờ nổi đón sáng */
-  --color-text-primary: #00e600; /* Màu LED xanh dạ quang chính */
-  --color-text-secondary: #008800; /* Màu LED xanh tối cho ký tự nền */
+  --bg-app: #28282b; /* Dark metallic grey */
+  --bg-glass: #1c1c1f; /* Inner dark box */
+  --border-glass: #8e8e93; /* Highlight bevel edge */
+  --color-text-primary: #00e600; /* Primary fluorescent green LED text */
+  --color-text-secondary: #008800; /* Dark green background LED text */
   --font-sans: 'Courier New', 'Courier', monospace;
   --font-display: 'Courier New', 'Courier', monospace;
 }
 ```
 
-### 3.2. Cải tiến Khung viền và Tiêu đề (Window Frame)
-* **Khung Popup:** Thêm đường viền kép nổi khối 3D (`border: 2px solid; border-color: #8e8e93 #111 #111 #8e8e93`).
-* **Họa tiết trang trí vỏ máy:** Sử dụng `background-image` kẻ sọc chéo 45 độ siêu mảnh làm nền cho các vùng trống của panel để tạo chất kim loại gồ ghề.
-* **Thanh tiêu đề giả lập (Title Bar):**
-  * Nằm trên cùng của cửa sổ, dải màu gradient từ xanh dương sẫm `#000080` sang đen `#000000`.
-  * Hiển thị dòng chữ bạc `WINAMP` ở bên trái và 3 nút điều khiển cửa sổ pixel ở góc phải.
+### 3.2. Window Frame & Title Bar Enhancements
+* **Popup Frame:** Adds double-line 3D raised bevel borders (`border: 2px solid; border-color: #8e8e93 #111 #111 #8e8e93`).
+* **Chassis Texture:** Uses an ultra-fine 45-degree diagonal stripe `background-image` for empty panel areas to simulate rugged metallic texture.
+* **Simulated Title Bar:**
+  * Top window bar with dark blue gradient `#000080` to black `#000000`.
+  * Silver text `WINAMP` on the left and pixel window control buttons on the right.
 
-### 3.3. Màn hình LED kỹ thuật số (LED Display Screen)
-* Khu vực thông tin trạng thái phát nhạc (Status) và chi tiết đoạn văn (Session Meta) sẽ gộp chung vào một hộp chìm màu đen tuyền `#000000`.
-* Văn bản hiển thị màu xanh lá dạ quang rực rỡ, tất cả viết hoa (`text-transform: uppercase`).
-* **Hiệu ứng sóng nhạc giả lập (Visualizer):** Một khối canvas/CSS gồm 8 cột dọc nhấp nháy ngẫu nhiên bằng CSS animation để mô tả mức tần số âm thanh khi trình đọc đang phát (trạng thái `playing`).
+### 3.3. Digital LED Display Screen
+* Playback status and paragraph metadata are merged into a sunken black container (`#000000`).
+* Fluorescent green uppercase text (`text-transform: uppercase`).
+* **Visualizer Effect:** 8 vertical bars animated via CSS keyframes simulating audio frequency meters during playback (`playing`).
 
-### 3.4. Bố cục điều khiển nằm ngang (Mechanical Deck)
-* Thay đổi cấu trúc của `.playback-controls` thành dải ngang: `flex-direction: row; gap: 4px; pack: center;`.
-* **Phím bấm cơ học:** Các nút bấm chuyển thành hình chữ nhật xám mờ viền nổi.
-* **Biểu tượng phím:**
-  * Nút Đọc/Resume: Chứa ký hiệu tam giác màu xanh lá dạ quang `▶`
-  * Nút Tạm dừng (Pause): Chứa hai vạch màu vàng `‖`
-  * Nút Dừng hẳn (Stop): Chứa ô vuông màu đỏ `■`
-* Khi nhấn nút (`:active`), dịch chuyển toàn bộ nút xuống dưới và sang phải 1px (`transform: translate(1px, 1px)`) đồng thời chuyển viền từ nổi thành chìm (`border-color: #111 #8e8e93 #8e8e93 #111`).
+### 3.4. Mechanical Deck Horizontal Controls
+* Changes `.playback-controls` layout to a horizontal strip: `flex-direction: row; gap: 4px; pack: center;`.
+* **Mechanical Buttons:** Beveled rectangular grey buttons.
+* **Button Symbols:**
+  * Read/Resume button: Green fluorescent triangle `▶`
+  * Pause button: Yellow double bar `‖`
+  * Stop button: Red square `■`
+* Active button press (`:active`) shifts 1px down and right (`transform: translate(1px, 1px)`) with inverted bevel borders (`border-color: #111 #8e8e93 #8e8e93 #111`).
 
-### 3.5. Thanh trượt tốc độ & Tiến trình
-* **Thanh tiến trình (Progress Bar):** Nền đen xám rãnh sâu, hiển thị mức tiến trình bằng các vạch dọc màu xanh lá dạ quang xếp khít nhau.
-* **Thanh trượt Tốc độ (Speed Slider):** Biến thành cần gạt EQ dạng trượt dọc cơ khí với nút trượt vuông màu bạc viền đen.
+### 3.5. Speed Control & Progress Bar
+* **Progress Bar:** Deep recessed black groove displaying progress via tightly stacked vertical green LED bars.
+* **Speed Slider:** Mechanical vertical EQ slider with a silver square slider knob and black border.
 
 ---
 
-## 4. Đặc tả Giao diện Windows Media Player 12 (Vista Aero 2006)
+## 4. Windows Media Player 12 Theme Specification (Vista Aero 2006)
 
-Khi `data-theme="wmp12"`, giao diện chuyển sang phong cách kính mờ thủy tinh trong suốt sang trọng của thời đại Windows Aero:
+When `data-theme="wmp12"`, the interface switches to a translucent glass style of the Windows Aero era:
 
-### 4.1. Màu sắc và Hiệu ứng khúc xạ kính (CSS Variables)
+### 4.1. Colors & Glass Refraction Effects (CSS Variables)
 ```css
 [data-theme="wmp12"] {
   --bg-app: radial-gradient(circle at 50% 50%, rgba(16, 46, 75, 0.4), rgba(4, 10, 20, 0.95));
@@ -142,37 +142,36 @@ Khi `data-theme="wmp12"`, giao diện chuyển sang phong cách kính mờ thủ
 }
 ```
 
-### 4.2. Hiệu ứng kính mờ (Aero Glass Setup)
-* **Popup container:** Áp dụng `backdrop-filter: blur(20px) saturate(125%)` để tạo chiều sâu kính mờ lọc bão hòa màu sắc.
-* Viền ngoài của popup có viền đôi khúc xạ ánh sáng: Viền ngoài `rgba(255, 255, 255, 0.25)` và đường highlight mỏng phía trong `rgba(255, 255, 255, 0.15)`.
-* Mọi dòng chữ trên giao diện đều có đổ bóng text bóng mờ (`text-shadow: 0 1px 3px rgba(0,0,0,0.8)`) để đảm bảo khả năng đọc tốt trên mọi nền kính.
+### 4.2. Aero Glass Effect Setup
+* **Popup Container:** Applies `backdrop-filter: blur(20px) saturate(125%)` for frosted glass depth filtering.
+* Double refractive border: outer border `rgba(255, 255, 255, 0.25)` and inner highlight line `rgba(255, 255, 255, 0.15)`.
+* Text drop shadows (`text-shadow: 0 1px 3px rgba(0,0,0,0.8)`) for legibility across glass backgrounds.
 
-### 4.3. Bảng điều khiển bóng bẩy đáy (Bottom Control Dock)
-* Phần dưới cùng của popup sẽ hiển thị một khối nằm ngang màu xám xanh bóng bẩy (Glossy Dock) có chiều cao cố định.
-* **Nút điều khiển Play/Pause tròn lớn ở trung tâm:**
-  * Kích thước tròn 52px x 52px.
-  * Phủ màu dốc 3D dạng cầu (radial gradient):
-    `background: radial-gradient(circle at 50% 30%, #00E5FF 0%, #007799 65%, #004466 100%)`.
-  * Có vòng kim loại bạc bảo vệ bao quanh.
-  * Hiệu ứng hào quang phát sáng (Glow): Khi hover, nút tỏa ra vầng sáng màu xanh lam rực rỡ (`box-shadow: 0 0 16px rgba(0, 229, 255, 0.85)`).
-* Nút **Stop** hình vuông nhỏ màu xám nhạt nằm khiêm tốn bên cạnh nút tròn trung tâm.
+### 4.3. Glossy Bottom Control Dock
+* Bottom section renders a fixed-height glossy blue-grey container.
+* **Center Play/Pause Button:**
+  * 52px x 52px circular button.
+  * 3D radial gradient: `background: radial-gradient(circle at 50% 30%, #00E5FF 0%, #007799 65%, #004466 100%)`.
+  * Silver metallic outer ring.
+  * Cyan glow effect on hover (`box-shadow: 0 0 16px rgba(0, 229, 255, 0.85)`).
+* Square grey **Stop** button situated beside the main transport control.
 
-### 4.4. Thanh tiến trình và Slider tốc độ
-* **Thanh tiến trình (Progress Bar):** Nền trong suốt mờ, phần đã chạy có màu xanh Cyan phát sáng dịu.
-* **Thanh trượt Tốc độ:** Đầu trượt (Thumb slider) biến thành một hạt ngọc tròn bóng bẩy màu xanh lam nhạt trong suốt.
+### 4.4. Progress Bar & Speed Slider
+* **Progress Bar:** Translucent frosted track with cyan progress fill.
+* **Speed Slider:** Glossy translucent cyan glass thumb.
 
 ---
 
-## 5. Kế hoạch kiểm thử và nghiệm thu (Verification Plan)
+## 5. Verification Plan
 
-### Kiểm thử Giao diện (Visual Verification)
-1. Kiểm tra sự thay đổi 100% của CSS biến khi chọn lần lượt 3 theme: Mặc định, Winamp, WMP12.
-2. Xác minh các hiệu ứng đặc trưng:
-   - Winamp: Đường viền cơ học 3D, màn hình LED chữ xanh monospace, hiệu ứng dịch chuyển 1px khi nhấn nút điều khiển.
-   - WMP12: Độ mờ của kính Aero, vầng hào quang phát sáng của nút Play tròn khi hover, bóng mờ chữ trắng.
-3. Xác minh tính tương thích kích thước: Giao diện khi thay đổi theme vẫn nằm trọn trong giới hạn popup (Rộng 360px, Cao tối thiểu 480px), không bị tràn hay lỗi bố cục.
+### Visual Verification
+1. Verify complete CSS variable shifts across Default, Winamp, and WMP12 themes.
+2. Confirm theme signature effects:
+   - Winamp: 3D mechanical bevels, green LED monospace text, 1px active button press.
+   - WMP12: Aero glass blur, cyan Play glow, white text drop shadow.
+3. Confirm layout dimensions remain bounded within popup dimensions (width 360px, min height 480px) without overflow.
 
-### Kiểm thử Chức năng (Functional Verification)
-1. Xác minh việc ghi/đọc theme vào `chrome.storage.local` hoạt động đúng (tắt popup đi bật lại vẫn giữ nguyên theme đã chọn).
-2. Đảm bảo các nút điều khiển của cả 2 theme mới vẫn kích hoạt đúng logic phát/tạm dừng/dừng đọc của Extension.
-3. Đảm bảo thanh trượt tốc độ (dưới dạng cần gạt cơ khí hoặc hạt ngọc Aero) vẫn truyền đúng tốc độ đọc về service worker.
+### Functional Verification
+1. Verify storage persistence in `chrome.storage.local`.
+2. Confirm Play/Pause/Stop playback triggers execute correctly across all themes.
+3. Confirm speed slider updates propagate correctly to the service worker.

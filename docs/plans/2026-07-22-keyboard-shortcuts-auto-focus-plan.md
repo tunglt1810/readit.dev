@@ -1,10 +1,10 @@
-# Kế Hoạch Thực Thi Phím Tắt Mở Extension & Auto-Focus Nút Đọc Trang
+# Extension Keyboard Shortcuts & Auto-Focus Primary Action Button Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add keyboard shortcuts to open Popup (`Ctrl+Shift+K` / `Command+Shift+K`) and Side Panel (`Ctrl+Shift+E` / `Command+Shift+E`), while automatically focusing the primary read control button when Popup/Side Panel opens.
 
-**Architecture:** Sử dụng khai báo `commands` chuẩn Manifest V3 trong `manifest.json` kết hợp listener `chrome.commands.onCommand` trong service worker. Cùng với đó sử dụng React `useRef` + `useEffect` trong Popup và Side Panel để tự động kích hoạt `focus()` cho nút hành động chính theo trạng thái playback.
+**Architecture:** Use standard Manifest V3 `commands` in `manifest.json` combined with a `chrome.commands.onCommand` listener in the service worker. Additionally, use React `useRef` + `useEffect` in Popup and Side Panel UI to automatically trigger `focus()` on the primary action button based on playback state.
 
 **Tech Stack:** TypeScript, React, Chrome Extension API (Manifest V3 Commands & SidePanel).
 
@@ -17,15 +17,15 @@
 
 ---
 
-### Task 1: Khai báo Phím tắt trong Manifest và Background Listener
+### Task 1: Declare Shortcuts in Manifest and Background Listener
 
 **Files:**
 - Modify: `public/manifest.json`
 - Modify: `src/background/background.ts`
 
-- [ ] **Step 1: Thêm phần `commands` vào `public/manifest.json`**
+- [ ] **Step 1: Add `commands` section to `public/manifest.json`**
 
-Thêm cấu hình `commands` vào `public/manifest.json`:
+Add `commands` configuration to `public/manifest.json`:
 ```json
 	"commands": {
 		"_execute_action": {
@@ -46,7 +46,7 @@ Thêm cấu hình `commands` vào `public/manifest.json`:
 
 - [ ] **Step 2: Register `chrome.commands.onCommand` listener in `src/background/background.ts`**
 
-Bổ sung xử lý lệnh mở side panel:
+Add side panel open handler:
 ```typescript
 chrome.commands.onCommand.addListener(async (command) => {
 	if (command === 'open_side_panel') {
@@ -58,10 +58,10 @@ chrome.commands.onCommand.addListener(async (command) => {
 });
 ```
 
-- [ ] **Step 3: Kiểm tra build TypeScript**
+- [ ] **Step 3: Check TypeScript build**
 
 Run: ` pnpm build`
-Expected: Biên dịch không lỗi.
+Expected: Compilation completes without errors.
 
 - [ ] **Step 4: Commit**
 
@@ -72,14 +72,14 @@ Expected: Biên dịch không lỗi.
 
 ---
 
-### Task 2: Auto-focus Nút Điều Khiển Chính Trong Popup UI
+### Task 2: Auto-focus Primary Action Button in Popup UI
 
 **Files:**
 - Modify: `src/popup/App.tsx`
 
-- [ ] **Step 1: Tạo `primaryButtonRef` và thêm `useEffect` cho Auto-focus**
+- [ ] **Step 1: Create `primaryButtonRef` and add `useEffect` for Auto-focus**
 
-Trong `src/popup/App.tsx`:
+In `src/popup/App.tsx`:
 ```typescript
 const primaryButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -90,9 +90,9 @@ useEffect(() => {
 }, [session, status]);
 ```
 
-- [ ] **Step 2: Gán `ref={primaryButtonRef}` vào nút action tương ứng**
+- [ ] **Step 2: Attach `ref={primaryButtonRef}` to corresponding action button**
 
-Gán `ref={primaryButtonRef}` cho nút primary (cả giao diện mặc định và giao diện chủ đề Winamp/WMP12):
+Attach `ref={primaryButtonRef}` to primary button (both default UI and Winamp/WMP12 themed UI):
 ```tsx
 <button
 	ref={primaryButtonRef}
@@ -104,12 +104,12 @@ Gán `ref={primaryButtonRef}` cho nút primary (cả giao diện mặc định v
 	<PlaybackIcon name={status === 'stopped' || status === 'error' ? 'read' : 'stop'} />
 </button>
 ```
-Đồng thời gán `ref={primaryButtonRef}` khi ở nút play/pause nếu đang trong trạng thái playing/paused.
+Also attach `ref={primaryButtonRef}` to play/pause button when in playing/paused state.
 
-- [ ] **Step 3: Kiểm tra build TypeScript**
+- [ ] **Step 3: Check TypeScript build**
 
 Run: ` pnpm build`
-Expected: Biên dịch thành công.
+Expected: Build succeeds.
 
 - [ ] **Step 4: Commit**
 
@@ -120,14 +120,14 @@ Expected: Biên dịch thành công.
 
 ---
 
-### Task 3: Auto-focus Nút Điều Khiển Chính Trong Side Panel UI
+### Task 3: Auto-focus Primary Action Button in Side Panel UI
 
 **Files:**
 - Modify: `src/sidepanel/App.tsx`
 
-- [ ] **Step 1: Tạo `primaryButtonRef` và thêm `useEffect` auto-focus cho Side Panel**
+- [ ] **Step 1: Create `primaryButtonRef` and add `useEffect` auto-focus for Side Panel**
 
-Trong `src/sidepanel/App.tsx`:
+In `src/sidepanel/App.tsx`:
 ```typescript
 const primaryButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -136,14 +136,14 @@ useEffect(() => {
 }, [session]);
 ```
 
-- [ ] **Step 2: Gán `ref={primaryButtonRef}` vào nút đọc trang chính của Side Panel**
+- [ ] **Step 2: Attach `ref={primaryButtonRef}` to main read button of Side Panel**
 
-Gán ref vào nút "Đọc trang này" (`handleReadCurrentPage`).
+Attach ref to "Read Page" button (`handleReadCurrentPage`).
 
-- [ ] **Step 3: Kiểm tra build TypeScript**
+- [ ] **Step 3: Check TypeScript build**
 
 Run: ` pnpm build`
-Expected: Biên dịch thành công.
+Expected: Build succeeds.
 
 - [ ] **Step 4: Commit**
 
@@ -154,19 +154,18 @@ Expected: Biên dịch thành công.
 
 ---
 
-### Task 4: Kiểm Thử Toàn Bộ & Testcases Tự Động (Verification)
+### Task 4: Complete Verification & Automated Testcases
 
-- [x] **Step 1: Viết testcases E2E kiểm tra auto-focus trong Popup & Side Panel**
-  - Thêm test `tự động focus vào nút đọc trang khi mở popup` trong `tests/e2e/tts-controls.spec.ts`.
-  - Thêm test `auto-focuses the primary action button when side panel opens` trong `tests/e2e/side-panel.spec.ts`.
+- [x] **Step 1: Write E2E testcases verifying auto-focus in Popup & Side Panel**
+  - Add `tự động focus vào nút đọc trang khi mở popup` test in `tests/e2e/tts-controls.spec.ts`.
+  - Add `auto-focuses the primary action button when side panel opens` test in `tests/e2e/side-panel.spec.ts`.
 
-- [x] **Step 2: Chạy build production**
+- [x] **Step 2: Run production build**
 
 Run: ` pnpm build`
 Expected: BUILD SUCCESS
 
-- [x] **Step 3: Chạy bộ test Playwright E2E**
+- [x] **Step 3: Run Playwright E2E test suite**
 
 Run: ` pnpm test:e2e`
-Expected: Tất cả test case e2e đều PASS.
-
+Expected: All E2E testcases pass.

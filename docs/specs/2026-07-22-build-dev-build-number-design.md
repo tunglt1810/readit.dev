@@ -1,50 +1,50 @@
-# build-dev: Local Build Number cho Extension
+# build-dev: Local Build Number for Extension
 
-## Bối cảnh
+## Context
 
-Hiện tại `pnpm dev` chạy watch mode và `pnpm build` tạo production bundle. Cả hai đều sync version từ `package.json` vào `dist/manifest.json` (ví dụ `"version": "1.0.3"`). Khi dev local, mỗi lần reload extension trên Chrome, không có cách nào phân biệt build này với build trước.
+Currently `pnpm dev` runs watch mode and `pnpm build` creates the production bundle. Both sync the version from `package.json` into `dist/manifest.json` (e.g., `"version": "1.0.3"`). When developing locally, each time the extension is reloaded in Chrome, there is no way to distinguish this build from previous builds.
 
-Mục tiêu: thêm `pnpm build-dev` tạo một snapshot build có đính kèm **build number tự tăng** để dễ nhận diện khi dev local.
+Goal: Add `pnpm build-dev` to create a snapshot build tagged with an **auto-incrementing build number** for easy identification during local development.
 
 ## Scope
 
-- **Chỉ áp dụng local dev** — production build (`pnpm build`) không bị ảnh hưởng.
-- Build number lưu vào `.build-number` (gitignored), không commit lên repo.
-- Không watch, không hot reload — chỉ build một lần (snapshot).
+- **Local dev only** — production build (`pnpm build`) is unaffected.
+- Build number is saved to `.build-number` (gitignored), not committed to repository.
+- No watch mode, no hot reload — single snapshot build execution.
 
-## Thay đổi đề xuất
+## Proposed Changes
 
 ### 1. `scripts/build-dev.mjs` [NEW]
 
-Script Node ESM thuần:
+Pure Node ESM script:
 
-1. Đọc `.build-number` ở root (nếu chưa tồn tại, khởi tạo = `0`).
-2. Tăng +1, ghi lại vào `.build-number`.
-3. Set `process.env.BUILD_NUMBER` = giá trị mới.
-4. `execSync('rsbuild build', { stdio: 'inherit', env: process.env })`.
+1. Read `.build-number` at root (if it does not exist, initialize = `0`).
+2. Increment by +1, save back to `.build-number`.
+3. Set `process.env.BUILD_NUMBER` = new value.
+4. Run `execSync('rsbuild build', { stdio: 'inherit', env: process.env })`.
 
-### 2. `rsbuild.config.ts` — plugin `manifest-version-sync` (mở rộng)
+### 2. `rsbuild.config.ts` — `manifest-version-sync` Plugin (Extended)
 
-Nếu `process.env.BUILD_NUMBER` tồn tại:
+If `process.env.BUILD_NUMBER` exists:
 
-- Ghi `version_name: "{version}-dev.{BUILD_NUMBER}"` vào `dist/manifest.json`.  
-  Ví dụ: `"version_name": "1.0.3-dev.42"`.
-- Trường `version` vẫn là số nguyên (`1.0.3`) — đáp ứng ràng buộc Chrome Manifest V3.
+- Write `version_name: "{version}-dev.{BUILD_NUMBER}"` into `dist/manifest.json`.  
+  Example: `"version_name": "1.0.3-dev.42"`.
+- The `version` field remains dot-separated integers (`1.0.3`) — satisfying Chrome Manifest V3 constraints.
 
 ### 3. `rsbuild.config.ts` — `source.define`
 
 Inject constant `__BUILD_VERSION__`:
 
-- Khi có `BUILD_NUMBER`: `"1.0.3-dev.42"`
-- Khi không có (production build): `"1.0.3"`
+- When `BUILD_NUMBER` is present: `"1.0.3-dev.42"`
+- When absent (production build): `"1.0.3"`
 
-TypeScript declaration cho constant này sẽ được thêm vào `src/shared/` hoặc `src/env.d.ts`.
+TypeScript declaration for this constant will be added to `src/shared/` or `src/env.d.ts`.
 
-### 4. Hiển thị trong UI
+### 4. UI Display
 
-Popup/sidepanel đọc `__BUILD_VERSION__` và hiển thị tại vị trí đang có thông tin version (nếu có), hoặc thêm vào footer/About section.
+Popup/sidepanel reads `__BUILD_VERSION__` and displays it at the current version location (if available), or adds it to the footer/About section.
 
-> **Lưu ý:** Cần khảo sát UI hiện tại để xác định điểm hiển thị chính xác khi implementation.
+> **Note:** Inspect current UI to determine exact display location during implementation.
 
 ### 5. `package.json`
 
@@ -54,22 +54,22 @@ Popup/sidepanel đọc `__BUILD_VERSION__` và hiển thị tại vị trí đan
 
 ### 6. `.gitignore`
 
-Thêm dòng:
+Add entry:
 ```
 /.build-number
 ```
 
-## Ràng buộc kỹ thuật
+## Technical Constraints
 
-| Trường | Giá trị | Ghi chú |
+| Field | Value | Notes |
 |--------|---------|---------|
-| `version` | `1.0.3` | Bắt buộc là số nguyên, Chrome Manifest V3 |
-| `version_name` | `1.0.3-dev.42` | String tùy ý, Chrome hiển thị trong chrome://extensions |
-| `__BUILD_VERSION__` | `1.0.3-dev.42` | Compile-time constant cho React UI |
+| `version` | `1.0.3` | Must be dot-separated integers, Chrome Manifest V3 requirement |
+| `version_name` | `1.0.3-dev.42` | Arbitrary string, Chrome displays in `chrome://extensions` |
+| `__BUILD_VERSION__` | `1.0.3-dev.42` | Compile-time constant for React UI |
 
 ## Verification
 
-- Chạy `pnpm build-dev` lần đầu → `.build-number` = 1, `dist/manifest.json` có `version_name: "1.0.3-dev.1"`.
-- Chạy lại → `.build-number` = 2, `version_name: "1.0.3-dev.2"`.
-- Chạy `pnpm build` (production) → `dist/manifest.json` **không có** `version_name`.
-- Load extension trên Chrome → chrome://extensions hiển thị `1.0.3-dev.2`.
+- Run `pnpm build-dev` first time → `.build-number` = 1, `dist/manifest.json` has `version_name: "1.0.3-dev.1"`.
+- Run again → `.build-number` = 2, `version_name: "1.0.3-dev.2"`.
+- Run `pnpm build` (production) → `dist/manifest.json` **does not have** `version_name`.
+- Load extension on Chrome → `chrome://extensions` displays `1.0.3-dev.2`.

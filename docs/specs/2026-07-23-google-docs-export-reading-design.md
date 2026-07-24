@@ -1,154 +1,114 @@
-# Thiết kế đọc Google Docs theo quyền truy cập của tab
+# Google Docs Reading via Tab Access Permissions Design
 
-**Ngày:** 2026-07-23
+**Date:** 2026-07-23
 
-**Trạng thái:** Thiết kế đã duyệt; chờ triển khai
+**Status:** Approved design; implementation pending
 
-**Phạm vi:** Đọc Google Docs dạng https://docs.google.com/document/d/<id>/...
-khi người dùng đã mở tài liệu và trình duyệt có quyền xem, bao gồm tài liệu công
-khai và tài liệu đăng nhập.
+**Scope:** Reading Google Docs matching `https://docs.google.com/document/d/<id>/...` when the user has opened the document and the browser has view permissions, including public and logged-in documents.
 
-## Tóm tắt
+## Summary
 
-Google Docs là ứng dụng động. Trang tài liệu không có cây article, main,
-heading hoặc paragraph để Mozilla Readability trích xuất; editor nằm trong các
-iframe và lớp UI nội bộ. Extractor hiện tại vì thế trả null, rồi background
-phát lỗi trích xuất chung.
+Google Docs is a dynamic application. Document pages contain no `article`, `main`, `heading`, or `paragraph` DOM elements for Mozilla Readability to extract; the editor resides inside internal iframes and UI layers. The current extractor therefore returns `null`, causing the background worker to emit a generic extraction error.
 
-Content script sẽ nhận diện chính xác URL tài liệu và lấy text export của chính
-tài liệu đó từ endpoint cùng origin:
+The content script will accurately recognize the document URL and fetch that document's plain-text export from the same-origin endpoint:
 
     /document/d/<document-id>/export?format=txt
 
-Request dùng quyền xem và cookie hiện có của tab. Text export được chuyển thành
-Article và đi qua nguyên pipeline playback hiện có.
+The request utilizes the tab's existing view permissions and cookies. The exported text is converted into an `Article` and processed through the existing playback pipeline.
 
-## Mục tiêu và ngoài phạm vi
+## Goals and Out of Scope
 
-### Mục tiêu
+### Goals
 
-- Đọc mọi Google Docs mà tab hiện tại có quyền xem.
-- Giữ Readability và hành vi của mọi URL không phải Google Docs.
-- Không đọc DOM editor nội bộ, raw page UI, toolbar, menu hoặc iframe.
-- Không gửi nội dung sang readit.dev, Google Drive API hay dịch vụ thứ ba; không
-  lưu text export vào extension storage.
-- Có lỗi rõ ràng nếu Google không cho export, tài liệu mất quyền xem, response
-  không hợp lệ hoặc text rỗng.
+- Read any Google Docs document that the active tab has permission to view.
+- Preserve Readability and existing behavior for all non-Google Docs URLs.
+- Do not scrape internal editor DOM, raw page UI, toolbars, menus, or iframes.
+- Do not transmit content to readit.dev, Google Drive API, or third-party services; do not persist exported text in extension storage.
+- Emit clear errors when Google denies export access, document view permissions are lost, responses are invalid, or exported text is empty.
 
-### Ngoài phạm vi
+### Out of Scope
 
-- Google Sheets, Slides, Drive files hoặc Docs URL không theo /document/d/<id>.
-- Google Drive API, OAuth, token riêng, host permission mới hoặc backend.
-- Scrape DOM, canvas hoặc iframe nội bộ Google Docs.
-- Bỏ qua quyền xem, hạn chế tải xuống/sao chép/in hoặc kiểm soát truy cập của
-  chủ tài liệu.
-- Lưu, đồng bộ, tóm tắt hoặc chỉnh sửa tài liệu.
+- Google Sheets, Slides, Drive files, or Docs URLs not matching `/document/d/<id>`.
+- Google Drive API, OAuth, custom tokens, new host permissions, or backend dependencies.
+- Scraping internal Google Docs DOM, canvas, or iframes.
+- Bypassing view permissions, download/copy/print restrictions, or document owner access controls.
+- Storing, synchronizing, summarizing, or editing documents.
 
-## Kiến trúc
+## Architecture
 
-### Google Docs adapter
+### Google Docs Adapter
 
-src/content/google_docs_extractor.ts là adapter duy nhất cho Google Docs. Nó
-nhận URL tài liệu hợp lệ, tải/kiểm tra plain text export, rồi trả Article hoặc
-failure code có cấu trúc.
+`src/content/google_docs_extractor.ts` serves as the single adapter for Google Docs. It receives valid document URLs, fetches and validates the plain-text export, and returns an `Article` or a structured failure code.
 
-Adapter dùng fetch với credentials: same-origin. Content script khởi tạo request
-theo origin của trang mà nó được inject; request đến docs.google.com là cùng
-origin với tab đã được người dùng yêu cầu đọc. Không thêm host_permissions:
-endpoint export cùng origin của active tab hiện có.
+The adapter uses `fetch` with `credentials: 'same-origin'`. The content script initiates requests under the origin of the page into which it was injected; requests to `docs.google.com` share the origin of the active tab requested by the user. No new `host_permissions` are added: the export endpoint shares the same origin as the active tab.
 
-### Không fallback sang DOM editor hay Readability
+### No Fallback to Editor DOM or Readability
 
-Trong tài liệu thực tế đã kiểm tra, top-level document có 0 article, main,
-heading và paragraph; editor nằm trong iframe. Cấu hình content script hiện tại
-cũng chỉ inject top frame. Dùng all_frames/match_about_blank để scrape editor sẽ
-phụ thuộc DOM không công khai và có nguy cơ đọc toolbar hoặc text sai thứ tự.
+Inspected real-world documents show that the top-level document has zero `article`, `main`, `heading`, or `paragraph` elements; the editor is inside an iframe. The current content script configuration also injects into the top frame only. Using `all_frames` or `match_about_blank` to scrape the editor would rely on unannounced DOM structures and risk reading toolbars or text out of order.
 
-Khi URL được nhận diện là Google Docs, export failure là kết quả cuối cùng.
-Không thử Readability hay raw UI sau đó. src/content/article_extractor.ts vẫn
-là extractor Readability đồng bộ, độc lập cho website thông thường.
+When a URL is recognized as a Google Docs document, an export failure is a final result. No subsequent attempts are made with Readability or raw UI scraping. `src/content/article_extractor.ts` remains a synchronous, independent Readability extractor for standard websites.
 
-## Luồng dữ liệu
+## Data Flow
 
-1. Người dùng chọn **Đọc trang hiện tại** trên tab Google Docs.
-2. Background gửi EXTRACT_ARTICLE tới content script như hiện tại.
-3. Content script parse hostname docs.google.com và path
-   /document/d/<document-id>/... bằng URL.
-4. Với Google Docs hợp lệ, adapter tạo endpoint export từ ID đã parse và fetch
-   text với credentials: same-origin.
-5. Adapter chỉ nhận response ok, content type plain text và text sau trim
-   không rỗng; nó chuẩn hoá CRLF/CR sang LF nhưng giữ paragraph breaks.
-6. Adapter tạo Article từ tiêu đề trang hiện có, text export, URL gốc và
-   language hiện có của document.
-7. Content script trả success; background bắt đầu pipeline playback, offscreen
-   TTS, badge và session hiện có mà không có nhánh TTS mới.
-8. Với URL khác, content script giữ nguyên extractArticleFromDocument() và
-   Readability.
+1. User clicks **Read current page** on a Google Docs tab.
+2. Background sends `EXTRACT_ARTICLE` to the content script as usual.
+3. Content script parses the `docs.google.com` hostname and `/document/d/<document-id>/...` path using `URL`.
+4. For valid Google Docs, the adapter constructs the export endpoint from the parsed document ID and fetches text with `credentials: 'same-origin'`.
+5. The adapter accepts only `200 OK` responses, `plain/text` content types, and non-empty trimmed text; it normalizes `CRLF`/`CR` to `LF` while preserving paragraph breaks.
+6. The adapter creates an `Article` from the existing page title, exported text, source URL, and document language.
+7. Content script returns success; background initiates the existing playback pipeline, offscreen TTS, badge updates, and session management with no new TTS branches.
+8. For non-Google Docs URLs, the content script proceeds with standard `extractArticleFromDocument()` and Readability processing.
 
-Text Google Docs chỉ cần không rỗng, thay vì buộc qua ngưỡng bài báo 120 ký tự.
-Đây là nguồn tài liệu chuyên biệt, nên tài liệu ngắn hợp lệ vẫn phải đọc được.
+Google Docs text only requires non-empty content rather than meeting the standard 120-character article threshold, as it is a specialized document source where short documents remain valid for reading.
 
-## Failure contract và UX
+## Failure Contract and UX
 
-Adapter trả error code ổn định googleDocsExportUnavailable khi Google trả status
-lỗi, response không phải plain text, request lỗi hoặc text rỗng.
+The adapter returns a stable error code `googleDocsExportUnavailable` when Google returns an error status, non-plain-text content, network failure, or empty text.
 
-Background giữ code này trong cả error session và CommandResponse.
-src/shared/constants.ts thêm key EN/VI hướng dẫn người dùng kiểm tra quyền
-xem/tải xuống hoặc dùng văn bản đã chọn/dán. Popup và Side Panel map code từ
-cả session lẫn command response sang translation key qua helper hiện có, không
-thêm literal UI string.
+Background preserves this code in both error sessions and `CommandResponse`. `src/shared/constants.ts` defines localized EN/VI messages advising users to check view/download permissions or use selected/pasted text. Popup and Side Panel map the code from sessions and command responses via existing translation helpers without adding literal UI strings.
 
-- Google Docs failure không khởi động TTS.
-- Nếu manual text đang đọc, web start thất bại chỉ trả lỗi; không dừng hoặc thay
-  thế manual session.
-- Không log response body, text export hoặc document ID.
+- Export failures do not trigger TTS audio.
+- If a manual text session is playing, a failed page extraction returns an error without interrupting or replacing the active manual session.
+- Response bodies, exported text, and document IDs are never logged.
 
-## Thay đổi theo tệp
+## File Map
 
-| Tệp | Thay đổi |
+| File | Changes |
 | --- | --- |
-| src/content/google_docs_extractor.ts | Parse URL, tạo endpoint export, request/validate text và trả Article hoặc failure code. Fetch dependency được truyền vào để unit test. |
-| src/content/content_script.ts | Chọn Google Docs adapter cho EXTRACT_ARTICLE, await kết quả và giữ response contract. |
-| src/background/background.ts | Phân biệt Google Docs failure code khi tạo error session và trả command response. |
-| src/shared/constants.ts | Thêm translation key EN/VI cho lỗi export Google Docs. |
-| src/popup/App.tsx | Map failure code sang translation key. |
-| src/sidepanel/App.tsx | Dùng cùng map lỗi cho current-page start. |
-| tests/unit/google_docs_extractor.test.ts | Test URL parser, endpoint, validation và normalize text. |
-| tests/e2e/reader.spec.ts | Test Google Docs export mock và export failure. |
+| `src/content/google_docs_extractor.ts` | Parses document URL, constructs export endpoint, fetches/validates text, and returns `Article` or failure code. Accepts injected `fetch` for unit testing. |
+| `src/content/content_script.ts` | Selects Google Docs adapter for `EXTRACT_ARTICLE`, awaits result, and maintains response contract. |
+| `src/background/background.ts` | Preserves Google Docs failure code when creating error sessions and returning command responses. |
+| `src/shared/constants.ts` | Adds localized EN/VI translation keys for Google Docs export failure. |
+| `src/popup/App.tsx` | Maps failure code to localized user message. |
+| `src/sidepanel/App.tsx` | Applies identical error mapping for current-page playback start. |
+| `tests/unit/google_docs_extractor.test.ts` | Tests URL parsing, endpoint construction, response validation, and text normalization. |
+| `tests/e2e/reader.spec.ts` | Tests Google Docs export mocking and failure handling. |
 
-## Kiểm thử
+## Verification Plan
 
-### Unit
+### Unit Tests
 
-- Nhận diện docs.google.com/document/d/<id>/edit; từ chối hostname, path và
-  document ID không hợp lệ.
-- Endpoint export chỉ dùng ID đã parse, không nhận URL tự do.
-- 200 text/plain có text tạo Article và bảo toàn paragraph breaks.
-- 403, lỗi request, content type khác plain text và text rỗng đều trả
-  googleDocsExportUnavailable.
-- Tài liệu ngắn nhưng không rỗng vẫn hợp lệ.
+- Parse `docs.google.com/document/d/<id>/edit`; reject invalid hostnames, paths, and document IDs.
+- Export endpoint constructs exclusively from parsed ID without accepting arbitrary URLs.
+- `200 text/plain` creates an `Article` and preserves paragraph breaks.
+- `403`, request errors, non-plain-text content, and empty text return `googleDocsExportUnavailable`.
+- Short but non-empty documents remain valid.
 
-### End-to-end
+### End-to-End Tests
 
-- Route mock top-level Google Docs không có article, main hay paragraph;
-  route export trả plain text. EXTRACT_ARTICLE phải thành công bằng text export.
-- Export 403 trả Google Docs failure, không có Article và không khởi động TTS.
-- Popup và Side Panel hiển thị message EN/VI; manual session giữ nguyên khi
-  current-page start thất bại.
-- Existing normal-article và navigation-only tests tiếp tục pass.
+- Route mock top-level Google Docs page without article/main elements; route export endpoint returning plain text. `EXTRACT_ARTICLE` succeeds using exported text.
+- Export `403` returns Google Docs failure without creating an `Article` or starting TTS.
+- Popup and Side Panel display localized EN/VI messages; active manual sessions remain uninterrupted.
+- Existing standard article and navigation tests continue to pass.
 
-### Verification sau triển khai
+### Post-Deployment Verification
 
-Chạy tuần tự: unit tests, pnpm build, targeted Playwright, E2E liên quan và
-git diff --check. Playwright dùng route mock, không phụ thuộc Google Docs thật,
-tài khoản Google hoặc network bên ngoài.
+Run sequentially: unit tests, `pnpm build`, targeted Playwright, related E2E tests, and `git diff --check`. Playwright uses route mocks, independent of real Google Docs, Google accounts, or external network access.
 
-## Tiêu chí chấp nhận
+## Acceptance Criteria
 
-- Link Google Docs đã báo cáo đọc được khi tab có quyền export text.
-- Nội dung đọc là text export, không phải menu, toolbar hoặc raw UI.
-- Export failure có hướng dẫn, không tạo audio và không rò rỉ nội dung.
-- Website khác vẫn dùng Readability như trước.
-- Không có quyền manifest mới, backend/OAuth, persisted document content hoặc
-  telemetry.
+- Supported Google Docs URLs read successfully when tab has text export permission.
+- Spoken content contains document text export, excluding menus, toolbars, or raw UI.
+- Export failure presents clear user guidance, produces no audio, and leaks no text content.
+- Standard web pages continue to use Readability.
+- No new manifest permissions, backend/OAuth dependencies, persisted document text, or telemetry.
