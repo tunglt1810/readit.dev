@@ -225,4 +225,48 @@ test.describe('Kịch bản 2: Trích xuất nội dung (Reader Mode)', () => {
 		expect(result.article).toBeUndefined();
 		expect(result.error).toContain('Could not find a readable article');
 	});
+
+	test('reads Google Docs from plain-text export instead of editor UI', async ({ context, extensionId }) => {
+		await context.route('https://docs.google.com/document/d/google-doc-id/edit**', (route) =>
+			route.fulfill({
+				contentType: 'text/html; charset=utf-8',
+				body: '<html lang="vi"><head><title>Google Doc</title></head><body><div role="application"><iframe></iframe></div></body></html>',
+			}),
+		);
+		await context.route(/\/document\/d\/google-doc-id\/export\?format=txt$/, (route) =>
+			route.fulfill({ contentType: 'text/plain; charset=utf-8', body: 'Đoạn export thứ nhất.\n\nĐoạn export thứ hai.' }),
+		);
+
+		const documentPage = await context.newPage();
+		await documentPage.goto('https://docs.google.com/document/d/google-doc-id/edit?tab=t.0');
+		const extPage = await context.newPage();
+		await extPage.goto('chrome-extension://' + extensionId + '/src/popup/popup.html');
+		await documentPage.bringToFront();
+
+		const result = (await requestArticle(extPage)) as { success: boolean; article?: { content: string } };
+		expect(result).toEqual({
+			success: true,
+			article: expect.objectContaining({ content: 'Đoạn export thứ nhất.\n\nĐoạn export thứ hai.' }),
+		});
+	});
+
+	test('returns the shared code when Google Docs export is denied', async ({ context, extensionId }) => {
+		await context.route('https://docs.google.com/document/d/denied-doc/edit**', (route) =>
+			route.fulfill({ contentType: 'text/html; charset=utf-8', body: '<html><body><div role="application"></div></body></html>' }),
+		);
+		await context.route(/\/document\/d\/denied-doc\/export\?format=txt$/, (route) =>
+			route.fulfill({ status: 403, contentType: 'text/plain; charset=utf-8', body: '' }),
+		);
+
+		const documentPage = await context.newPage();
+		await documentPage.goto('https://docs.google.com/document/d/denied-doc/edit');
+		const extPage = await context.newPage();
+		await extPage.goto('chrome-extension://' + extensionId + '/src/popup/popup.html');
+		await documentPage.bringToFront();
+
+		await expect(requestArticle(extPage)).resolves.toEqual({
+			success: false,
+			error: 'googleDocsExportUnavailable',
+		});
+	});
 });

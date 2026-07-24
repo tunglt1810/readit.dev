@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { BUY_ME_A_COFFEE_URL, PRIVACY_POLICY_URL, STORAGE_KEYS, VOICE_STYLE_TRANSLATIONS, VOICE_STYLES } from '../shared/constants';
-import { t, uiLang } from '../shared/i18n';
+import { getLocalizedPlaybackError, t, uiLang } from '../shared/i18n';
 import { requestPlaybackState, sendPlaybackCommand, subscribePlaybackState } from '../shared/playback_client';
 import { isSelectionButtonEnabled } from '../shared/selection_button';
 import type { PlaybackSessionSnapshot, PlaybackStatus, ThemeName } from '../shared/types';
@@ -137,7 +137,7 @@ export default function App() {
 	const tabSource = session?.source.kind === 'tab' ? session.source : null;
 	const isSessionOnAnotherTab = tabSource !== null && tabSource.tabId !== currentTabId;
 	const sessionTitle = session?.contentScope === 'manual' ? t('pastedText') : (tabSource?.title ?? '');
-	const errorMsg = commandError || session?.error || modelError;
+	const errorMsg = getLocalizedPlaybackError(commandError || session?.error || modelError);
 	const sessionHost = tabSource ? getHost(tabSource.url) : '';
 	const manifest = chrome.runtime.getManifest();
 	const displayVersion = manifest.version_name ?? manifest.version;
@@ -234,7 +234,11 @@ export default function App() {
 		setCommandError('');
 		void sendPlaybackCommand({ action: 'START_CURRENT_PAGE' }).then((response) => {
 			if (response?.success === false) {
-				setCommandError(response.transportError ? t('startReadingFailed') : response.error || t('startReadingFailed'));
+				setCommandError(
+					response.transportError
+						? t('startReadingFailed')
+						: (getLocalizedPlaybackError(response.error) ?? t('startReadingFailed')),
+				);
 				return;
 			}
 			setCommandError('');

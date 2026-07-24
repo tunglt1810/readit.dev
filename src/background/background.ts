@@ -1,4 +1,4 @@
-import { MODEL_FILES, STORAGE_KEYS } from '../shared/constants';
+import { GOOGLE_DOCS_EXPORT_UNAVAILABLE, MODEL_FILES, STORAGE_KEYS } from '../shared/constants';
 import { isManualPlaybackControlMessage, isManualWordTimingMessage } from '../shared/manual_playback';
 import { fetchWithCache, MODEL_CACHE_NAME } from '../shared/model_cache';
 import { warmCache } from '../shared/warm_cache';
@@ -45,6 +45,10 @@ const ERROR_MESSAGES = {
 	setup: 'Không thể bắt đầu đọc trang này. Vui lòng thử lại.',
 	invalidSpeed: 'Tốc độ đọc không hợp lệ.',
 } as const;
+
+function getExtractionError(error: string | undefined): string {
+	return error === GOOGLE_DOCS_EXPORT_UNAVAILABLE ? GOOGLE_DOCS_EXPORT_UNAVAILABLE : ERROR_MESSAGES.extraction;
+}
 
 type StartPlaybackInput =
 	| {
@@ -201,14 +205,19 @@ async function failSession(error: string): Promise<void> {
 	await chrome.storage.session.remove(STORAGE_KEYS.PLAYBACK_SESSION);
 }
 
-async function publishExtractionFailure(tabId: number, title: string | undefined, url: string): Promise<void> {
+async function publishExtractionFailure(
+	tabId: number,
+	title: string | undefined,
+	url: string,
+	error: string = ERROR_MESSAGES.extraction,
+): Promise<void> {
 	await publishSession(
 		createPlaybackErrorSession({
 			sessionId: crypto.randomUUID(),
 			source: { kind: 'tab', tabId, title: title || url, url },
 			voiceStyleId: DEFAULT_VOICE_STYLE_ID,
 			speed: DEFAULT_SPEED,
-			error: ERROR_MESSAGES.extraction,
+			error,
 			now: Date.now(),
 		}),
 	);
@@ -522,12 +531,13 @@ async function startCurrentPage(): Promise<CommandResponse> {
 	}
 
 	if (!articleResponse.success || !isArticle(articleResponse.article)) {
+		const extractionError = getExtractionError(articleResponse.error);
 		if (activeSession?.contentScope === 'manual') {
-			return { success: false, error: ERROR_MESSAGES.extraction };
+			return { success: false, error: extractionError };
 		}
 		await stopActiveSession('session-replaced');
-		await publishExtractionFailure(activeTab.id, activeTab.title, url);
-		return { success: false, error: ERROR_MESSAGES.extraction };
+		await publishExtractionFailure(activeTab.id, activeTab.title, url, extractionError);
+		return { success: false, error: extractionError };
 	}
 
 	return startPlayback({
