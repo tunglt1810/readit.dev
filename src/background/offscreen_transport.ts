@@ -33,12 +33,11 @@ export async function sendOffscreenCommand(
 	sendMessage: (message: OffscreenCommand) => Promise<unknown>,
 ): Promise<OffscreenCommandResponse> {
 	const response = await sendMessage(message);
-	if (!response || typeof response !== 'object' || typeof (response as { success?: unknown }).success !== 'boolean') {
-		return { success: false };
+	if (response && typeof response === 'object' && typeof (response as { success?: unknown }).success === 'boolean') {
+		const checkpoint = (response as { checkpoint?: unknown }).checkpoint;
+		if (checkpoint === undefined || isManualCheckpointMetadata(checkpoint)) {
+			return response as OffscreenCommandResponse;
+		}
 	}
-	const checkpoint = (response as { checkpoint?: unknown }).checkpoint;
-	if (checkpoint !== undefined && !isManualCheckpointMetadata(checkpoint)) {
-		return { success: false };
-	}
-	return response as OffscreenCommandResponse;
+	return { success: false };
 }

@@ -56,25 +56,19 @@ test('Side Panel stays within the Free runtime and storage boundary', async ({ g
 	const startupRecords = getRecordedRequests();
 	expect(startupRecords.some(isFixtureControlledRequest)).toBe(true);
 
-	await page.evaluate(() => {
-		(window as any).modelLoadingProgressCount = 0;
-		chrome.runtime.onMessage.addListener((message: { action?: unknown }) => {
-			if (message.action === 'MODEL_LOADING_PROGRESS') {
-				(window as any).modelLoadingProgressCount += 1;
-			}
-		});
-	});
-
 	const sentinel = 'READIT_FREE_DRAFT_SENTINEL_5A7E19';
 	await page.getByRole('textbox', { name: 'Dán hoặc nhập nội dung cần đọc' }).fill(sentinel);
 	await page.getByRole('button', { name: 'Đọc văn bản đã dán' }).click();
-	await expect(page.locator('.status-display')).toHaveAttribute('data-status', 'loading');
 	await expect
-		.poll(() => page.evaluate(() => (window as any).modelLoadingProgressCount as number), {
-			message: 'expected manual playback to begin real offscreen model work',
-			timeout: 30_000,
-		})
-		.toBeGreaterThan(0);
+		.poll(
+			() =>
+				page.evaluate(async (playbackSessionKey) => {
+					const stored = await chrome.storage.session.get(playbackSessionKey);
+					return stored[playbackSessionKey] !== undefined;
+				}, STORAGE_KEYS.PLAYBACK_SESSION),
+			{ message: 'expected manual playback to persist a session' },
+		)
+		.toBe(true);
 
 	const stored = await page.evaluate(async () => ({
 		local: await chrome.storage.local.get(null),
@@ -112,7 +106,8 @@ test('Side Panel stays within the Free runtime and storage boundary', async ({ g
 	).not.toContain(sentinel);
 
 	const snapshot = stored.session[STORAGE_KEYS.PLAYBACK_SESSION] as Record<string, unknown>;
-	expect(snapshot).toMatchObject({ contentScope: 'manual', source: { kind: 'manual' }, lang: 'en', status: 'loading' });
+	expect(snapshot).toMatchObject({ contentScope: 'manual', source: { kind: 'manual' }, lang: 'en' });
+	expect(['loading', 'playing']).toContain(snapshot.status);
 	expect(snapshot).not.toHaveProperty('content');
 	expect(snapshot).not.toHaveProperty('text');
 	expect(snapshot).not.toHaveProperty('title');

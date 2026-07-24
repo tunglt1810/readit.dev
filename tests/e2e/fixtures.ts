@@ -3,6 +3,8 @@ import fs from 'fs';
 import path from 'path';
 
 import type { PageInfoResponse, PlaybackStateResponse } from '../../src/shared/types';
+import { resolveExtensionId } from './extension_id';
+import { MODEL_CACHE_SEED_DIR, MODEL_CACHE_SEED_MARKER } from './model_cache_seed';
 
 export type RecordedRequest = Readonly<{
 	url: string;
@@ -94,6 +96,18 @@ export const test = base.extend<{
 		fs.mkdirSync(tempDir, { recursive: true });
 		const userDataDir = fs.mkdtempSync(path.join(tempDir, 'playwright-chrome-profile-'));
 
+		if (fs.existsSync(MODEL_CACHE_SEED_MARKER)) {
+			// Clone the pre-warmed profile (see global_setup.ts) so this test's
+			// Supertonic model Cache Storage is already populated — avoids
+			// racing real network I/O against startPlayback()'s wait for the
+			// background cache warm to settle.
+			fs.rmSync(userDataDir, { recursive: true, force: true });
+			fs.cpSync(MODEL_CACHE_SEED_DIR, userDataDir, { recursive: true });
+			for (const lockFile of ['SingletonLock', 'SingletonCookie', 'SingletonSocket']) {
+				fs.rmSync(path.join(userDataDir, lockFile), { force: true });
+			}
+		}
+
 		// Khởi chạy Chromium với extension được unpack từ thư mục dist/
 		const context = await chromium.launchPersistentContext(userDataDir, {
 			channel: 'chromium',
@@ -150,36 +164,7 @@ export const test = base.extend<{
 		await use(getRecordedRequests);
 	},
 	extensionId: async ({ context }, use) => {
-		const wakePage = await context.newPage();
-		const wakeUrl = 'https://readit.test/extension-wakeup';
-		let extensionId: string;
-		try {
-			await context.route(wakeUrl, (route) =>
-				route.fulfill({ contentType: 'text/html', body: '<!doctype html><html><body>Extension wakeup</body></html>' }),
-			);
-			await wakePage.goto(wakeUrl, { waitUntil: 'domcontentloaded' });
-
-			const serviceWorker = context.serviceWorkers().find((worker) => worker.url().startsWith('chrome-extension://'));
-			if (serviceWorker) {
-				const serviceWorkerUrl = new URL(serviceWorker.url());
-				if (!serviceWorkerUrl.hostname) {
-					throw new Error(`Không thể lấy Extension ID từ service worker: ${serviceWorker.url()}`);
-				}
-				extensionId = serviceWorkerUrl.hostname;
-			} else {
-				const infoEl = await wakePage.waitForSelector('#readit-dev-ext-info', { state: 'attached', timeout: 10000 });
-				const markerExtensionId = await infoEl.getAttribute('data-extension-id');
-				if (!markerExtensionId) {
-					throw new Error('Không tìm thấy Extension ID từ service worker hoặc content-script marker.');
-				}
-				extensionId = markerExtensionId;
-			}
-		} finally {
-			await context.unroute(wakeUrl);
-			await wakePage.close();
-		}
-
-		await use(extensionId);
+		await use(await resolveExtensionId(context));
 	},
 	openPopup: async ({ extensionId }, use) => {
 		// Hàm helper để mở trang Popup UI của extension
