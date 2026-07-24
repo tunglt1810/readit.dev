@@ -1,61 +1,61 @@
-# Kế hoạch thực hiện: Bộ Theme Cổ điển Winamp & Windows Media Player 12
+# Implementation Plan: Classic Media Player Themes (Winamp & Windows Media Player 12)
 
-> **Dành cho Agentic Workers:** REQUIRED SUB-SKILL: Sử dụng `superpowers:subagent-driven-development` hoặc `superpowers:executing-plans` để thực hiện kế hoạch này theo từng tác vụ. Các bước sử dụng cú pháp checkbox (`- [ ]`) để theo dõi.
+> **For Agentic Workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` or `superpowers:executing-plans` to execute this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Mục tiêu:** Tích hợp bộ cấu trúc theme (Theme Selector) và phát triển 2 theme cổ điển: Winamp Classic (1998) và Windows Media Player 12 (Aero Glass, 2006) cho popup của extension, đảm bảo hỗ trợ i18n 100% không hardcode text.
+**Goal:** Integrate theme selector infrastructure (Theme Selector) and develop 2 nostalgia themes: Winamp Classic (1998) and Windows Media Player 12 (Aero Glass, 2006) for the extension popup with 100% i18n support without hardcoded text.
 
-**Kiến trúc:**
-* Sử dụng data-attribute `data-theme` trên thẻ bao `.app-container` để áp dụng CSS variables và styles đặc trưng của từng theme.
-* Conditional rendering trong React để hiển thị các thành phần layout phụ trợ của Winamp/WMP12.
-* Lưu lựa chọn theme trong `chrome.storage.local`.
-* Một từ điển dịch thuật cục bộ dựa trên kết quả của `chrome.i18n.getUILanguage()` để tự động hiển thị i18n.
+**Architecture:**
+* Use `data-theme` attribute on `.app-container` wrapper to apply theme-specific CSS variables and styles.
+* Conditional rendering in React for theme-specific layout components (Winamp / WMP12).
+* Store theme choice in `chrome.storage.local`.
+* Shared translation dictionary based on `chrome.i18n.getUILanguage()` for automatic UI localization.
 
-**Công nghệ sử dụng:** React 19, TypeScript, Vanilla CSS (kính mờ, hiệu ứng nổi 3D, bóng đổ phát sáng).
+**Tech Stack:** React 19, TypeScript, Vanilla CSS (frosted glass, 3D bevels, glow shadows).
 
-## Ràng buộc Toàn cầu (Global Constraints)
-1. Các văn bản hiển thị (text/label) được thêm mới cho theme bắt buộc sử dụng cơ chế dịch i18n (từ điển `THEME_TRANSLATIONS` cục bộ hỗ trợ `vi` và `en`), tuyệt đối không hardcode text trong JSX.
-2. Viết unit test cho logic i18n helper và logic đọc/ghi trạng thái theme trước khi implement code.
-3. Không làm ảnh hưởng đến các logic đọc trang web hiện tại của background worker.
-4. Toàn bộ thay đổi phải được kiểm thử và chạy build không lỗi.
-5. Mỗi Task hoàn tất phải được commit lên Git.
+## Global Constraints
+1. All newly added text labels must use i18n dictionary (`THEME_TRANSLATIONS` supporting `vi` and `en`); zero hardcoded text strings in JSX.
+2. Write unit tests for i18n helper and theme storage read/write logic before implementing code.
+3. No breaking changes to existing background worker page reading logic.
+4. All changes must pass tests and compile cleanly without errors.
+5. Commit to Git after completing each Task.
 
 ---
 
-### Tác vụ 1: Định nghĩa hằng số và Bộ từ điển dịch thuật i18n
+### Task 1: Constants & i18n Translation Dictionary
 
-**Các file liên quan:**
-* Modify: [src/shared/constants.ts](file:///Users/bez/Workspace/repos/bez/readit.dev/.worktrees/research-classic-themes/src/shared/constants.ts)
-* Create: [tests/unit/theme_i18n.test.ts](file:///Users/bez/Workspace/repos/bez/readit.dev/.worktrees/research-classic-themes/tests/unit/theme_i18n.test.ts)
+**Files:**
+* Modify: [src/shared/constants.ts](file:///Users/bez/Workspace/repos/bez/readit.dev/src/shared/constants.ts)
+* Create: [tests/unit/theme_i18n.test.ts](file:///Users/bez/Workspace/repos/bez/readit.dev/tests/unit/theme_i18n.test.ts)
 
-- [ ] **Bước 1: Viết test kiểm tra i18n helper**
-  Tạo file `tests/unit/theme_i18n.test.ts` và viết test xác thực bản dịch ngôn ngữ hoạt động chính xác dựa trên ngôn ngữ hệ thống:
+- [ ] **Step 1: Write i18n helper unit test**
+  Create `tests/unit/theme_i18n.test.ts` to verify localized translations based on system UI language:
   ```typescript
   import { assert, test } from 'vitest';
 
-  // Định nghĩa mock tạm thời cho testing nếu cần
+  // Temporary mock definition for testing if needed
   const THEME_TRANSLATIONS = {
     vi: { selectTheme: "Chọn giao diện", themeWinamp: "🕹️ Classic (1998)" },
     en: { selectTheme: "Select Theme", themeWinamp: "🕹️ Classic (1998)" }
   };
 
-  test('trả về bản dịch tiếng Việt khi uiLang là vi', () => {
+  test('returns Vietnamese translation when uiLang is vi', () => {
     const getTranslation = (key: 'selectTheme' | 'themeWinamp', lang: 'vi' | 'en') => THEME_TRANSLATIONS[lang][key];
     assert.strictEqual(getTranslation('selectTheme', 'vi'), 'Chọn giao diện');
     assert.strictEqual(getTranslation('selectTheme', 'en'), 'Select Theme');
   });
   ```
 
-- [ ] **Bước 2: Chạy test và xác minh thất bại/thành công ban đầu**
-  Chạy: `pnpm test:unit`
-  Yêu cầu: Test unit trên viết đúng cú pháp và pass thành công.
+- [ ] **Step 2: Run unit test and verify initial pass**
+  Run: `pnpm test:unit`
+  Requirement: The unit test syntax is correct and passes cleanly.
 
-- [ ] **Bước 3: Cập nhật file constants.ts**
-  Thêm khóa `THEME` vào `STORAGE_KEYS` và thêm từ điển `THEME_TRANSLATIONS` vào [src/shared/constants.ts](file:///Users/bez/Workspace/repos/bez/readit.dev/.worktrees/research-classic-themes/src/shared/constants.ts):
+- [ ] **Step 3: Update `constants.ts`**
+  Add `THEME` key to `STORAGE_KEYS` and export `THEME_TRANSLATIONS` in [src/shared/constants.ts](file:///Users/bez/Workspace/repos/bez/readit.dev/src/shared/constants.ts):
   ```typescript
-  // Thêm vào STORAGE_KEYS
+  // Add to STORAGE_KEYS
   THEME: 'readit_active_theme',
 
-  // Thêm THEME_TRANSLATIONS ở cuối file
+  // Add THEME_TRANSLATIONS at end of file
   export const THEME_TRANSLATIONS = {
     vi: {
       selectTheme: "Chọn giao diện",
@@ -86,12 +86,12 @@
   } as const;
   ```
 
-- [ ] **Bước 4: Chạy test kiểm tra toàn bộ ứng dụng**
-  Chạy: `pnpm test:unit`
-  Yêu cầu: Toàn bộ suite test pass.
+- [ ] **Step 4: Run full application unit tests**
+  Run: `pnpm test:unit`
+  Requirement: Entire test suite passes.
 
-- [ ] **Bước 5: Commit Tác vụ 1**
-  Chạy:
+- [ ] **Step 5: Commit Task 1**
+  Run:
   ```bash
   git add src/shared/constants.ts tests/unit/theme_i18n.test.ts
   git commit -m "feat: add theme storage keys and i18n translations dictionary"
@@ -99,14 +99,14 @@
 
 ---
 
-### Tác vụ 2: Triển khai Quản lý State Theme & Giao diện Selector trong React
+### Task 2: Theme State Management & Selector UI in React
 
-**Các file liên quan:**
-* Modify: [src/popup/App.tsx](file:///Users/bez/Workspace/repos/bez/readit.dev/.worktrees/research-classic-themes/src/popup/App.tsx)
-* Modify: [src/popup/popup.css](file:///Users/bez/Workspace/repos/bez/readit.dev/.worktrees/research-classic-themes/src/popup/popup.css)
+**Files:**
+* Modify: [src/popup/App.tsx](file:///Users/bez/Workspace/repos/bez/readit.dev/src/popup/App.tsx)
+* Modify: [src/popup/popup.css](file:///Users/bez/Workspace/repos/bez/readit.dev/src/popup/popup.css)
 
-- [ ] **Bước 1: Khai báo i18n translate helper trong App.tsx**
-  Đọc ngôn ngữ hiện tại của Chrome và khai báo hàm helper dịch `t` ở đầu [src/popup/App.tsx](file:///Users/bez/Workspace/repos/bez/readit.dev/.worktrees/research-classic-themes/src/popup/App.tsx):
+- [ ] **Step 1: Declare i18n translate helper in App.tsx**
+  Read Chrome UI language and declare `t` helper at top of [src/popup/App.tsx](file:///Users/bez/Workspace/repos/bez/readit.dev/src/popup/App.tsx):
   ```typescript
   import { THEME_TRANSLATIONS } from '../shared/constants';
 
@@ -117,8 +117,8 @@
   const t = (key: keyof typeof THEME_TRANSLATIONS.en) => THEME_TRANSLATIONS[uiLang][key];
   ```
 
-- [ ] **Bước 2: Thay đổi text cứng trong App.tsx thành hàm dịch `t`**
-  Thay đổi các nhãn text cứng thành sử dụng `t(...)`:
+- [ ] **Step 2: Replace hardcoded text in App.tsx with `t` translation helper**
+  Replace hardcoded text labels to use `t(...)`:
   * `"Cấu hình giọng đọc"` -> `{t('voiceConfig')}`
   * `"Sẵn sàng đọc trang web"` -> `{t('readyStatus')}`
   * `"Đọc trang này thay thế"` -> `{t('readCurrentPage')}`
@@ -126,12 +126,12 @@
   * `"Dừng đọc bài"` -> `{t('stopReading')}`
   * `"Đang đọc đoạn"` -> `{t('playingStatus')}`
 
-- [ ] **Bước 3: Khai báo state `activeTheme` và tích hợp lưu trữ**
-  * Trong `App` component, khai báo state:
+- [ ] **Step 3: Declare `activeTheme` state & integrate storage persistence**
+  * Inside `App` component, declare state:
     ```typescript
     const [activeTheme, setActiveTheme] = useState<'default' | 'winamp' | 'wmp12'>('default');
     ```
-  * Cập nhật khối `useEffect` khi mount extension để đọc theme đã lưu trong local storage:
+  * Update mount `useEffect` block to read saved theme from local storage:
     ```typescript
     chrome.storage.local.get([STORAGE_KEYS.THEME], (result) => {
       if (result[STORAGE_KEYS.THEME]) {
@@ -139,7 +139,7 @@
       }
     });
     ```
-  * Thêm hàm cập nhật theme:
+  * Add theme update handler:
     ```typescript
     const handleThemeChange = (newTheme: 'default' | 'winamp' | 'wmp12') => {
       setActiveTheme(newTheme);
@@ -147,8 +147,8 @@
     };
     ```
 
-- [ ] **Bước 4: Thêm giao diện Theme Selector vào Header**
-  Tích hợp bộ chọn theme vào bên trái phần hiển thị phiên bản extension trong Header:
+- [ ] **Step 4: Add Theme Selector UI to Header**
+  Integrate theme selector into the left of extension version display inside Header:
   ```tsx
   <header className="app-header">
     <div className="logo-group">
@@ -184,7 +184,7 @@
     </div>
   </header>
   ```
-  * Gắn thuộc tính `data-theme={activeTheme}` vào thẻ bọc `div` ngoài cùng:
+  * Attach `data-theme={activeTheme}` attribute to outer wrapper `div`:
     ```tsx
     return (
       <div className="app-container" data-theme={activeTheme}>
@@ -193,8 +193,8 @@
     );
     ```
 
-- [ ] **Bước 5: Thêm CSS cho Theme Selector Dropdown trong popup.css**
-  Thêm phong cách hiển thị menu dropdown của bộ chọn theme ở cuối [src/popup/popup.css](file:///Users/bez/Workspace/repos/bez/readit.dev/.worktrees/research-classic-themes/src/popup/popup.css):
+- [ ] **Step 5: Add CSS for Theme Selector Dropdown in popup.css**
+  Add dropdown menu styles at end of [src/popup/popup.css](file:///Users/bez/Workspace/repos/bez/readit.dev/src/popup/popup.css):
   ```css
   .header-right-group {
     display: flex;
@@ -258,12 +258,12 @@
   }
   ```
 
-- [ ] **Bước 6: Chạy thử và xác minh tính ổn định**
-  Chạy build: `pnpm build`
-  Yêu cầu: Dự án compile thành công không lỗi TS.
+- [ ] **Step 6: Run build & verify stability**
+  Run build: `pnpm build`
+  Requirement: Project compiles cleanly without TS errors.
 
-- [ ] **Bước 7: Commit Tác vụ 2**
-  Chạy:
+- [ ] **Step 7: Commit Task 2**
+  Run:
   ```bash
   git add src/popup/App.tsx src/popup/popup.css
   git commit -m "feat: implement Theme selector UI dropdown with local storage state"
@@ -271,17 +271,17 @@
 
 ---
 
-### Tác vụ 3: Thiết kế và Hiện thực hóa Theme Winamp Classic
+### Task 3: Design & Implement Winamp Classic Theme
 
-Tác vụ này xây dựng cấu trúc layout và thiết kế CSS nổi khối kim loại 3D gồ ghề của Winamp.
+Build Winamp's layout structure and 3D metallic chassis CSS styles.
 
-**Các file liên quan:**
-* Modify: [src/popup/App.tsx](file:///Users/bez/Workspace/repos/bez/readit.dev/.worktrees/research-classic-themes/src/popup/App.tsx)
-* Modify: [src/popup/popup.css](file:///Users/bez/Workspace/repos/bez/readit.dev/.worktrees/research-classic-themes/src/popup/popup.css)
+**Files:**
+* Modify: [src/popup/App.tsx](file:///Users/bez/Workspace/repos/bez/readit.dev/src/popup/App.tsx)
+* Modify: [src/popup/popup.css](file:///Users/bez/Workspace/repos/bez/readit.dev/src/popup/popup.css)
 
-- [ ] **Bước 1: Conditionally Render thanh tiêu đề giả lập (Title Bar) và màn hình LED Visualizer**
-  Trong [src/popup/App.tsx](file:///Users/bez/Workspace/repos/bez/readit.dev/.worktrees/research-classic-themes/src/popup/App.tsx):
-  * Thêm Title Bar mô phỏng Winamp lên đầu trang nếu `activeTheme === 'winamp'`:
+- [ ] **Step 1: Conditionally Render Title Bar & LED Visualizer Screen**
+  In [src/popup/App.tsx](file:///Users/bez/Workspace/repos/bez/readit.dev/src/popup/App.tsx):
+  * Add Winamp titlebar at top of page if `activeTheme === 'winamp'`:
     ```tsx
     {activeTheme === 'winamp' && (
       <div className="winamp-titlebar">
@@ -294,7 +294,7 @@ Tác vụ này xây dựng cấu trúc layout và thiết kế CSS nổi khối 
       </div>
     )}
     ```
-  * Thêm màn hình Audio Visualizer LED nhấp nháy bên trong status-display khi `status === 'playing' && activeTheme === 'winamp'`:
+  * Add animated LED Audio Visualizer inside status-display when `status === 'playing' && activeTheme === 'winamp'`:
     ```tsx
     {activeTheme === 'winamp' && status === 'playing' && (
       <div className="winamp-visualizer">
@@ -310,8 +310,8 @@ Tác vụ này xây dựng cấu trúc layout và thiết kế CSS nổi khối 
     )}
     ```
 
-- [ ] **Bước 2: Định nghĩa CSS Variables và cấu trúc khung kim loại Winamp**
-  Thêm CSS đặc tả Winamp vào [src/popup/popup.css](file:///Users/bez/Workspace/repos/bez/readit.dev/.worktrees/research-classic-themes/src/popup/popup.css):
+- [ ] **Step 2: Define CSS Variables and Winamp metallic chassis structure**
+  Add Winamp CSS specification to [src/popup/popup.css](file:///Users/bez/Workspace/repos/bez/readit.dev/src/popup/popup.css):
   ```css
   /* WINAMP THEME VARIABLES */
   [data-theme="winamp"] {
@@ -376,8 +376,8 @@ Tác vụ này xây dựng cấu trúc layout và thiết kế CSS nổi khối 
   }
   ```
 
-- [ ] **Bước 3: Tạo style LED text, Visualizer nhấp nháy và phím cơ học**
-  Tiếp tục viết CSS cho các thành phần điều khiển của Winamp:
+- [ ] **Step 3: Create LED text styles, animated Visualizer, and mechanical buttons**
+  Continue writing Winamp control component styles in CSS:
   ```css
   /* LED Display Screen Style */
   .app-container[data-theme="winamp"] .status-display {
@@ -397,7 +397,7 @@ Tác vụ này xây dựng cấu trúc layout và thiết kế CSS nổi khối 
     font-family: 'Courier New', monospace;
   }
   .app-container[data-theme="winamp"] .status-dot-pulse {
-    display: none; /* Không sử dụng pulse dot nhấp nháy hiện đại */
+    display: none;
   }
 
   /* Audio Visualizer Column Simulation */
@@ -447,17 +447,17 @@ Tác vụ này xây dựng cấu trúc layout và thiết kế CSS nổi khối 
     background: #111 !important;
   }
   .app-container[data-theme="winamp"] .btn-primary.active {
-    background: #8b0000 !important; /* Đỏ sẫm */
+    background: #8b0000 !important;
     color: #ff3333 !important;
   }
   ```
 
-- [ ] **Bước 4: Chạy build và kiểm thử chất lượng**
-  Chạy: `pnpm build`
-  Yêu cầu: Build thành công, không gặp bất cứ lỗi cú pháp CSS hoặc TypeScript nào.
+- [ ] **Step 4: Run build and test quality**
+  Run: `pnpm build`
+  Requirement: Build succeeds without any CSS syntax or TypeScript errors.
 
-- [ ] **Bước 5: Commit Tác vụ 3**
-  Chạy:
+- [ ] **Step 5: Commit Task 3**
+  Run:
   ```bash
   git add src/popup/App.tsx src/popup/popup.css
   git commit -m "feat: implement Winamp Classic theme styling and mechanical layout"
@@ -465,26 +465,25 @@ Tác vụ này xây dựng cấu trúc layout và thiết kế CSS nổi khối 
 
 ---
 
-### Tác vụ 4: Thiết kế và Hiện thực hóa Theme Windows Media Player 12 (Vista Aero)
+### Task 4: Design & Implement Windows Media Player 12 Theme (Vista Aero)
 
-Tác vụ này áp dụng hiệu ứng kính mờ Aero và nút phát nhạc radial tròn đặc trưng của WMP12.
+Apply WMP12's Aero glass effect and signature radial round play button.
 
-**Các file liên quan:**
-* Modify: [src/popup/App.tsx](file:///Users/bez/Workspace/repos/bez/readit.dev/.worktrees/research-classic-themes/src/popup/App.tsx)
-* Modify: [src/popup/popup.css](file:///Users/bez/Workspace/repos/bez/readit.dev/.worktrees/research-classic-themes/src/popup/popup.css)
+**Files:**
+* Modify: [src/popup/App.tsx](file:///Users/bez/Workspace/repos/bez/readit.dev/src/popup/App.tsx)
+* Modify: [src/popup/popup.css](file:///Users/bez/Workspace/repos/bez/readit.dev/src/popup/popup.css)
 
-- [ ] **Bước 1: Conditionally Render bọc nút điều khiển đáy WMP12**
-  Trong [src/popup/App.tsx](file:///Users/bez/Workspace/repos/bez/readit.dev/.worktrees/research-classic-themes/src/popup/App.tsx):
-  Gộp nhóm điều khiển của WMP12 vào một khối bao ngoài `.wmp-dock` nếu đang ở theme `wmp12` để dễ dàng style hiệu ứng bóng bẩy:
+- [ ] **Step 1: Conditionally Render WMP12 Bottom Control Dock wrapper**
+  In [src/popup/App.tsx](file:///Users/bez/Workspace/repos/bez/readit.dev/src/popup/App.tsx):
+  Group WMP12 controls into `.wmp-dock` wrapper when in `wmp12` theme:
   ```tsx
-  {/* Thay đổi nhỏ tại dải nút điều khiển */}
   <div className={`controls-group ${activeTheme === 'wmp12' ? 'wmp-dock' : ''}`}>
     {/* ... */}
   </div>
   ```
 
-- [ ] **Bước 2: Cài đặt CSS Variables và Aero Glass cho WMP12**
-  Thêm CSS cho WMP12 vào [src/popup/popup.css](file:///Users/bez/Workspace/repos/bez/readit.dev/.worktrees/research-classic-themes/src/popup/popup.css):
+- [ ] **Step 2: Install CSS Variables and Aero Glass for WMP12**
+  Add WMP12 CSS to [src/popup/popup.css](file:///Users/bez/Workspace/repos/bez/readit.dev/src/popup/popup.css):
   ```css
   /* WMP12 VISTA AERO VARIABLES */
   [data-theme="wmp12"] {
@@ -514,7 +513,7 @@ Tác vụ này áp dụng hiệu ứng kính mờ Aero và nút phát nhạc rad
   }
   ```
 
-- [ ] **Bước 3: Tạo style bóng bẩy WMP12 Central Play Button và Bottom Dock**
+- [ ] **Step 3: Create WMP12 Central Play Button & Bottom Dock styles**
   ```css
   /* WMP12 Bottom Control Dock overlay */
   .app-container[data-theme="wmp12"] .wmp-dock {
@@ -570,12 +569,12 @@ Tác vụ này áp dụng hiệu ứng kính mờ Aero và nút phát nhạc rad
   }
   ```
 
-- [ ] **Bước 4: Kiểm thử toàn bộ dự án và xác thực**
-  Chạy build: `pnpm build`
-  Yêu cầu: Quá trình build hoàn thành 100%.
+- [ ] **Step 4: Full project test & verification**
+  Run build: `pnpm build`
+  Requirement: Build completes 100%.
 
-- [ ] **Bước 5: Commit Tác vụ 4**
-  Chạy:
+- [ ] **Step 5: Commit Task 4**
+  Run:
   ```bash
   git add src/popup/App.tsx src/popup/popup.css
   git commit -m "feat: implement WMP12 Vista Aero glassy theme with glow radial play button"
@@ -583,6 +582,6 @@ Tác vụ này áp dụng hiệu ứng kính mờ Aero và nút phát nhạc rad
 
 ---
 
-## Kiểm tra sau cùng (Final Acceptance Testing)
-- [ ] Chạy suite e2e để chắc chắn không xảy ra regression lỗi: `pnpm test:e2e`
-- [ ] Xác nhận giao diện i18n chuyển đổi đúng ngôn ngữ khi test trên trình duyệt.
+## Final Acceptance Testing
+- [ ] Run E2E test suite to ensure no regressions occur: `pnpm test:e2e`
+- [ ] Confirm i18n interface displays correct language when testing in browser.

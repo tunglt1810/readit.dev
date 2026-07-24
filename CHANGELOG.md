@@ -6,7 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
-- add keyboard shortcuts for popup and side panel - [@tunglt1810]
+- read Google Docs exports via same-origin plain text export - [@tunglt1810]
+- auto-warm Supertonic TTS ONNX model cache on offscreen initialization - [@tunglt1810]
+- add keyboard shortcuts for popup and side panel with primary action button auto-focus - [@tunglt1810]
 
 ### Changed
 - enhance Chrome Web Store upload process with detailed logging and status checks - [@tunglt1810]
