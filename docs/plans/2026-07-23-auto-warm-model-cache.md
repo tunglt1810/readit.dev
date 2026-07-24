@@ -76,7 +76,16 @@ pnpm test:unit                 # 216 pass
 pnpm build                     # succeeds
 ```
 
-Known, unrelated flake found during this verification (tracked separately, not fixed here — out of scope): `tests/e2e/selection-button.spec.ts` → `popup setting disables and re-enables the affordance in an open tab` occasionally times out waiting for the content-script selection-button UI to render (a pre-existing timing race unrelated to model caching, absorbed today by Playwright's CI retry).
+## Task 5: Fix the selection-button re-enable flake exposed by Task 4's verification
+
+**Files:** `tests/e2e/selection-button.spec.ts`
+
+Task 4's verification runs surfaced one more, **unrelated** intermittent failure: `popup setting disables and re-enables the affordance in an open tab` occasionally timed out waiting for the selection-button UI to appear after re-enabling the affordance from the popup.
+
+- [x] **Root cause:** re-checking the popup toggle writes `chrome.storage.local`; the content script only learns about it through `chrome.storage.onChanged` — a real cross-process IPC hop measured at ~100-150ms even on an idle machine. The test dispatched its synthetic `pointerup` right after re-checking the toggle, leaving only ~16ms of natural margin; under CPU contention that margin flips, the content script reads a stale cached `enabled` flag, and no other event re-triggers it.
+- [x] **Fix:** added `selectAndAwaitButtonAfterToggle()`, which retries the selection (via `expect(...).toPass()`) until the button becomes visible instead of assuming the storage change has already propagated by the time the synthetic `pointerup` fires — mirroring the self-healing `toHaveCount(0)` pattern already used for the disable path in the same test.
+
+Verify: `CI=true pnpm exec playwright test tests/e2e/selection-button.spec.ts --repeat-each=5`.
 
 ---
 
