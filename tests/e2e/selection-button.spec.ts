@@ -42,6 +42,18 @@ async function selectNodeText(page: Page, selector: string, source: 'pointer' | 
 	}, source);
 }
 
+// Re-enabling the affordance from the popup writes chrome.storage.local and relies on
+// chrome.storage.onChanged to notify the content script running in `page`'s tab — a real
+// cross-process IPC hop measured at ~100-150ms even on an idle machine, and racing against
+// the synthetic pointerup dispatched right after. Retry the selection instead of assuming
+// the storage change has already propagated by the time the pointerup fires.
+async function selectAndAwaitButtonAfterToggle(page: Page, selector: string): Promise<void> {
+	await expect(async () => {
+		await selectNodeText(page, selector, 'pointer');
+		await expect(page.locator(buttonSelector)).toBeVisible({ timeout: 250 });
+	}).toPass({ timeout: 5000 });
+}
+
 test('shows the approved logo button for pointer selection and hides it on dismissal events', async ({ context }) => {
 	const page = await openSelectionPage(context);
 	await selectNodeText(page, '#first', 'pointer');
@@ -302,8 +314,7 @@ test('popup setting disables and re-enables the affordance in an open tab', asyn
 	await popup.bringToFront();
 	await toggle.check();
 	await page.bringToFront();
-	await selectNodeText(page, '#first', 'pointer');
-	await expect(page.locator(buttonSelector)).toBeVisible();
+	await selectAndAwaitButtonAfterToggle(page, '#first');
 	await page.locator(buttonSelector).click();
 
 	await expect.poll(async () => (await getPlaybackState()).session?.sessionId).toBeTruthy();
@@ -321,8 +332,7 @@ test('popup setting disables and re-enables the affordance in an open tab', asyn
 
 	await toggle.check();
 	await page.bringToFront();
-	await selectNodeText(page, '#second', 'pointer');
-	await expect(page.locator(buttonSelector)).toBeVisible();
+	await selectAndAwaitButtonAfterToggle(page, '#second');
 });
 
 test.describe('English browser locale', () => {
