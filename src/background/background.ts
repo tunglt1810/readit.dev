@@ -1,5 +1,9 @@
-import { STORAGE_KEYS } from '../shared/constants';
+import { MODEL_FILES, STORAGE_KEYS } from '../shared/constants';
 import { isManualPlaybackControlMessage, isManualWordTimingMessage } from '../shared/manual_playback';
+import { fetchWithCache, MODEL_CACHE_NAME } from '../shared/model_cache';
+import { warmCache } from '../shared/warm_cache';
+import { createModelCacheWarmer } from './model_cache_warmer';
+import { registerModelCacheWarmLifecycle } from './model_cache_lifecycle';
 import type {
 	Article,
 	CommandResponse,
@@ -297,10 +301,44 @@ async function getSuspendedManualCheckpoint(): Promise<ManualCheckpointMetadata 
 }
 
 async function closeOffscreenWhenIdle(): Promise<void> {
-	if (!(await getSuspendedManualCheckpoint())) {
+	if (activeSession === null && !(await getSuspendedManualCheckpoint())) {
 		await closeOffscreen();
 	}
 }
+
+function keepServiceWorkerAlive<T>(operation: Promise<T>): Promise<T> {
+	const intervalId = setInterval(() => {
+		void chrome.runtime.getPlatformInfo().catch(() => undefined);
+	}, 20_000);
+
+	return operation.finally(() => {
+		clearInterval(intervalId);
+	});
+}
+
+const modelCacheWarmer = createModelCacheWarmer(async () => {
+	await keepServiceWorkerAlive(
+		warmCache({
+			urls: Object.values(MODEL_FILES),
+			isCached: async (url) => {
+				const cache = await caches.open(MODEL_CACHE_NAME);
+				return (await cache.match(url)) !== undefined;
+			},
+			fetchAndCache: async (url, progressCallback) => {
+				await fetchWithCache(url, progressCallback);
+			},
+			onProgress: (url, loaded, total) => {
+				void chrome.runtime
+					.sendMessage({
+						action: 'MODEL_LOADING_PROGRESS',
+						progress: { loaded, total, modelName: url.split('/').pop() },
+					})
+					.catch(() => undefined);
+			},
+			onComplete: () => {},
+		}),
+	);
+});
 
 async function stopActiveSession(_reason: string): Promise<void> {
 	const session = await clearSession();
@@ -427,6 +465,11 @@ async function startPlayback(input: StartPlaybackInput): Promise<CommandResponse
 			} catch (_error) {
 				// Selected-text audio still plays when the page cannot bind a safe DOM range.
 			}
+		}
+		try {
+			await modelCacheWarmer.waitForCurrentWarm();
+		} catch (_error) {
+			// A failed best-effort warm must not prevent the normal offscreen load path.
 		}
 		await setupOffscreen();
 		observeOffscreenPlay(session.sessionId, {
@@ -565,7 +608,13 @@ async function routeSessionCommand(action: 'PAUSE' | 'PLAY'): Promise<CommandRes
 
 	const payload = action === 'PLAY' ? { sessionId: activeSession.sessionId } : undefined;
 	try {
-		return await sendOffscreenCommand({ action, ...(payload ? { payload } : {}) }, (message) => chrome.runtime.sendMessage(message));
+		const response = await sendOffscreenCommand({ action, ...(payload ? { payload } : {}) }, (message) => chrome.runtime.sendMessage(message));
+		if (!response.success) {
+			await failSession(ERROR_MESSAGES.setup);
+			await closeOffscreenWhenIdle();
+			return { success: false, error: ERROR_MESSAGES.setup };
+		}
+		return response;
 	} catch (_error) {
 		await failSession(ERROR_MESSAGES.setup);
 		await closeOffscreenWhenIdle();
@@ -591,8 +640,11 @@ async function changeSpeed(payload: unknown): Promise<CommandResponse> {
 		if (response.success && activeSession) {
 			activeSession = { ...activeSession, speed, updatedAt: Date.now() };
 			await publishSession(activeSession);
+			return response;
 		}
-		return response;
+		await failSession(ERROR_MESSAGES.setup);
+		await closeOffscreenWhenIdle();
+		return { success: false, error: ERROR_MESSAGES.setup };
 	} catch (_error) {
 		await failSession(ERROR_MESSAGES.setup);
 		await closeOffscreenWhenIdle();
@@ -890,6 +942,24 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 		void enqueue(() => stopIfOwner(tabId, 'tab-navigation'));
 	}
 });
+
+const beginModelCacheWarm = async (): Promise<void> => {
+	try {
+		await modelCacheWarmer.warm();
+	} catch (_error) {
+		// Non-critical: a later lifecycle event or normal Play may fetch the model.
+	}
+};
+
+registerModelCacheWarmLifecycle(
+	{
+		onInstalled: chrome.runtime.onInstalled,
+		onStartup: chrome.runtime.onStartup,
+	},
+	() => {
+		void beginModelCacheWarm();
+	},
+);
 
 chrome.runtime.onInstalled.addListener(() => {
 	chrome.contextMenus.create({

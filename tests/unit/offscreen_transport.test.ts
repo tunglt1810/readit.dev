@@ -6,6 +6,15 @@ test('treats missing PLAY responses as failures so a pending start cannot remain
 	assert.deepEqual(await sendOffscreenCommand({ action: 'PLAY' }, async () => undefined), { success: false });
 });
 
+test('rethrows transport rejections so background catch blocks can clean up session', async () => {
+	await assert.rejects(
+		sendOffscreenCommand({ action: 'PLAY' }, async () => {
+			throw new Error('Extension context invalidated.');
+		}),
+		/Extension context invalidated/,
+	);
+});
+
 test('treats null or malformed PLAY responses as failures', async () => {
 	for (const response of [null, {}, { success: 'true' }]) {
 		assert.deepEqual(await sendOffscreenCommand({ action: 'PLAY' }, async () => response), { success: false });
@@ -32,4 +41,15 @@ test('accepts checkpoint metadata without accepting manual content', async () =>
 
 test('treats an unsuccessful checkpoint as a failed precondition', async () => {
 	assert.deepEqual(await sendOffscreenCommand({ action: 'CHECKPOINT_MANUAL' }, async () => ({ success: false })), { success: false });
+});
+
+test('sends a failed command once instead of delaying every playback control with warm retries', async () => {
+	let attempts = 0;
+	const response = await sendOffscreenCommand({ action: 'PLAY' }, async () => {
+		attempts++;
+		return undefined;
+	});
+
+	assert.deepEqual(response, { success: false });
+	assert.equal(attempts, 1);
 });
