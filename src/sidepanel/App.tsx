@@ -1,7 +1,7 @@
 import { type ChangeEvent, useEffect, useRef, useState } from 'react';
 
 import { BUY_ME_A_COFFEE_URL, STORAGE_KEYS, VOICE_STYLE_TRANSLATIONS, VOICE_STYLES } from '../shared/constants.ts';
-import { t, uiLang } from '../shared/i18n.ts';
+import { getLocalizedPlaybackError, t, uiLang } from '../shared/i18n.ts';
 import { normalizeManualText } from '../shared/manual_text.ts';
 import { requestPlaybackState, sendPlaybackCommand, sendRuntimeRequest, subscribePlaybackState } from '../shared/playback_client.ts';
 import type { ManualTextLanguage, PageInfoResponse, PlaybackSessionSnapshot, ThemeName } from '../shared/types.ts';
@@ -206,7 +206,7 @@ export default function App() {
 					? t('startReadingFailed')
 					: response.error === 'manualCheckpointFailed'
 						? t('manualCheckpointFailed')
-						: (response.error ?? t('startReadingFailed')),
+						: (getLocalizedPlaybackError(response.error) ?? t('startReadingFailed')),
 			);
 		}
 	};

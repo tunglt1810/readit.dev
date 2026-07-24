@@ -349,3 +349,16 @@ test('auto-focuses the primary action button when side panel opens', async ({ pa
 	await expect(currentPageButton).toBeFocused();
 });
 
+test('localizes Google Docs current-page export failures', async ({ page, openSidePanel }) => {
+	await installExtensionUiRuntimeMock(page, { session: null }, pageInfo);
+	await openSidePanel(page);
+	await page.evaluate(() => {
+		(window as any).commandResponses = {
+			START_CURRENT_PAGE: { success: false, error: 'googleDocsExportUnavailable' },
+		};
+	});
+
+	await page.getByRole('button', { name: 'Đọc trang hiện tại' }).click();
+	await expect(page.getByText('Không thể đọc Google Docs này. Hãy kiểm tra quyền xem hoặc tải xuống, hoặc đọc văn bản đã chọn/dán.')).toBeVisible();
+});
+

@@ -233,6 +233,28 @@ test('selection button setting defaults on, persists, and stays before the foote
 	await expect(page.getByRole('checkbox', { name: 'Hiện nút đọc cạnh văn bản đã chọn' })).not.toBeChecked();
 });
 
+test('localizes Google Docs export errors from command and session state', async ({ page, openPopup }) => {
+	await installPopupRuntimeMock(page, { session: null, currentTabId: 7 });
+	await openPopup(page);
+	await page.evaluate(() => {
+		(window as any).commandResponses = {
+			START_CURRENT_PAGE: { success: false, error: 'googleDocsExportUnavailable' },
+		};
+	});
+
+	await page.getByRole('button', { name: 'Đọc trang hiện tại' }).click();
+	await expect(page.locator('.alert-danger')).toHaveText(
+		'Không thể đọc Google Docs này. Hãy kiểm tra quyền xem hoặc tải xuống, hoặc đọc văn bản đã chọn/dán.',
+	);
+
+	await page.evaluate((session) => {
+		(window as any).mockReceiveMessage({ action: 'PLAYBACK_STATE_UPDATE', session });
+	}, { ...playingSession, status: 'error', error: 'googleDocsExportUnavailable' });
+	await expect(page.locator('.alert-danger')).toHaveText(
+		'Không thể đọc Google Docs này. Hãy kiểm tra quyền xem hoặc tải xuống, hoặc đọc văn bản đã chọn/dán.',
+	);
+});
+
 test.describe('English popup locale', () => {
 	test.use({ browserLocale: 'en-US' });
 

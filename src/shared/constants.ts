@@ -1,5 +1,7 @@
 import type { VoiceStyle } from './types.ts';
 
+export const GOOGLE_DOCS_EXPORT_UNAVAILABLE = 'googleDocsExportUnavailable';
+
 export const SUPERTONIC_HF_BASE = 'https://huggingface.co/Supertone/supertonic-3/resolve/main';
 
 export const MODEL_FILES = {
@@ -101,6 +103,7 @@ export const THEME_TRANSLATIONS = {
 		showSelectionButton: 'Hiện nút đọc cạnh văn bản đã chọn',
 		readSelectedText: 'Đọc văn bản đã chọn',
 		showWordHighlight: 'Tô sáng từ đang đọc trên trang',
+		googleDocsExportUnavailable: 'Không thể đọc Google Docs này. Hãy kiểm tra quyền xem hoặc tải xuống, hoặc đọc văn bản đã chọn/dán.',
 	},
 	en: {
 		selectTheme: 'Select Theme',
@@ -164,6 +167,7 @@ export const THEME_TRANSLATIONS = {
 		showSelectionButton: 'Show read button for selected text',
 		readSelectedText: 'Read selected text',
 		showWordHighlight: 'Highlight the word being read on the page',
+		googleDocsExportUnavailable: 'Unable to read this Google Doc. Check view or download permission, or read selected/pasted text instead.',
 	},
 } as const;
 

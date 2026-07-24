@@ -682,6 +682,35 @@ test.describe('Reading state lifecycle', () => {
 		expect((await getBackgroundState(controlPage)).session?.sessionId).toBe(before.session?.sessionId);
 	});
 
+	test('a denied Google Docs export preserves the active manual session', async ({ context, extensionId }) => {
+		await context.route('https://docs.google.com/document/d/denied-manual-doc/edit**', (route) =>
+			route.fulfill({ contentType: 'text/html; charset=utf-8', body: '<html><body><div role="application"></div></body></html>' }),
+		);
+		await context.route(/\/document\/d\/denied-manual-doc\/export\?format=txt$/, (route) =>
+			route.fulfill({ status: 403, contentType: 'text/plain; charset=utf-8', body: '' }),
+		);
+
+		const targetPage = await context.newPage();
+		await targetPage.goto('https://docs.google.com/document/d/denied-manual-doc/edit');
+		const controlPage = await context.newPage();
+		await controlPage.goto('chrome-extension://' + extensionId + '/src/popup/popup.html');
+		await expect(
+			sendCoordinatorCommand(controlPage, {
+				action: 'START_MANUAL_TEXT',
+				payload: { text: 'Manual playback must survive.', language: 'en', panelInstanceId: manualPanelInstanceId },
+			}),
+		).resolves.toEqual({ success: true });
+		const manualSessionId = (await getBackgroundState(controlPage)).session?.sessionId;
+		expect(manualSessionId).toEqual(expect.any(String));
+
+		await targetPage.bringToFront();
+		await expect(sendCoordinatorCommand(controlPage, { action: 'START_CURRENT_PAGE' })).resolves.toEqual({
+			success: false,
+			error: 'googleDocsExportUnavailable',
+		});
+		expect((await getBackgroundState(controlPage)).session?.sessionId).toBe(manualSessionId);
+	});
+
 	test('manual playback survives unrelated tab navigation and closure', async ({ context, extensionId }) => {
 		const targetPage = await createTargetPage(context);
 		const controlPage = await context.newPage();

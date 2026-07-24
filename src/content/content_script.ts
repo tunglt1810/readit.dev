@@ -1,11 +1,31 @@
 import { Article } from '../shared/types';
 import { extractArticleFromDocument } from './article_extractor';
 import { claimContentScriptInitialization } from './content_script_state';
+import { extractGoogleDocsArticle } from './google_docs_extractor';
 import { installSelectionButton } from './selection_button';
 import { installWordHighlight } from './word_highlight';
 
-function extractArticle(): Article | null {
-	return extractArticleFromDocument(document);
+type ArticleExtractionResponse = { success: true; article: Article } | { success: false; error: string };
+
+function getDocumentLanguage(): string {
+	return document.documentElement.lang.trim().toLowerCase().replace('_', '-').split('-')[0] || 'na';
+}
+
+async function extractArticle(): Promise<ArticleExtractionResponse> {
+	const googleDocsResult = await extractGoogleDocsArticle(
+		{
+			title: document.title || 'Untitled Article',
+			url: document.location.href,
+			lang: getDocumentLanguage(),
+		},
+		globalThis.fetch.bind(globalThis),
+	);
+	if (googleDocsResult) {
+		return googleDocsResult;
+	}
+
+	const article = extractArticleFromDocument(document);
+	return article ? { success: true, article } : { success: false, error: 'Could not find a readable article on this page.' };
 }
 
 if (claimContentScriptInitialization(globalThis as unknown as Record<string, unknown>)) {
@@ -24,17 +44,15 @@ if (claimContentScriptInitialization(globalThis as unknown as Record<string, unk
 					available: true,
 					title: document.title,
 					url: document.location.href,
-					lang: document.documentElement.lang.trim().toLowerCase().replace('_', '-').split('-')[0] || 'na',
+					lang: getDocumentLanguage(),
 				});
 				return true;
 			}
 			if (msg.action === 'EXTRACT_ARTICLE') {
-				const article = extractArticle();
-				if (article) {
-					sendResponse({ success: true, article });
-				} else {
-					sendResponse({ success: false, error: 'Could not find a readable article on this page.' });
-				}
+				void extractArticle().then(
+					(response) => sendResponse(response),
+					() => sendResponse({ success: false, error: 'Could not find a readable article on this page.' }),
+				);
 				return true; // Keep message channel open for async response
 			}
 			return undefined;
