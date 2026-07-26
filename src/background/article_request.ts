@@ -9,7 +9,7 @@ export interface ArticleRequestDependencies {
 	executeScript: (options: { target: { tabId: number }; files: string[] }) => Promise<unknown>;
 }
 
-function isMissingReceiverError(error: unknown): boolean {
+export function isMissingReceiverError(error: unknown): boolean {
 	const message = error instanceof Error ? error.message : String(error);
 	return message.includes('Could not establish connection') || message.includes('Receiving end does not exist');
 }

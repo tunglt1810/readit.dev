@@ -1,4 +1,4 @@
-import { GOOGLE_DOCS_EXPORT_UNAVAILABLE, MODEL_FILES, STORAGE_KEYS } from '../shared/constants';
+import { GOOGLE_DOCS_EXPORT_UNAVAILABLE, MODEL_FILES, PDF_ERROR_CODES, STORAGE_KEYS, type PdfErrorCode } from '../shared/constants';
 import { isManualPlaybackControlMessage, isManualWordTimingMessage } from '../shared/manual_playback';
 import { fetchWithCache, MODEL_CACHE_NAME } from '../shared/model_cache';
 import { warmCache } from '../shared/warm_cache';
@@ -16,7 +16,7 @@ import type {
 	PlaybackStatus,
 } from '../shared/types';
 import { requestActionPopup } from './action_popup';
-import { requestArticleFromTab } from './article_request';
+import { isMissingReceiverError, requestArticleFromTab, type ArticleResponse } from './article_request';
 import { syncPlaybackBadge } from './badge';
 import { prepareManualStart } from './manual_text';
 import {
@@ -25,6 +25,8 @@ import {
 	sendOffscreenCommand,
 } from './offscreen_transport';
 import { requestPageInfoFromTab } from './page_info';
+import { extractPdfArticle } from './pdf_extractor';
+import { loadPdfJsDocument } from './pdfjs_loader';
 import {
 	applyPlaybackProgress,
 	createPlaybackErrorSession,
@@ -50,7 +52,9 @@ const ERROR_MESSAGES = {
 } as const;
 
 function getExtractionError(error: string | undefined): string {
-	return error === GOOGLE_DOCS_EXPORT_UNAVAILABLE ? GOOGLE_DOCS_EXPORT_UNAVAILABLE : ERROR_MESSAGES.extraction;
+	if (error === GOOGLE_DOCS_EXPORT_UNAVAILABLE) return error;
+	if (error && Object.values(PDF_ERROR_CODES).includes(error as PdfErrorCode)) return error;
+	return ERROR_MESSAGES.extraction;
 }
 
 type StartPlaybackInput =
@@ -114,6 +118,32 @@ function isArticle(value: unknown): value is Article {
 		typeof article.url === 'string' &&
 		typeof article.lang === 'string'
 	);
+}
+
+async function requestCurrentTabArticle(tabId: number, title: string | undefined, url: string): Promise<ArticleResponse> {
+	const requestPdfFallback = () =>
+		extractPdfArticle(
+			{ url, title: title || url },
+			{
+				fetchPdf: (sourceUrl, init) => globalThis.fetch(sourceUrl, init),
+				isFileSchemeAccessAllowed: () => chrome.extension.isAllowedFileSchemeAccess(),
+				loadDocument: loadPdfJsDocument,
+			},
+		);
+
+	try {
+		const articleResponse = await requestArticleFromTab(tabId, {
+			sendMessage: (targetTabId, message) => chrome.tabs.sendMessage(targetTabId, message),
+			executeScript: (options) => chrome.scripting.executeScript(options),
+		});
+		if (articleResponse.success && isArticle(articleResponse.article)) return articleResponse;
+		return (await requestPdfFallback()) ?? articleResponse;
+	} catch (error) {
+		if (!isMissingReceiverError(error)) throw error;
+		const pdfResponse = await requestPdfFallback();
+		if (pdfResponse !== null) return pdfResponse;
+		throw error;
+	}
 }
 
 async function ensureHydrated(): Promise<void> {
@@ -523,10 +553,7 @@ async function startCurrentPage(): Promise<CommandResponse> {
 
 	let articleResponse;
 	try {
-		articleResponse = await requestArticleFromTab(activeTab.id, {
-			sendMessage: (tabId, message) => chrome.tabs.sendMessage(tabId, message),
-			executeScript: (options) => chrome.scripting.executeScript(options),
-		});
+		articleResponse = await requestCurrentTabArticle(activeTab.id, activeTab.title, url);
 	} catch (_error) {
 		if (!url) {
 			return { success: false, error: ERROR_MESSAGES.restrictedPage };

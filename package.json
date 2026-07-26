@@ -26,6 +26,7 @@
 		"@mozilla/readability": "0.6.0",
 		"fft.js": "4.0.4",
 		"onnxruntime-web": "1.26.0",
+		"pdfjs-dist": "6.1.200",
 		"react": "19.2.6",
 		"react-dom": "19.2.6"
 	},

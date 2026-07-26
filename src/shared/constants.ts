@@ -2,6 +2,15 @@ import type { VoiceStyle } from './types.ts';
 
 export const GOOGLE_DOCS_EXPORT_UNAVAILABLE = 'googleDocsExportUnavailable';
 
+export const PDF_ERROR_CODES = {
+	fileAccessRequired: 'pdfFileAccessRequired',
+	passwordProtected: 'pdfPasswordProtected',
+	textUnavailable: 'pdfTextUnavailable',
+	extractionFailed: 'pdfExtractionFailed',
+} as const;
+
+export type PdfErrorCode = (typeof PDF_ERROR_CODES)[keyof typeof PDF_ERROR_CODES];
+
 export const SUPERTONIC_HF_BASE = 'https://huggingface.co/Supertone/supertonic-3/resolve/main';
 
 export const MODEL_FILES = {
@@ -104,6 +113,10 @@ export const THEME_TRANSLATIONS = {
 		readSelectedText: 'Đọc văn bản đã chọn',
 		showWordHighlight: 'Tô sáng từ đang đọc trên trang',
 		googleDocsExportUnavailable: 'Không thể đọc Google Docs này. Hãy kiểm tra quyền xem hoặc tải xuống, hoặc đọc văn bản đã chọn/dán.',
+		pdfFileAccessRequired: 'Để đọc file PDF trên máy, hãy bật “Cho phép truy cập URL tệp” trong trang chi tiết tiện ích của Chrome.',
+		pdfPasswordProtected: 'PDF này được bảo vệ bằng mật khẩu và chưa được hỗ trợ.',
+		pdfTextUnavailable: 'Không tìm thấy văn bản có thể đọc trong PDF này. PDF scan chưa được hỗ trợ.',
+		pdfExtractionFailed: 'Không thể đọc PDF này. Hãy thử lại hoặc dán văn bản để đọc.',
 	},
 	en: {
 		selectTheme: 'Select Theme',
@@ -168,6 +181,10 @@ export const THEME_TRANSLATIONS = {
 		readSelectedText: 'Read selected text',
 		showWordHighlight: 'Highlight the word being read on the page',
 		googleDocsExportUnavailable: 'Unable to read this Google Doc. Check view or download permission, or read selected/pasted text instead.',
+		pdfFileAccessRequired: 'To read local PDF files, enable “Allow access to file URLs” in the extension details page in Chrome.',
+		pdfPasswordProtected: 'This password-protected PDF is not currently supported.',
+		pdfTextUnavailable: 'No readable text was found in this PDF. Scanned PDFs are not supported.',
+		pdfExtractionFailed: 'Unable to read this PDF. Try again or paste its text to read.',
 	},
 } as const;
 
