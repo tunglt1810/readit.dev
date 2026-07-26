@@ -1,30 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { BUY_ME_A_COFFEE_URL, PRIVACY_POLICY_URL, STORAGE_KEYS, VOICE_STYLE_TRANSLATIONS, VOICE_STYLES } from '../shared/constants';
-import { getLocalizedPlaybackError, t, uiLang } from '../shared/i18n';
+import { BUY_ME_A_COFFEE_URL, PRIVACY_POLICY_URL, STORAGE_KEYS } from '../shared/constants';
+import { getLocalizedPlaybackError, t } from '../shared/i18n';
 import { requestPlaybackState, sendPlaybackCommand, subscribePlaybackState } from '../shared/playback_client';
 import { isSelectionButtonEnabled } from '../shared/selection_button';
 import type { PlaybackSessionSnapshot, PlaybackStatus, ThemeName } from '../shared/types';
 import { isWordHighlightEnabled } from '../shared/word_highlight';
+import { SettingsCard } from '../shared/components/SettingsCard';
 import { buildFeedbackUrl } from './feedback';
 import { openSidePanelForCurrentWindow } from './side_panel';
 
 type PlaybackIconName = 'read' | 'stop' | 'pause' | 'resume';
 
-type ReadingSpeedControlProps = {
-	theme: ThemeName;
-	compact?: boolean;
-	speed: number;
-	speedProgress: number;
-	onSpeedChange: (value: number) => void;
-};
 
-type VoiceControlProps = {
-	className?: string;
-	voice: string;
-	disabled: boolean;
-	onVoiceChange: (value: string) => void;
-};
 
 function PlaybackIcon({ name }: { name: PlaybackIconName }) {
 	const commonProps = {
@@ -68,48 +56,7 @@ function PlaybackIcon({ name }: { name: PlaybackIconName }) {
 	}
 }
 
-function ReadingSpeedControl({ theme, compact = false, speed, speedProgress, onSpeedChange }: ReadingSpeedControlProps) {
-	const activeColor = theme === 'wmp12' ? '#1776b9' : theme === 'winamp' ? '#8fdf53' : '#008771';
-	const inactiveColor = theme === 'wmp12' ? '#3c454a' : theme === 'winamp' ? '#141414' : 'rgba(255, 255, 255, 0.1)';
 
-	return (
-		<div className={`form-group ${compact ? 'wmp-speed-control' : ''}`}>
-			<div className="slider-label-group">
-				<span className={compact ? 'wmp-speed-value' : 'form-label'}>{compact ? `${speed.toFixed(2)}x` : t('readingSpeed')}</span>
-				{!compact && <span className="slider-value">{speed.toFixed(2)}x</span>}
-			</div>
-			<input
-				type="range"
-				className="form-slider"
-				aria-label={t('readingSpeed')}
-				min="0.7"
-				max="1.8"
-				step="0.05"
-				value={speed}
-				style={{
-					background: `linear-gradient(90deg, ${activeColor} 0%, ${activeColor} ${speedProgress}%, ${inactiveColor} ${speedProgress}%)`,
-				}}
-				onChange={(event) => onSpeedChange(Number.parseFloat(event.target.value))}
-			/>
-		</div>
-	);
-}
-
-function VoiceControl({ className, voice, disabled, onVoiceChange }: VoiceControlProps) {
-	return (
-		<div className={className ? `form-group ${className}` : 'form-group'}>
-			<label className="form-label">{t('selectVoice')}</label>
-			<select className="form-select" value={voice} onChange={(event) => onVoiceChange(event.target.value)} disabled={disabled}>
-				{VOICE_STYLES.map((voiceStyle) => (
-					<option key={voiceStyle.id} value={voiceStyle.id}>
-						{voiceStyle.gender === 'male' ? '♂️' : '♀️'}{' '}
-						{VOICE_STYLE_TRANSLATIONS[uiLang][voiceStyle.id as keyof typeof VOICE_STYLE_TRANSLATIONS.en]}
-					</option>
-				))}
-			</select>
-		</div>
-	);
-}
 
 export default function App() {
 	// Playback state is owned by the background coordinator.
@@ -117,8 +64,6 @@ export default function App() {
 	const [currentTabId, setCurrentTabId] = useState<number | undefined>();
 	const [sidePanelWindowId, setSidePanelWindowId] = useState<number | undefined>();
 	const [activeTheme, setActiveTheme] = useState<ThemeName>('default');
-	const [themeMenuOpen, setThemeMenuOpen] = useState(false);
-	const themeSelectorButtonRef = useRef<HTMLButtonElement>(null);
 	const primaryButtonRef = useRef<HTMLButtonElement>(null);
 
 	// Settings States
@@ -126,7 +71,6 @@ export default function App() {
 	const [speed, setSpeed] = useState(1.05);
 	const [selectionButtonEnabled, setSelectionButtonEnabled] = useState(true);
 	const [wordHighlightEnabled, setWordHighlightEnabled] = useState(true);
-	const speedProgress = ((speed - 0.7) / (1.8 - 0.7)) * 100;
 
 	// Model Loading States
 	const [modelLoading, setModelLoading] = useState(false);
@@ -305,7 +249,6 @@ export default function App() {
 	// Handler: Change Theme
 	const handleThemeChange = (newTheme: ThemeName) => {
 		setActiveTheme(newTheme);
-		setThemeMenuOpen(false);
 		chrome.storage.local.set({ [STORAGE_KEYS.THEME]: newTheme });
 	};
 
@@ -345,8 +288,6 @@ export default function App() {
 	const isThemedPrimaryDisabled = status === 'loading';
 	const canStopThemedPlayback = status === 'loading' || status === 'playing' || status === 'paused';
 	const themedPrimaryLabel = status === 'playing' ? t('pauseState') : status === 'paused' ? t('resumeStatus') : t('readPage');
-	const activeThemeName =
-		activeTheme === 'winamp' ? t('themeWinampName') : activeTheme === 'wmp12' ? t('themeWmp12Name') : t('themeDefaultName');
 
 	return (
 		<div className="app-container" data-theme={activeTheme}>
@@ -417,15 +358,6 @@ export default function App() {
 					</div>
 				)}
 
-				{activeTheme === 'wmp12' && (
-					<VoiceControl
-						className="wmp-voice-control"
-						voice={activeVoice}
-						disabled={status === 'playing' || status === 'loading'}
-						onVoiceChange={handleVoiceChange}
-					/>
-				)}
-
 				{/* Playback Progress Bar */}
 				{status !== 'stopped' && status !== 'error' && (
 					<div className="progress-bar-container">
@@ -456,15 +388,6 @@ export default function App() {
 								>
 									<PlaybackIcon name="stop" />
 								</button>
-							)}
-							{activeTheme === 'wmp12' && (
-								<ReadingSpeedControl
-									theme={activeTheme}
-									compact
-									speed={speed}
-									speedProgress={speedProgress}
-									onSpeedChange={handleSpeedChange}
-								/>
 							)}
 						</div>
 					) : (
@@ -515,92 +438,20 @@ export default function App() {
 				</div>
 				</main>
 
-				{/* Settings Section */}
-			{activeTheme !== 'wmp12' && (
-				<section className="app-section">
-					<h2 className="section-title">{t('voiceConfig')}</h2>
-					<VoiceControl
-						voice={activeVoice}
-						disabled={status === 'playing' || status === 'loading'}
-						onVoiceChange={handleVoiceChange}
-					/>
-					<ReadingSpeedControl
-						theme={activeTheme}
-						speed={speed}
-						speedProgress={speedProgress}
-						onSpeedChange={handleSpeedChange}
-					/>
-				</section>
-			)}
-
-			<label className="selection-button-setting">
-				<span>{t('showSelectionButton')}</span>
-				<input
-					type="checkbox"
-					className="selection-button-toggle"
-					checked={selectionButtonEnabled}
-					onChange={(event) => handleSelectionButtonEnabledChange(event.target.checked)}
-				/>
-			</label>
-
-			<label className="selection-button-setting">
-				<span>{t('showWordHighlight')}</span>
-				<input
-					type="checkbox"
-					className="selection-button-toggle"
-					checked={wordHighlightEnabled}
-					onChange={(event) => handleWordHighlightEnabledChange(event.target.checked)}
-				/>
-			</label>
-
-			<div className="selection-button-setting theme-setting">
-				<span>{t('selectTheme')}</span>
-				<div
-					className="theme-selector-container"
-					onBlur={(event) => {
-						if (!event.currentTarget.contains(event.relatedTarget)) {
-							setThemeMenuOpen(false);
-						}
-					}}
-					onKeyDown={(event) => {
-						if (event.key === 'Escape') {
-							setThemeMenuOpen(false);
-							themeSelectorButtonRef.current?.focus();
-						}
-					}}
-				>
-					<button
-						ref={themeSelectorButtonRef}
-						className="theme-selector-btn"
-						aria-label={t('selectTheme')}
-						aria-controls="theme-options"
-						aria-expanded={themeMenuOpen}
-						onClick={() => setThemeMenuOpen((open) => !open)}
-					>
-						{activeThemeName}
-					</button>
-					<div id="theme-options" className={`theme-dropdown ${themeMenuOpen ? 'open' : ''}`} hidden={!themeMenuOpen}>
-						<button
-							className={`theme-opt-btn ${activeTheme === 'default' ? 'active' : ''}`}
-							onClick={() => handleThemeChange('default')}
-						>
-							{t('themeDefault')}
-						</button>
-						<button
-							className={`theme-opt-btn ${activeTheme === 'winamp' ? 'active' : ''}`}
-							onClick={() => handleThemeChange('winamp')}
-						>
-							{t('themeWinamp')}
-						</button>
-						<button
-							className={`theme-opt-btn ${activeTheme === 'wmp12' ? 'active' : ''}`}
-							onClick={() => handleThemeChange('wmp12')}
-						>
-							{t('themeWmp12')}
-						</button>
-					</div>
-				</div>
-			</div>
+			<SettingsCard
+				collapsible={false}
+				theme={activeTheme}
+				activeVoice={activeVoice}
+				speed={speed}
+				selectionButtonEnabled={selectionButtonEnabled}
+				wordHighlightEnabled={wordHighlightEnabled}
+				playbackStatus={status}
+				onVoiceChange={handleVoiceChange}
+				onSpeedChange={handleSpeedChange}
+				onSelectionButtonEnabledChange={handleSelectionButtonEnabledChange}
+				onWordHighlightEnabledChange={handleWordHighlightEnabledChange}
+				onThemeChange={handleThemeChange}
+			/>
 
 				{/* Footer */}
 				<footer className="app-footer">

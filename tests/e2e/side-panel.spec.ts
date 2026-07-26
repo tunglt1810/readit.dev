@@ -275,9 +275,10 @@ test('hydrates and persists shared voice and speed preferences', async ({ page, 
 		await chrome.storage.local.set({ readit_active_voice: 'F2', readit_speed: 1.3 });
 	});
 	await page.reload();
+	await page.locator('.settings-card-header').click();
 
-	const voice = page.getByRole('combobox', { name: 'Chọn giọng (Supertonic 3)' });
-	const speed = page.getByRole('slider', { name: 'Tốc độ đọc' });
+	const voice = page.getByRole('combobox', { name: 'Giọng đọc' });
+	const speed = page.getByRole('slider', { name: 'Tốc độ' });
 	await expect(voice).toHaveValue('F2');
 	await expect(speed).toHaveValue('1.3');
 	await voice.selectOption('F1');
@@ -296,9 +297,10 @@ test('hydrates and persists shared voice and speed preferences', async ({ page, 
 test('live-syncs voice and speed when the popup updates shared preferences', async ({ context, openPopup, openSidePanel, page }) => {
 	await installExtensionUiRuntimeMock(page, { session: null }, pageInfo);
 	await openSidePanel(page);
+	await page.locator('.settings-card-header').click();
 
-	const sidePanelVoice = page.getByRole('combobox', { name: 'Chọn giọng (Supertonic 3)' });
-	const sidePanelSpeed = page.getByRole('slider', { name: 'Tốc độ đọc' });
+	const sidePanelVoice = page.getByRole('combobox', { name: 'Giọng đọc' });
+	const sidePanelSpeed = page.getByRole('slider', { name: 'Tốc độ' });
 	const popup = await context.newPage();
 	try {
 		await installExtensionUiRuntimeMock(popup, { session: null, currentTabId: 7 });

@@ -292,24 +292,16 @@ input:focus-visible {
 	bottom: 0;
 	display: grid;
 	gap: var(--space-3);
-	margin-top: auto;
 	margin-bottom: var(--space-4);
 	padding: var(--space-4);
 	backdrop-filter: blur(18px);
 }
 
-.status-display {
-	color: var(--color-text-secondary);
-	font-size: 0.78rem;
+.side-panel-player:empty,
+.side-panel-player:not(:has(.session-meta)) {
+	display: none;
 }
 
-.status-display[data-status="playing"] {
-	color: var(--color-success);
-}
-
-.status-display[data-status="error"] {
-	color: var(--color-danger);
-}
 
 .session-title {
 	font-weight: 700;
@@ -321,10 +313,10 @@ input:focus-visible {
 	font-size: 1rem;
 }
 
-.player-settings {
-	display: grid;
-	grid-template-columns: minmax(0, 1fr) minmax(100px, 0.8fr);
-	gap: var(--space-3);
+.side-panel .settings-card {
+	margin-inline: var(--space-4);
+	margin-top: auto;
+	margin-bottom: var(--space-2);
 }
 
 .side-panel[data-theme="winamp"] .current-page-card,
@@ -338,9 +330,43 @@ input:focus-visible {
 	border-radius: 0;
 }
 
+.side-panel[data-theme="winamp"] .primary-button {
+	border-color: #3d9840;
+	background: #1f4219;
+	color: #8fdf53;
+	font-family: "Courier New", Courier, monospace;
+	box-shadow: inset 0 0 10px #061106, 0 0 8px rgba(143, 223, 83, 0.4);
+}
+
+.side-panel[data-theme="winamp"] .primary-button:hover:not(:disabled) {
+	background: #285421;
+	color: #a3ff64;
+	border-color: #71ea64;
+}
+
+.side-panel[data-theme="winamp"] .secondary-button {
+	border-color: #285c2a;
+	background: #050505;
+	color: #71ea64;
+	font-family: "Courier New", Courier, monospace;
+}
+
 .side-panel[data-theme="winamp"] h2,
 .side-panel[data-theme="winamp"] .field-label {
 	text-transform: uppercase;
+}
+
+.side-panel[data-theme="wmp12"] {
+	background: radial-gradient(ellipse at 50% 18%, #183f5a 0%, #0a1c2b 43%, #05080a 80%);
+}
+
+.side-panel[data-theme="wmp12"] .current-page-card,
+.side-panel[data-theme="wmp12"] .manual-text-card,
+.side-panel[data-theme="wmp12"] .side-panel-player,
+.side-panel[data-theme="wmp12"] .settings-card {
+	border-color: #43525b;
+	background: rgba(16, 21, 23, 0.85);
+	box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.4);
 }
 
 .side-panel[data-theme="wmp12"] .primary-button {

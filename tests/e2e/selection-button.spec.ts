@@ -299,7 +299,7 @@ test('popup setting disables and re-enables the affordance in an open tab', asyn
 	const page = await openSelectionPage(context);
 	const popup = await context.newPage();
 	await popup.goto(`chrome-extension://${extensionId}/src/popup/popup.html`);
-	const toggle = popup.getByRole('checkbox', { name: 'Hiện nút đọc cạnh văn bản đã chọn' });
+	const toggle = popup.getByRole('checkbox', { name: 'Nút chọn nhanh' });
 	const getPlaybackState = () =>
 		popup.evaluate(() => new Promise<any>((resolve) => chrome.runtime.sendMessage({ action: 'GET_PLAYBACK_STATE' }, resolve)));
 

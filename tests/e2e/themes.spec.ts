@@ -15,7 +15,7 @@ const playingSession = {
 };
 
 async function selectTheme(page: import('@playwright/test').Page, label: string) {
-	await page.getByRole('button', { name: 'Chọn giao diện' }).click();
+	await page.getByRole('button', { name: 'Giao diện' }).click();
 	await page.getByRole('button', { name: label }).click();
 }
 
@@ -51,7 +51,7 @@ for (const [label, theme] of [
 		await page.getByRole('button', { name: 'Tiếp tục' }).click();
 		await expect.poll(() => page.evaluate(() => (window as any).sentMessages.at(-1)?.action)).toBe('RESUME_READING');
 
-		const speedControl = page.getByRole('slider', { name: 'Tốc độ đọc' });
+		const speedControl = page.getByRole('slider', { name: 'Tốc độ' });
 		for (let step = 0; step < 5; step += 1) {
 			await speedControl.press('ArrowRight');
 		}
@@ -109,17 +109,16 @@ test('WMP uses the approved dark Now Playing shell and chrome-blue primary butto
 	await expect(page.locator('.wmp-transport')).toHaveCSS('background-image', /linear-gradient/);
 	await expect(page.locator('.wmp-transport .theme-primary')).toHaveCSS('background-image', /radial-gradient/);
 	await expect(page.locator('.wmp-transport .theme-primary')).toHaveCSS('border-radius', '50%');
-	await expect(page.locator('.wmp-speed-control .form-slider')).toBeVisible();
+	await expect(page.locator('.settings-card .speed-setting .form-slider')).toBeVisible();
 
 	const wmpZoneOrder = await page.locator('.app-main').evaluate((main) =>
-		Array.from(main.querySelectorAll('.wmp-voice-control, .progress-bar-container, .wmp-transport')).map((element) => ({
-			zone: element.matches('.wmp-voice-control') ? 'voice' : element.matches('.progress-bar-container') ? 'progress' : 'transport',
+		Array.from(main.querySelectorAll('.progress-bar-container, .wmp-transport')).map((element) => ({
+			zone: element.matches('.progress-bar-container') ? 'progress' : 'transport',
 			top: element.getBoundingClientRect().top,
 		})),
 	);
-	expect(wmpZoneOrder.map((zone) => zone.zone)).toEqual(['voice', 'progress', 'transport']);
+	expect(wmpZoneOrder.map((zone) => zone.zone)).toEqual(['progress', 'transport']);
 	expect(wmpZoneOrder[0].top).toBeLessThan(wmpZoneOrder[1].top);
-	expect(wmpZoneOrder[1].top).toBeLessThan(wmpZoneOrder[2].top);
 
 	const dimensions = await page
 		.locator('body')
@@ -140,7 +139,7 @@ test('theme selector supports keyboard interaction and persists the selected the
 	await installPopupRuntimeMock(page, { session: null, currentTabId: 7 });
 	await openPopup(page);
 
-	const selector = page.getByRole('button', { name: 'Chọn giao diện' });
+	const selector = page.getByRole('button', { name: 'Giao diện' });
 	const winampOption = page.getByRole('button', { name: '🕹️ Classic (1998)' });
 	const wmpOption = page.getByRole('button', { name: '💿 Vista Aero (2006)' });
 
@@ -174,6 +173,8 @@ test('theme selector supports keyboard interaction and persists the selected the
 	await expect(selector).toBeVisible();
 	await expect(selector).toHaveText('Vista Aero (2006)');
 	await expect(selector).toHaveAttribute('aria-expanded', 'false');
+	await expect(page.getByRole('combobox', { name: 'Giọng đọc' })).toBeVisible();
+	await expect(page.getByRole('slider', { name: 'Tốc độ' })).toBeVisible();
 
 	const savedTheme = await page.evaluate(async () => {
 		const result = await chrome.storage.local.get('readit_active_theme');
@@ -213,14 +214,14 @@ test('selection button setting defaults on, persists, and stays before the foote
 	await installPopupRuntimeMock(page, { session: null, currentTabId: 7 });
 	await openPopup(page);
 
-	const toggle = page.getByRole('checkbox', { name: 'Hiện nút đọc cạnh văn bản đã chọn' });
+	const toggle = page.getByRole('checkbox', { name: 'Nút chọn nhanh' });
 	await expect(toggle).toBeChecked();
-	await expect(page.locator('.selection-button-setting + .app-footer')).toHaveCount(1);
+	await expect(page.locator('.settings-card + .app-footer')).toHaveCount(1);
 
 	for (const label of ['🕹️ Classic (1998)', '💿 Vista Aero (2006)', '📱 Hiện đại']) {
 		await selectTheme(page, label);
 		await expect(toggle).toBeVisible();
-		await expect(page.locator('.selection-button-setting + .app-footer')).toHaveCount(1);
+		await expect(page.locator('.settings-card + .app-footer')).toHaveCount(1);
 	}
 
 	await toggle.uncheck();
@@ -230,7 +231,7 @@ test('selection button setting defaults on, persists, and stays before the foote
 		),
 	).toBe(false);
 	await page.reload();
-	await expect(page.getByRole('checkbox', { name: 'Hiện nút đọc cạnh văn bản đã chọn' })).not.toBeChecked();
+	await expect(page.getByRole('checkbox', { name: 'Nút chọn nhanh' })).not.toBeChecked();
 });
 
 test('localizes Google Docs export errors from command and session state', async ({ page, openPopup }) => {
@@ -265,7 +266,7 @@ test.describe('English popup locale', () => {
 		});
 		await openPopup(page);
 
-		await expect(page.getByRole('button', { name: 'Select Theme' })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Theme' })).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Open Side Panel' })).toBeVisible();
 		await expect(page.locator('.status-text')).toHaveText('Preparing voice...');
 		await expect(page.locator('.session-context')).toContainText('Paragraph 1/5 • 20%');
@@ -276,7 +277,7 @@ test.describe('English popup locale', () => {
 		await expect(page.getByRole('link', { name: 'Buy me a coffee' })).toBeVisible();
 		await expect(page.getByRole('link', { name: 'Feedback' })).toBeVisible();
 		await expect(page.getByRole('link', { name: 'Privacy Policy' })).toBeVisible();
-		await expect(page.getByRole('checkbox', { name: 'Show read button for selected text' })).toBeChecked();
+		await expect(page.getByRole('checkbox', { name: 'Selection button' })).toBeChecked();
 
 		await page.evaluate(() => {
 			(window as any).mockReceiveMessage({

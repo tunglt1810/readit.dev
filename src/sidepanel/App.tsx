@@ -1,10 +1,13 @@
-import { type ChangeEvent, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-import { BUY_ME_A_COFFEE_URL, STORAGE_KEYS, VOICE_STYLE_TRANSLATIONS, VOICE_STYLES } from '../shared/constants.ts';
-import { getLocalizedPlaybackError, t, uiLang } from '../shared/i18n.ts';
+import { SettingsCard } from '../shared/components/SettingsCard.tsx';
+import { BUY_ME_A_COFFEE_URL, STORAGE_KEYS } from '../shared/constants.ts';
+import { getLocalizedPlaybackError, t } from '../shared/i18n.ts';
 import { normalizeManualText } from '../shared/manual_text.ts';
 import { requestPlaybackState, sendPlaybackCommand, sendRuntimeRequest, subscribePlaybackState } from '../shared/playback_client.ts';
+import { isSelectionButtonEnabled } from '../shared/selection_button.ts';
 import type { ManualTextLanguage, PageInfoResponse, PlaybackSessionSnapshot, ThemeName } from '../shared/types.ts';
+import { isWordHighlightEnabled } from '../shared/word_highlight.ts';
 import { advanceManualHighlight, createManualHighlightCursor, type ManualWordRange } from './manual_word_highlight.ts';
 
 const EMPTY_PAGE_INFO: PageInfoResponse = { available: false };
@@ -48,6 +51,8 @@ export default function App() {
 	const [activeVoice, setActiveVoice] = useState('M1');
 	const [speed, setSpeed] = useState(1);
 	const [theme, setTheme] = useState<ThemeName>('default');
+	const [selectionButtonEnabled, setSelectionButtonEnabled] = useState(true);
+	const [wordHighlightEnabled, setWordHighlightEnabled] = useState(true);
 	const [pageInfo, setPageInfo] = useState<PageInfoResponse>(EMPTY_PAGE_INFO);
 	const readerRef = useRef<HTMLDivElement>(null);
 	const primaryButtonRef = useRef<HTMLButtonElement>(null);
@@ -67,20 +72,31 @@ export default function App() {
 	};
 
 	useEffect(() => {
-		chrome.storage.local.get([STORAGE_KEYS.ACTIVE_VOICE, STORAGE_KEYS.SPEED, STORAGE_KEYS.THEME], (result) => {
-			const storedVoice = result[STORAGE_KEYS.ACTIVE_VOICE];
-			const storedSpeed = result[STORAGE_KEYS.SPEED];
-			const storedTheme = result[STORAGE_KEYS.THEME];
-			if (typeof storedVoice === 'string') {
-				setActiveVoice(storedVoice);
-			}
-			if (typeof storedSpeed === 'number') {
-				setSpeed(storedSpeed);
-			}
-			if (storedTheme === 'default' || storedTheme === 'winamp' || storedTheme === 'wmp12') {
-				setTheme(storedTheme);
-			}
-		});
+		chrome.storage.local.get(
+			[
+				STORAGE_KEYS.ACTIVE_VOICE,
+				STORAGE_KEYS.SPEED,
+				STORAGE_KEYS.THEME,
+				STORAGE_KEYS.SELECTION_BUTTON_ENABLED,
+				STORAGE_KEYS.WORD_HIGHLIGHT_ENABLED,
+			],
+			(result) => {
+				const storedVoice = result[STORAGE_KEYS.ACTIVE_VOICE];
+				const storedSpeed = result[STORAGE_KEYS.SPEED];
+				const storedTheme = result[STORAGE_KEYS.THEME];
+				if (typeof storedVoice === 'string') {
+					setActiveVoice(storedVoice);
+				}
+				if (typeof storedSpeed === 'number') {
+					setSpeed(storedSpeed);
+				}
+				if (storedTheme === 'default' || storedTheme === 'winamp' || storedTheme === 'wmp12') {
+					setTheme(storedTheme);
+				}
+				setSelectionButtonEnabled(isSelectionButtonEnabled(result[STORAGE_KEYS.SELECTION_BUTTON_ENABLED]));
+				setWordHighlightEnabled(isWordHighlightEnabled(result[STORAGE_KEYS.WORD_HIGHLIGHT_ENABLED]));
+			},
+		);
 
 		void requestPlaybackState().then((response) => setSession(response.session));
 		void sendRuntimeRequest<PageInfoResponse>({ action: 'GET_CURRENT_PAGE_INFO' }).then(setPageInfo, () =>
@@ -144,7 +160,7 @@ export default function App() {
 				return;
 			}
 			const nextVoice = changes[STORAGE_KEYS.ACTIVE_VOICE]?.newValue;
-			if (typeof nextVoice === 'string' && VOICE_STYLES.some((voice) => voice.id === nextVoice)) {
+			if (typeof nextVoice === 'string') {
 				setActiveVoice(nextVoice);
 			}
 			const nextSpeed = changes[STORAGE_KEYS.SPEED]?.newValue;
@@ -154,6 +170,12 @@ export default function App() {
 			const nextTheme = changes[STORAGE_KEYS.THEME]?.newValue;
 			if (nextTheme === 'default' || nextTheme === 'winamp' || nextTheme === 'wmp12') {
 				setTheme(nextTheme);
+			}
+			if (changes[STORAGE_KEYS.SELECTION_BUTTON_ENABLED] !== undefined) {
+				setSelectionButtonEnabled(isSelectionButtonEnabled(changes[STORAGE_KEYS.SELECTION_BUTTON_ENABLED].newValue));
+			}
+			if (changes[STORAGE_KEYS.WORD_HIGHLIGHT_ENABLED] !== undefined) {
+				setWordHighlightEnabled(isWordHighlightEnabled(changes[STORAGE_KEYS.WORD_HIGHLIGHT_ENABLED].newValue));
 			}
 		};
 		chrome.storage.onChanged.addListener(handleStorageChange);
@@ -259,16 +281,30 @@ export default function App() {
 		}
 	};
 
-	const handleVoiceChange = (event: ChangeEvent<HTMLSelectElement>) => {
-		setActiveVoice(event.target.value);
-		void chrome.storage.local.set({ [STORAGE_KEYS.ACTIVE_VOICE]: event.target.value });
+	const handleVoiceChange = (voice: string) => {
+		setActiveVoice(voice);
+		void chrome.storage.local.set({ [STORAGE_KEYS.ACTIVE_VOICE]: voice });
 	};
 
-	const handleSpeedChange = (event: ChangeEvent<HTMLInputElement>) => {
-		const nextSpeed = Number(event.target.value);
+	const handleSpeedChange = (nextSpeed: number) => {
 		setSpeed(nextSpeed);
 		void chrome.storage.local.set({ [STORAGE_KEYS.SPEED]: nextSpeed });
 		void sendPlaybackCommand({ action: 'CHANGE_SPEED', payload: { speed: nextSpeed } });
+	};
+
+	const handleSelectionButtonEnabledChange = (enabled: boolean) => {
+		setSelectionButtonEnabled(enabled);
+		void chrome.storage.local.set({ [STORAGE_KEYS.SELECTION_BUTTON_ENABLED]: enabled });
+	};
+
+	const handleWordHighlightEnabledChange = (enabled: boolean) => {
+		setWordHighlightEnabled(enabled);
+		void chrome.storage.local.set({ [STORAGE_KEYS.WORD_HIGHLIGHT_ENABLED]: enabled });
+	};
+
+	const handleThemeChange = (newTheme: ThemeName) => {
+		setTheme(newTheme);
+		void chrome.storage.local.set({ [STORAGE_KEYS.THEME]: newTheme });
 	};
 
 	const tabSource = session?.source.kind === 'tab' ? session.source : null;
@@ -285,12 +321,12 @@ export default function App() {
 			<header className="side-panel-header">
 				<h1>
 					readit<span>.dev</span>
-					</h1>
-					<span className="extension-version">v{chrome.runtime.getManifest().version}</span>
-					<a className="header-support-link" href={BUY_ME_A_COFFEE_URL} target="_blank" rel="noreferrer">
-						<span aria-hidden="true">☕</span> {t('buyMeCoffee')}
-					</a>
-				</header>
+				</h1>
+				<span className="extension-version">v{chrome.runtime.getManifest().version}</span>
+				<a className="header-support-link" href={BUY_ME_A_COFFEE_URL} target="_blank" rel="noreferrer">
+					<span aria-hidden="true">☕</span> {t('buyMeCoffee')}
+				</a>
+			</header>
 
 			{commandError && (
 				<div className="alert alert-danger" role="alert">
@@ -299,6 +335,10 @@ export default function App() {
 			)}
 
 			<section className="current-page-card" aria-labelledby="current-page-title">
+				<div className="status-display" data-status={session?.status ?? 'stopped'} role="status">
+					<div className="status-dot-pulse" data-status={session?.status ?? 'stopped'} />
+					<span className="status-text">{getStatusText(session)}</span>
+				</div>
 				<h2 id="current-page-title">{t('currentPage')}</h2>
 				{pageInfo.available ? (
 					<div className="page-info">
@@ -382,54 +422,48 @@ export default function App() {
 				)}
 			</section>
 
+			<SettingsCard
+				collapsible
+				defaultExpanded={false}
+				theme={theme}
+				activeVoice={activeVoice}
+				speed={speed}
+				selectionButtonEnabled={selectionButtonEnabled}
+				wordHighlightEnabled={wordHighlightEnabled}
+				playbackStatus={session?.status ?? 'stopped'}
+				onVoiceChange={handleVoiceChange}
+				onSpeedChange={handleSpeedChange}
+				onSelectionButtonEnabledChange={handleSelectionButtonEnabledChange}
+				onWordHighlightEnabledChange={handleWordHighlightEnabledChange}
+				onThemeChange={handleThemeChange}
+			/>
+
 			<section className="side-panel-player" aria-label={t('nowPlaying')}>
-				<div className="status-display" data-status={session?.status ?? 'stopped'} role="status">
-					{getStatusText(session)}
-				</div>
 				{session && (
-					<div className="session-meta">
-						<div className="session-title">{sessionTitle}</div>
-						{sessionHost && <div className="session-host">{sessionHost}</div>}
-					</div>
+					<>
+						<div className="session-meta">
+							<div className="session-title">{sessionTitle}</div>
+							{sessionHost && <div className="session-host">{sessionHost}</div>}
+						</div>
+						<div className="player-controls">
+							{session.status === 'playing' && (
+								<button ref={primaryButtonRef} type="button" aria-label={t('pauseState')} onClick={() => handlePlaybackCommand('PAUSE_READING')}>
+									Ⅱ
+								</button>
+							)}
+							{session.status === 'paused' && (
+								<button ref={primaryButtonRef} type="button" aria-label={t('resumeStatus')} onClick={() => handlePlaybackCommand('RESUME_READING')}>
+									▶
+								</button>
+							)}
+							<button type="button" aria-label={t('stopReading')} onClick={() => handlePlaybackCommand('STOP_READING')}>
+								■
+							</button>
+						</div>
+					</>
 				)}
-				<div className="player-controls">
-					{session?.status === 'playing' && (
-						<button ref={primaryButtonRef} type="button" aria-label={t('pauseState')} onClick={() => handlePlaybackCommand('PAUSE_READING')}>
-							Ⅱ
-						</button>
-					)}
-					{session?.status === 'paused' && (
-						<button ref={primaryButtonRef} type="button" aria-label={t('resumeStatus')} onClick={() => handlePlaybackCommand('RESUME_READING')}>
-							▶
-						</button>
-					)}
-					{session && (
-						<button type="button" aria-label={t('stopReading')} onClick={() => handlePlaybackCommand('STOP_READING')}>
-							■
-						</button>
-					)}
-				</div>
-				<div className="player-settings">
-					<label className="field-label">
-						<span>{t('selectVoice')}</span>
-						<select
-							value={activeVoice}
-							disabled={session?.status === 'playing' || session?.status === 'loading'}
-							onChange={handleVoiceChange}
-						>
-							{VOICE_STYLES.map((voice) => (
-								<option key={voice.id} value={voice.id}>
-									{VOICE_STYLE_TRANSLATIONS[uiLang][voice.id as keyof typeof VOICE_STYLE_TRANSLATIONS.en]}
-								</option>
-							))}
-						</select>
-					</label>
-					<label className="field-label">
-						<span>{t('readingSpeed')}</span>
-						<input type="range" min="0.7" max="1.8" step="0.05" value={speed} onChange={handleSpeedChange} />
-					</label>
-				</div>
 			</section>
 		</main>
 	);
 }
+

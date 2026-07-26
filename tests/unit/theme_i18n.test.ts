@@ -15,7 +15,7 @@ test('THEME_TRANSLATIONS dịch ngôn ngữ vi và en hoạt động chính xác
 	// @ts-expect-error THEME_TRANSLATIONS will be added in implementation
 	const en = THEME_TRANSLATIONS.en;
 
-	assert.strictEqual(vi.selectTheme, 'Chọn giao diện');
+	assert.strictEqual(vi.selectTheme, 'Giao diện');
 	assert.strictEqual(vi.themeWinamp, '🕹️ Classic (1998)');
 	assert.strictEqual(vi.themeDefault, '📱 Hiện đại');
 	assert.strictEqual(vi.themeWmp12, '💿 Vista Aero (2006)');
@@ -23,7 +23,7 @@ test('THEME_TRANSLATIONS dịch ngôn ngữ vi và en hoạt động chính xác
 	assert.strictEqual(vi.themeWinampName, 'Classic (1998)');
 	assert.strictEqual(vi.themeWmp12Name, 'Vista Aero (2006)');
 	assert.strictEqual(vi.winampTitle, 'WINAMP CỔ ĐIỂN');
-	assert.strictEqual(vi.voiceConfig, 'CẤU HÌNH GIỌNG ĐỌC');
+	assert.strictEqual(vi.voiceConfig, 'Cấu hình');
 	assert.strictEqual(vi.readCurrentPage, 'Đọc trang này thay thế');
 	assert.strictEqual(vi.readPage, 'Đọc trang hiện tại');
 	assert.strictEqual(vi.stopReading, 'Dừng đọc bài');
@@ -53,7 +53,7 @@ test('THEME_TRANSLATIONS dịch ngôn ngữ vi và en hoạt động chính xác
 	assert.strictEqual(vi.manualCheckpointUnavailable, 'Phiên đọc trong editor không còn khả dụng. Hãy bắt đầu lại.');
 	assert.strictEqual(vi.manualCheckpointFailed, 'Không thể tạm dừng đọc trong editor. Chưa bắt đầu đọc web.');
 
-	assert.strictEqual(en.selectTheme, 'Select Theme');
+	assert.strictEqual(en.selectTheme, 'Theme');
 	assert.strictEqual(en.themeWinamp, '🕹️ Classic (1998)');
 	assert.strictEqual(en.themeDefault, '📱 Modern');
 	assert.strictEqual(en.themeWmp12, '💿 Vista Aero (2006)');
@@ -61,7 +61,7 @@ test('THEME_TRANSLATIONS dịch ngôn ngữ vi và en hoạt động chính xác
 	assert.strictEqual(en.themeWinampName, 'Classic (1998)');
 	assert.strictEqual(en.themeWmp12Name, 'Vista Aero (2006)');
 	assert.strictEqual(en.winampTitle, 'WINAMP CLASSIC');
-	assert.strictEqual(en.voiceConfig, 'VOICE CONFIGURATION');
+	assert.strictEqual(en.voiceConfig, 'Configuration');
 	assert.strictEqual(en.readCurrentPage, 'Read this page instead');
 	assert.strictEqual(en.readPage, 'Read current page');
 	assert.strictEqual(en.stopReading, 'Stop reading');
