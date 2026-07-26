@@ -88,9 +88,11 @@ export const test = base.extend<{
 	openSidePanel: (page: Page) => Promise<void>;
 	getRecordedRequests: () => readonly RecordedRequest[];
 	browserLocale: string;
+	freshExtensionWorker: boolean;
 }>({
 	browserLocale: ['vi-VN', { option: true }],
-	context: async ({ browserLocale, headless }, use) => {
+	freshExtensionWorker: [false, { option: true }],
+	context: async ({ browserLocale, headless, freshExtensionWorker }, use) => {
 		const pathToExtension = path.join(process.cwd(), 'dist');
 		const tempDir = path.join(process.cwd(), '.tmp');
 		fs.mkdirSync(tempDir, { recursive: true });
@@ -105,6 +107,12 @@ export const test = base.extend<{
 			fs.cpSync(MODEL_CACHE_SEED_DIR, userDataDir, { recursive: true });
 			for (const lockFile of ['SingletonLock', 'SingletonCookie', 'SingletonSocket']) {
 				fs.rmSync(path.join(userDataDir, lockFile), { force: true });
+			}
+			if (freshExtensionWorker) {
+				// Keep the seeded model Cache Storage, but force this runtime test to register the
+				// current unpacked service-worker bundle instead of restoring the seed's old worker.
+				fs.rmSync(path.join(userDataDir, 'Default', 'Service Worker', 'ScriptCache'), { recursive: true, force: true });
+				fs.rmSync(path.join(userDataDir, 'Default', 'Service Worker', 'Database'), { recursive: true, force: true });
 			}
 		}
 

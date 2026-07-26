@@ -1,13 +1,20 @@
 import type { BrowserContext, Page, Worker } from '@playwright/test';
 
 import { tokenizeVietnameseText } from '../../src/offscreen/vietnamese/tokenizer';
+import { STORAGE_KEYS } from '../../src/shared/constants';
 import { expect, test } from './fixtures';
 
 const highlightRegistryName = 'readit-dev-word-highlight';
 
 type TestWordHighlightMessage =
 	| { action: 'WORD_HIGHLIGHT_SET_SELECTION_SCOPE'; sessionId: string; selectionText: string }
-	| { action: 'WORD_HIGHLIGHT_UPDATE'; sessionId: string; word: string; contentScope?: 'article' | 'selection' }
+	| {
+			action: 'WORD_HIGHLIGHT_INIT';
+			sessionId: string;
+			contentScope: 'article' | 'selection';
+			words: { text: string; globalIndex: number }[];
+	  }
+	| { action: 'WORD_HIGHLIGHT_UPDATE'; sessionId: string; wordIndex: number }
 	| { action: 'WORD_HIGHLIGHT_CLEAR'; sessionId: string };
 
 function findExtensionServiceWorker(context: BrowserContext): Worker {
@@ -48,6 +55,23 @@ async function sendWordHighlightMessage(serviceWorker: Worker, tabId: number, me
 	);
 }
 
+function highlightWords(words: readonly string[]): { text: string; globalIndex: number }[] {
+	return words.map((text, globalIndex) => ({ text, globalIndex }));
+}
+
+async function initializeWordHighlight(
+	serviceWorker: Worker,
+	tabId: number,
+	input: { sessionId: string; words: readonly string[]; contentScope?: 'article' | 'selection' },
+): Promise<void> {
+	await sendWordHighlightMessage(serviceWorker, tabId, {
+		action: 'WORD_HIGHLIGHT_INIT',
+		sessionId: input.sessionId,
+		contentScope: input.contentScope ?? 'article',
+		words: highlightWords(input.words),
+	});
+}
+
 async function selectElementContentsAndOpenContextMenu(page: Page, selector: string): Promise<void> {
 	await page.locator(selector).evaluate((element) => {
 		const range = document.createRange();
@@ -81,6 +105,10 @@ async function currentHighlightText(page: Page): Promise<string | null> {
 	}, highlightRegistryName);
 }
 
+async function hasCurrentHighlight(page: Page): Promise<boolean> {
+	return page.evaluate((name) => (CSS as unknown as { highlights: Map<string, unknown> }).highlights.has(name), highlightRegistryName);
+}
+
 test('highlights the current word as WORD_HIGHLIGHT_UPDATE messages arrive, and clears on WORD_HIGHLIGHT_CLEAR', async ({ context }) => {
 	const targetUrl = 'https://readit.test/word-highlight';
 	await context.route(targetUrl, (route) =>
@@ -97,10 +125,11 @@ test('highlights the current word as WORD_HIGHLIGHT_UPDATE messages arrive, and 
 	const serviceWorker = findExtensionServiceWorker(context);
 	const tabId = await getTabId(serviceWorker);
 
-	await sendWordHighlightMessage(serviceWorker, tabId, { action: 'WORD_HIGHLIGHT_UPDATE', sessionId: 'e2e-session', word: 'First' });
+	await initializeWordHighlight(serviceWorker, tabId, { sessionId: 'e2e-session', words: ['First', 'sentence'] });
+	await sendWordHighlightMessage(serviceWorker, tabId, { action: 'WORD_HIGHLIGHT_UPDATE', sessionId: 'e2e-session', wordIndex: 0 });
 	await expect.poll(() => currentHighlightText(page)).toBe('First');
 
-	await sendWordHighlightMessage(serviceWorker, tabId, { action: 'WORD_HIGHLIGHT_UPDATE', sessionId: 'e2e-session', word: 'sentence' });
+	await sendWordHighlightMessage(serviceWorker, tabId, { action: 'WORD_HIGHLIGHT_UPDATE', sessionId: 'e2e-session', wordIndex: 1 });
 	await expect.poll(() => currentHighlightText(page)).toBe('sentence');
 
 	await sendWordHighlightMessage(serviceWorker, tabId, { action: 'WORD_HIGHLIGHT_CLEAR', sessionId: 'e2e-session' });
@@ -111,7 +140,253 @@ test('highlights the current word as WORD_HIGHLIGHT_UPDATE messages arrive, and 
 		.toBe(false);
 });
 
-test('resolves a WORD_HIGHLIGHT_UPDATE round-trip quickly instead of stalling the message channel', async ({ context }) => {
+test('maps consecutive duplicate indexes to distinct precomputed ranges', async ({ context }) => {
+	const targetUrl = 'https://readit.test/word-highlight-indexed-duplicates';
+	await context.route(targetUrl, (route) =>
+		route.fulfill({
+			contentType: 'text/html; charset=utf-8',
+			body: '<!doctype html><html><body><article><p>very very</p></article></body></html>',
+		}),
+	);
+	const page = await context.newPage();
+	await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+
+	const serviceWorker = findExtensionServiceWorker(context);
+	const tabId = await getTabId(serviceWorker);
+	await sendWordHighlightMessage(serviceWorker, tabId, {
+		action: 'WORD_HIGHLIGHT_INIT',
+		sessionId: 'e2e-indexed-duplicates',
+		contentScope: 'article',
+		words: [
+			{ text: 'very', globalIndex: 0 },
+			{ text: 'very', globalIndex: 1 },
+		],
+	});
+	await sendWordHighlightMessage(serviceWorker, tabId, {
+		action: 'WORD_HIGHLIGHT_UPDATE',
+		sessionId: 'e2e-indexed-duplicates',
+		wordIndex: 1,
+	});
+
+	await expect
+		.poll(() =>
+			page.evaluate((name) => {
+				const highlight = (CSS as unknown as { highlights: Map<string, Iterable<Range>> }).highlights.get(name);
+				const [range] = highlight ? [...highlight] : [];
+				return range?.startOffset ?? null;
+			}, highlightRegistryName),
+		)
+		.toBe(5);
+});
+
+test('ignores an update that arrives before its session is initialized', async ({ context }) => {
+	const targetUrl = 'https://readit.test/word-highlight-before-init';
+	await context.route(targetUrl, (route) =>
+		route.fulfill({
+			contentType: 'text/html; charset=utf-8',
+			body: '<!doctype html><html><body><article><p>First word</p></article></body></html>',
+		}),
+	);
+	const page = await context.newPage();
+	await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+
+	const serviceWorker = findExtensionServiceWorker(context);
+	const tabId = await getTabId(serviceWorker);
+	await sendWordHighlightMessage(serviceWorker, tabId, {
+		action: 'WORD_HIGHLIGHT_UPDATE',
+		sessionId: 'e2e-before-init',
+		wordIndex: 0,
+	});
+
+	await expect.poll(() => hasCurrentHighlight(page)).toBe(false);
+});
+
+test('keeps a newer highlight when a stale session clear arrives', async ({ context }) => {
+	const targetUrl = 'https://readit.test/word-highlight-stale-clear';
+	await context.route(targetUrl, (route) =>
+		route.fulfill({
+			contentType: 'text/html; charset=utf-8',
+			body: '<!doctype html><html><body><article><p>Old New</p></article></body></html>',
+		}),
+	);
+	const page = await context.newPage();
+	await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+
+	const serviceWorker = findExtensionServiceWorker(context);
+	const tabId = await getTabId(serviceWorker);
+	await initializeWordHighlight(serviceWorker, tabId, { sessionId: 'e2e-old-session', words: ['Old'] });
+	await initializeWordHighlight(serviceWorker, tabId, { sessionId: 'e2e-new-session', words: ['New'] });
+	await sendWordHighlightMessage(serviceWorker, tabId, { action: 'WORD_HIGHLIGHT_UPDATE', sessionId: 'e2e-new-session', wordIndex: 0 });
+	await expect.poll(() => currentHighlightText(page)).toBe('New');
+
+	await sendWordHighlightMessage(serviceWorker, tabId, { action: 'WORD_HIGHLIGHT_CLEAR', sessionId: 'e2e-old-session' });
+	await expect.poll(() => currentHighlightText(page)).toBe('New');
+});
+
+test('fails closed for a selection init without a captured selection range', async ({ context }) => {
+	const targetUrl = 'https://readit.test/word-highlight-missing-selection-range';
+	await context.route(targetUrl, (route) =>
+		route.fulfill({
+			contentType: 'text/html; charset=utf-8',
+			body: '<!doctype html><html><body><article><p>The article must not be searched.</p></article></body></html>',
+		}),
+	);
+	const page = await context.newPage();
+	await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+
+	const serviceWorker = findExtensionServiceWorker(context);
+	const tabId = await getTabId(serviceWorker);
+	await initializeWordHighlight(serviceWorker, tabId, {
+		sessionId: 'e2e-missing-selection-range',
+		contentScope: 'selection',
+		words: ['The'],
+	});
+	await sendWordHighlightMessage(serviceWorker, tabId, {
+		action: 'WORD_HIGHLIGHT_UPDATE',
+		sessionId: 'e2e-missing-selection-range',
+		wordIndex: 0,
+	});
+
+	await expect.poll(() => hasCurrentHighlight(page)).toBe(false);
+});
+
+test('clears an invalidated precomputed range instead of rematching a later duplicate', async ({ context }) => {
+	const targetUrl = 'https://readit.test/word-highlight-invalidated-range';
+	await context.route(targetUrl, (route) =>
+		route.fulfill({
+			contentType: 'text/html; charset=utf-8',
+			body: '<!doctype html><html><body><article><p><span id="first">same</span> <span>same</span></p></article></body></html>',
+		}),
+	);
+	const page = await context.newPage();
+	await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+
+	const serviceWorker = findExtensionServiceWorker(context);
+	const tabId = await getTabId(serviceWorker);
+	await initializeWordHighlight(serviceWorker, tabId, { sessionId: 'e2e-invalidated-range', words: ['same', 'same'] });
+	await page.locator('#first').evaluate((element) => element.remove());
+	await sendWordHighlightMessage(serviceWorker, tabId, {
+		action: 'WORD_HIGHLIGHT_UPDATE',
+		sessionId: 'e2e-invalidated-range',
+		wordIndex: 0,
+	});
+
+	await expect.poll(() => hasCurrentHighlight(page)).toBe(false);
+});
+
+test('keeps painting while a visible article loses focus', async ({ context }) => {
+	const targetUrl = 'https://readit.test/word-highlight-focus';
+	await context.route(targetUrl, (route) =>
+		route.fulfill({
+			contentType: 'text/html; charset=utf-8',
+			body: '<!doctype html><html><body><article><p>First Second</p></article></body></html>',
+		}),
+	);
+	const page = await context.newPage();
+	await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+
+	const serviceWorker = findExtensionServiceWorker(context);
+	const tabId = await getTabId(serviceWorker);
+	await initializeWordHighlight(serviceWorker, tabId, { sessionId: 'e2e-focus', words: ['First', 'Second'] });
+	await sendWordHighlightMessage(serviceWorker, tabId, { action: 'WORD_HIGHLIGHT_UPDATE', sessionId: 'e2e-focus', wordIndex: 0 });
+	await expect.poll(() => currentHighlightText(page)).toBe('First');
+
+	const otherPage = await context.newPage();
+	await otherPage.goto('data:text/html,background', { waitUntil: 'domcontentloaded' });
+	await otherPage.bringToFront();
+	const cdpSession = await context.newCDPSession(page);
+	await cdpSession.send('Emulation.setFocusEmulationEnabled', { enabled: false });
+	await expect.poll(() => page.evaluate(() => document.visibilityState)).toBe('visible');
+	await expect.poll(() => page.evaluate(() => !document.hasFocus())).toBe(true);
+
+	await sendWordHighlightMessage(serviceWorker, tabId, { action: 'WORD_HIGHLIGHT_UPDATE', sessionId: 'e2e-focus', wordIndex: 1 });
+	await expect.poll(() => currentHighlightText(page)).toBe('Second');
+});
+
+test('scrolls only when the mapped range is outside the viewport', async ({ context }) => {
+	const targetUrl = 'https://readit.test/word-highlight-scroll';
+	await context.route(targetUrl, (route) =>
+		route.fulfill({
+			contentType: 'text/html; charset=utf-8',
+			body: '<!doctype html><html><body><article><p>Near</p><p style="margin-top: 3000px">Far</p></article></body></html>',
+		}),
+	);
+	const page = await context.newPage();
+	await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+	const serviceWorker = findExtensionServiceWorker(context);
+	const tabId = await getTabId(serviceWorker);
+	await initializeWordHighlight(serviceWorker, tabId, { sessionId: 'e2e-scroll', words: ['Near', 'Far'] });
+	await sendWordHighlightMessage(serviceWorker, tabId, { action: 'WORD_HIGHLIGHT_UPDATE', sessionId: 'e2e-scroll', wordIndex: 0 });
+	await expect.poll(() => currentHighlightText(page)).toBe('Near');
+	expect(await page.evaluate(() => window.scrollY)).toBe(0);
+
+	await sendWordHighlightMessage(serviceWorker, tabId, { action: 'WORD_HIGHLIGHT_UPDATE', sessionId: 'e2e-scroll', wordIndex: 1 });
+	await expect.poll(() => currentHighlightText(page)).toBe('Far');
+	expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+});
+
+test('scrolls a word above the viewport from within a tall paragraph into view', async ({ context }) => {
+	const targetUrl = 'https://readit.test/word-highlight-tall-paragraph';
+	const filler = Array.from({ length: 300 }, () => 'filler').join(' ');
+	await context.route(targetUrl, (route) =>
+		route.fulfill({
+			contentType: 'text/html; charset=utf-8',
+			body: `<!doctype html><html><head><style>body { margin: 0; } article { width: 280px; } p { font-size: 20px; line-height: 40px; }</style></head><body><article><p>Target ${filler}</p></article></body></html>`,
+		}),
+	);
+	const page = await context.newPage();
+	await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+	const serviceWorker = findExtensionServiceWorker(context);
+	const tabId = await getTabId(serviceWorker);
+	await initializeWordHighlight(serviceWorker, tabId, { sessionId: 'e2e-tall-paragraph', words: ['Target'] });
+	await page.evaluate(() => window.scrollTo(0, 900));
+	await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+
+	await sendWordHighlightMessage(serviceWorker, tabId, {
+		action: 'WORD_HIGHLIGHT_UPDATE',
+		sessionId: 'e2e-tall-paragraph',
+		wordIndex: 0,
+	});
+
+	await expect
+		.poll(() =>
+			page.evaluate((name) => {
+				const highlight = (CSS as unknown as { highlights: Map<string, Iterable<Range>> }).highlights.get(name);
+				const [range] = highlight ? [...highlight] : [];
+				if (!range) {
+					return false;
+				}
+				const rect = range.getBoundingClientRect();
+				return rect.top >= 0 && rect.bottom <= window.innerHeight;
+			}, highlightRegistryName),
+		)
+		.toBe(true);
+});
+
+test('reapplies the latest mapped range when highlighting is re-enabled', async ({ context }) => {
+	const targetUrl = 'https://readit.test/word-highlight-setting';
+	await context.route(targetUrl, (route) =>
+		route.fulfill({
+			contentType: 'text/html; charset=utf-8',
+			body: '<!doctype html><html><body><article><p>First</p></article></body></html>',
+		}),
+	);
+	const page = await context.newPage();
+	await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+
+	const serviceWorker = findExtensionServiceWorker(context);
+	const tabId = await getTabId(serviceWorker);
+	await initializeWordHighlight(serviceWorker, tabId, { sessionId: 'e2e-setting', words: ['First'] });
+	await sendWordHighlightMessage(serviceWorker, tabId, { action: 'WORD_HIGHLIGHT_UPDATE', sessionId: 'e2e-setting', wordIndex: 0 });
+	await expect.poll(() => currentHighlightText(page)).toBe('First');
+
+	await serviceWorker.evaluate((key) => chrome.storage.local.set({ [key]: false }), STORAGE_KEYS.WORD_HIGHLIGHT_ENABLED);
+	await expect.poll(() => hasCurrentHighlight(page)).toBe(false);
+	await serviceWorker.evaluate((key) => chrome.storage.local.set({ [key]: true }), STORAGE_KEYS.WORD_HIGHLIGHT_ENABLED);
+	await expect.poll(() => currentHighlightText(page)).toBe('First');
+});
+
+test('resolves a WORD_HIGHLIGHT_INIT round-trip quickly instead of stalling the message channel', async ({ context }) => {
 	const targetUrl = 'https://readit.test/word-highlight-latency';
 	await context.route(targetUrl, (route) =>
 		route.fulfill({
@@ -127,20 +402,26 @@ test('resolves a WORD_HIGHLIGHT_UPDATE round-trip quickly instead of stalling th
 	const serviceWorker = findExtensionServiceWorker(context);
 	const tabId = await getTabId(serviceWorker);
 
-	// Regression guard for the message-channel hang: content_script.ts's onMessage listener
-	// must not return `true` for actions it doesn't handle, or Chrome keeps this channel open
-	// for ~30s per message. Awaiting the response directly (racing a short timeout) turns that
-	// class of regression into an immediate, unambiguous failure instead of a 30s test timeout.
+	// The background treats this response as the initialization barrier. A missing response used
+	// to resolve as undefined, which made offscreen disable every later word update.
 	const resolvedInTime = await serviceWorker.evaluate(
 		async ({ id, msg }) => {
 			const timeout = new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 2000));
-			const response = chrome.tabs.sendMessage(id, msg).then(() => 'resolved' as const);
+			const response = chrome.tabs.sendMessage(id, msg);
 			return Promise.race([response, timeout]);
 		},
-		{ id: tabId, msg: { action: 'WORD_HIGHLIGHT_UPDATE', sessionId: 'e2e-latency', word: 'Quick' } },
+		{
+			id: tabId,
+			msg: {
+				action: 'WORD_HIGHLIGHT_INIT',
+				sessionId: 'e2e-latency',
+				contentScope: 'article',
+				words: [{ text: 'Quick', globalIndex: 0 }],
+			},
+		},
 	);
 
-	expect(resolvedInTime).toBe('resolved');
+	expect(resolvedInTime).toEqual({ success: true });
 });
 
 test('advances past a repeated word instead of matching the same earlier occurrence again', async ({ context }) => {
@@ -159,8 +440,10 @@ test('advances past a repeated word instead of matching the same earlier occurre
 	const serviceWorker = findExtensionServiceWorker(context);
 	const tabId = await getTabId(serviceWorker);
 
-	for (const word of ['The', 'cat', 'sat', 'on', 'the']) {
-		await sendWordHighlightMessage(serviceWorker, tabId, { action: 'WORD_HIGHLIGHT_UPDATE', sessionId: 'e2e-repeat', word });
+	const words = ['The', 'cat', 'sat', 'on', 'the'];
+	await initializeWordHighlight(serviceWorker, tabId, { sessionId: 'e2e-repeat', words });
+	for (const wordIndex of words.keys()) {
+		await sendWordHighlightMessage(serviceWorker, tabId, { action: 'WORD_HIGHLIGHT_UPDATE', sessionId: 'e2e-repeat', wordIndex });
 	}
 
 	await expect
@@ -214,12 +497,8 @@ test('anchors to the selected passage instead of an earlier occurrence of the sa
 		throw new Error('Selected-text playback session was not created.');
 	}
 
-	await sendWordHighlightMessage(serviceWorker, tabId, {
-		action: 'WORD_HIGHLIGHT_UPDATE',
-		sessionId,
-		word: 'The',
-		contentScope: 'selection',
-	});
+	await initializeWordHighlight(serviceWorker, tabId, { sessionId, contentScope: 'selection', words: ['The'] });
+	await sendWordHighlightMessage(serviceWorker, tabId, { action: 'WORD_HIGHLIGHT_UPDATE', sessionId, wordIndex: 0 });
 
 	await expect
 		.poll(() =>
@@ -260,12 +539,13 @@ test('keeps context-menu selected-text highlights inside the exact selected rang
 		selectionText: 'Ông Trần Minh Khoa cho biết đơn vị hỗ trợ.',
 	});
 
-	for (const word of ['Ông', 'Trần', 'Minh', 'Khoa']) {
+	const words = ['Ông', 'Trần', 'Minh', 'Khoa'];
+	await initializeWordHighlight(serviceWorker, tabId, { sessionId, contentScope: 'selection', words });
+	for (const wordIndex of words.keys()) {
 		await sendWordHighlightMessage(serviceWorker, tabId, {
 			action: 'WORD_HIGHLIGHT_UPDATE',
 			sessionId,
-			word,
-			contentScope: 'selection',
+			wordIndex,
 		});
 		await expect
 			.poll(() =>
@@ -300,20 +580,11 @@ test('clears instead of matching a word after the selected range', async ({ cont
 		sessionId,
 		selectionText: 'Selected words.',
 	});
-	await sendWordHighlightMessage(serviceWorker, tabId, {
-		action: 'WORD_HIGHLIGHT_UPDATE',
-		sessionId,
-		word: 'Selected',
-		contentScope: 'selection',
-	});
+	await initializeWordHighlight(serviceWorker, tabId, { sessionId, contentScope: 'selection', words: ['Selected', 'Outside'] });
+	await sendWordHighlightMessage(serviceWorker, tabId, { action: 'WORD_HIGHLIGHT_UPDATE', sessionId, wordIndex: 0 });
 	await expect.poll(() => currentHighlightText(page)).toBe('Selected');
 
-	await sendWordHighlightMessage(serviceWorker, tabId, {
-		action: 'WORD_HIGHLIGHT_UPDATE',
-		sessionId,
-		word: 'Outside',
-		contentScope: 'selection',
-	});
+	await sendWordHighlightMessage(serviceWorker, tabId, { action: 'WORD_HIGHLIGHT_UPDATE', sessionId, wordIndex: 1 });
 	await expect.poll(() => currentHighlightText(page)).toBeNull();
 });
 
@@ -336,10 +607,14 @@ test('matches the target word against the DOM text regardless of NFC/NFD Unicode
 
 	// The TTS pipeline always sends NFC-normalized words (see vietnamese/tokenizer.ts), while this
 	// page's own text is NFD — the content script must match across the Unicode form difference.
+	await initializeWordHighlight(serviceWorker, tabId, {
+		sessionId: 'e2e-unicode-form',
+		words: ['Việt'.normalize('NFC')],
+	});
 	await sendWordHighlightMessage(serviceWorker, tabId, {
 		action: 'WORD_HIGHLIGHT_UPDATE',
 		sessionId: 'e2e-unicode-form',
-		word: 'Việt'.normalize('NFC'),
+		wordIndex: 0,
 	});
 
 	await expect
@@ -379,10 +654,11 @@ test('finds words inside the article even when an outer layout wrapper coinciden
 	const serviceWorker = findExtensionServiceWorker(context);
 	const tabId = await getTabId(serviceWorker);
 
+	await initializeWordHighlight(serviceWorker, tabId, { sessionId: 'e2e-noise-false-positive', words: ['Tin'] });
 	await sendWordHighlightMessage(serviceWorker, tabId, {
 		action: 'WORD_HIGHLIGHT_UPDATE',
 		sessionId: 'e2e-noise-false-positive',
-		word: 'Tin',
+		wordIndex: 0,
 	});
 
 	await expect.poll(() => currentHighlightText(page)).toBe('Tin');
@@ -406,10 +682,11 @@ test('does not match a short word inside a longer unrelated word (no word-bounda
 	const serviceWorker = findExtensionServiceWorker(context);
 	const tabId = await getTabId(serviceWorker);
 
+	await initializeWordHighlight(serviceWorker, tabId, { sessionId: 'e2e-substring-boundary', words: ['an'] });
 	await sendWordHighlightMessage(serviceWorker, tabId, {
 		action: 'WORD_HIGHLIGHT_UPDATE',
 		sessionId: 'e2e-substring-boundary',
-		word: 'an',
+		wordIndex: 0,
 	});
 
 	await expect
@@ -451,11 +728,13 @@ test('a punctuation search target does not skip ahead past real words to reach a
 	const serviceWorker = findExtensionServiceWorker(context);
 	const tabId = await getTabId(serviceWorker);
 
-	for (const word of ['Canô', 'lật', 'úp', ',', 'số']) {
+	const words = ['Canô', 'lật', 'úp', ',', 'số'];
+	await initializeWordHighlight(serviceWorker, tabId, { sessionId: 'e2e-punctuation-target', words });
+	for (const wordIndex of words.keys()) {
 		await sendWordHighlightMessage(serviceWorker, tabId, {
 			action: 'WORD_HIGHLIGHT_UPDATE',
 			sessionId: 'e2e-punctuation-target',
-			word,
+			wordIndex,
 		});
 	}
 
@@ -482,8 +761,10 @@ test('recovers after a word split across inline markup instead of staying stuck 
 
 	// "học" is split across the <a> boundary ("họ" + "c phí nhanh") so it can never match as a
 	// single substring — this must not permanently disable highlighting for the words after it.
-	for (const word of ['Tăng', 'học', 'phí', 'nhanh']) {
-		await sendWordHighlightMessage(serviceWorker, tabId, { action: 'WORD_HIGHLIGHT_UPDATE', sessionId: 'e2e-split-word', word });
+	const words = ['Tăng', 'học', 'phí', 'nhanh'];
+	await initializeWordHighlight(serviceWorker, tabId, { sessionId: 'e2e-split-word', words });
+	for (const wordIndex of words.keys()) {
+		await sendWordHighlightMessage(serviceWorker, tabId, { action: 'WORD_HIGHLIGHT_UPDATE', sessionId: 'e2e-split-word', wordIndex });
 	}
 
 	await expect.poll(() => currentHighlightText(page)).toBe('nhanh');
@@ -534,8 +815,9 @@ test('highlights every real word of a realistic multi-paragraph Vietnamese artic
 	const serviceWorker = findExtensionServiceWorker(context);
 	const tabId = await getTabId(serviceWorker);
 
-	for (const word of words) {
-		await sendWordHighlightMessage(serviceWorker, tabId, { action: 'WORD_HIGHLIGHT_UPDATE', sessionId: 'e2e-full-article', word });
+	await initializeWordHighlight(serviceWorker, tabId, { sessionId: 'e2e-full-article', words });
+	for (const [wordIndex, word] of words.entries()) {
+		await sendWordHighlightMessage(serviceWorker, tabId, { action: 'WORD_HIGHLIGHT_UPDATE', sessionId: 'e2e-full-article', wordIndex });
 		// Poll after every single word, not just the last one — a miss that happens to leave the
 		// highlight on a plausible-looking earlier word would otherwise go unnoticed until a much
 		// later assertion, if ever.

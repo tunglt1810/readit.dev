@@ -1,5 +1,11 @@
 import { STORAGE_KEYS } from '../shared/constants';
-import { isWordHighlightEnabled, WORD_HIGHLIGHT_NAME } from '../shared/word_highlight';
+import {
+	isWordHighlightEnabled,
+	isWordHighlightInitMessage,
+	isWordHighlightUpdateMessage,
+	WORD_HIGHLIGHT_NAME,
+	type WordHighlightWord,
+} from '../shared/word_highlight';
 import { findSemanticRoot, isWithinNoiseRegion } from './article_extractor';
 import {
 	activatePendingSelectionScope,
@@ -7,13 +13,6 @@ import {
 	clearActiveSelectionScope,
 	getActiveSelectionRange,
 } from './reading_anchor';
-
-interface WalkerCursor {
-	walker: TreeWalker;
-	node: Text | null;
-	offset: number;
-	scopeRange: Range | null;
-}
 
 function createWalker(root: Node): TreeWalker {
 	return document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
@@ -43,34 +42,10 @@ function resolveWalkerRoot(startRange: Range | null): Node {
 	return articleRoot;
 }
 
-function createCursor(startRange: Range | null): WalkerCursor {
-	const walker = createWalker(resolveWalkerRoot(startRange));
-	let node = walker.nextNode() as Text | null;
-	if (startRange) {
-		// Skip every text node that lies entirely before the selection's start point, so the
-		// cursor anchors at the real selection start — not just "the first matching word
-		// anywhere in the selection's container", which could wrongly match an earlier,
-		// unrelated occurrence of the same word earlier on the page.
-		while (node) {
-			try {
-				if (startRange.comparePoint(node, node.textContent?.length ?? 0) >= 0) {
-					break;
-				}
-			} catch {
-				// Not comparable to the range (e.g. different root) — treat this node as the start.
-				break;
-			}
-			node = walker.nextNode() as Text | null;
-		}
-	}
-	const offset = startRange && node === startRange.startContainer ? startRange.startOffset : 0;
-	return { walker, node, offset, scopeRange: startRange };
-}
-
-// A single failed word-search must never permanently exhaust the shared cursor's TreeWalker —
-// otherwise one mismatch (Unicode form, a word split across inline markup, ...) would silently
-// disable highlighting for the rest of the reading session. Bound how many text nodes a single
-// search is allowed to consume before giving up, so later words can still be found.
+// A single failed word-search must not consume the map-building cursor — otherwise one mismatch
+// (Unicode form, a word split across inline markup, ...) would silently disable highlighting for
+// the rest of the reading session. Bound the work for each map entry, then restore the cursor when
+// an entry cannot be found so later words can still be mapped.
 const MAX_NODES_SCANNED_PER_WORD = 40;
 
 // The spoken word (from the TTS pipeline) is always NFC-normalized (see vietnamese/tokenizer.ts
@@ -131,62 +106,13 @@ function selectionSearchBounds(range: Range, node: Text, cursorOffset: number): 
 	}
 }
 
-function findNextWordRange(cursor: WalkerCursor, word: string): Range | null {
-	const variants = wordVariants(word);
-	if (variants.length === 0 || !cursor.node) {
-		return null;
-	}
-	// Remember where the search started so a miss can roll the cursor back to it below — otherwise
-	// a word that isn't found anywhere forward would strand later, perfectly findable words behind
-	// nodes this failed search already walked past.
-	const startNode = cursor.node;
-	const startOffset = cursor.offset;
-	let nodesScanned = 0;
-	while (cursor.node && nodesScanned < MAX_NODES_SCANNED_PER_WORD) {
-		const searchText = (cursor.node.textContent ?? '').toLocaleLowerCase();
-		let searchStart = cursor.offset;
-		let searchEnd = searchText.length;
-		if (cursor.scopeRange) {
-			const bounds = selectionSearchBounds(cursor.scopeRange, cursor.node, cursor.offset);
-			if (bounds === 'after') {
-				cursor.walker.currentNode = startNode;
-				cursor.node = startNode;
-				cursor.offset = startOffset;
-				return null;
-			}
-			if (bounds === null) {
-				cursor.node = cursor.walker.nextNode() as Text | null;
-				cursor.offset = 0;
-				nodesScanned++;
-				continue;
-			}
-			searchStart = bounds.start;
-			searchEnd = bounds.end;
-		}
-		for (const variant of variants) {
-			const matchIndex = findWordBoundaryMatch(searchText, variant, searchStart);
-			if (matchIndex === -1 || matchIndex + variant.length > searchEnd) {
-				continue;
-			}
-			const range = document.createRange();
-			range.setStart(cursor.node, matchIndex);
-			range.setEnd(cursor.node, matchIndex + variant.length);
-			cursor.offset = matchIndex + variant.length;
-			return range;
-		}
-		cursor.node = cursor.walker.nextNode() as Text | null;
-		cursor.offset = 0;
-		nodesScanned++;
-	}
-	cursor.walker.currentNode = startNode;
-	cursor.node = startNode;
-	cursor.offset = startOffset;
-	return null;
-}
+type MappedWordRange = { range: Range; variants: readonly string[] };
 
-let cursor: WalkerCursor | null = null;
+let wordRanges: Map<number, MappedWordRange> | null = null;
+let currentWordIndex = -1;
 let currentSessionId: string | null = null;
 let enabled = true;
+let visualUpdatesAllowed = document.visibilityState === 'visible';
 let styleInjected = false;
 
 function ensureStyleInjected(): void {
@@ -204,27 +130,140 @@ function clearHighlight(): void {
 	CSS.highlights?.delete(WORD_HIGHLIGHT_NAME);
 }
 
-function applyWordHighlight(word: string, contentScope: 'article' | 'selection'): void {
-	if (!enabled) {
+function disposeCurrentHighlightSession(): void {
+	if (currentSessionId) {
+		clearActiveSelectionScope(currentSessionId);
+	}
+	currentSessionId = null;
+	wordRanges = null;
+	currentWordIndex = -1;
+	clearHighlight();
+}
+
+function isMappedRangeUsable(mapped: MappedWordRange): boolean {
+	const { range } = mapped;
+	if (!range.startContainer.isConnected || !range.endContainer.isConnected || range.collapsed) {
+		return false;
+	}
+	return wordVariants(range.toString()).some((variant) => mapped.variants.includes(variant));
+}
+
+function precomputeWordRanges(words: readonly WordHighlightWord[], scopeRange: Range | null): Map<number, MappedWordRange> {
+	const ranges = new Map<number, MappedWordRange>();
+	const walker = createWalker(resolveWalkerRoot(scopeRange));
+	let node = walker.nextNode() as Text | null;
+	let offset = 0;
+
+	if (scopeRange) {
+		while (node) {
+			try {
+				if (scopeRange.comparePoint(node, node.textContent?.length ?? 0) >= 0) {
+					break;
+				}
+			} catch {
+				break;
+			}
+			node = walker.nextNode() as Text | null;
+		}
+		if (node === scopeRange.startContainer) {
+			offset = scopeRange.startOffset;
+		}
+	}
+
+	for (const { text, globalIndex } of words) {
+		const startNode = node;
+		const startOffset = offset;
+		const variants = wordVariants(text);
+		let found = false;
+		let nodesScanned = 0;
+		while (node && variants.length > 0 && nodesScanned < MAX_NODES_SCANNED_PER_WORD && !found) {
+			const searchText = (node.textContent ?? '').toLocaleLowerCase();
+			let searchStart = offset;
+			let searchEnd = searchText.length;
+			if (scopeRange) {
+				const bounds = selectionSearchBounds(scopeRange, node, offset);
+				if (bounds === 'after') {
+					node = null;
+					break;
+				}
+				if (bounds === null) {
+					node = walker.nextNode() as Text | null;
+					offset = 0;
+					nodesScanned++;
+					continue;
+				}
+				searchStart = bounds.start;
+				searchEnd = bounds.end;
+			}
+			for (const variant of variants) {
+				const matchIndex = findWordBoundaryMatch(searchText, variant, searchStart);
+				if (matchIndex === -1 || matchIndex + variant.length > searchEnd) {
+					continue;
+				}
+				const range = document.createRange();
+				range.setStart(node, matchIndex);
+				range.setEnd(node, matchIndex + variant.length);
+				ranges.set(globalIndex, { range, variants });
+				offset = matchIndex + variant.length;
+				found = true;
+				break;
+			}
+			if (!found) {
+				node = walker.nextNode() as Text | null;
+				offset = 0;
+				nodesScanned++;
+			}
+		}
+		if (!found && startNode) {
+			walker.currentNode = startNode;
+			node = startNode;
+			offset = startOffset;
+		}
+	}
+
+	return ranges;
+}
+
+function scrollIntoViewIfNeeded(range: Range): void {
+	const rect = range.getBoundingClientRect();
+	if (rect.top < 0) {
+		// A tall paragraph can still intersect the viewport while its current word is above it.
+		// scrollIntoView({ block: 'nearest' }) then leaves the paragraph in place, so position the
+		// range itself below the top edge instead.
+		window.scrollBy({ top: rect.top - window.innerHeight * 0.2, behavior: 'auto' });
 		return;
 	}
-	if (!cursor) {
-		const selectionRange = contentScope === 'selection' && currentSessionId ? getActiveSelectionRange(currentSessionId) : undefined;
-		if (contentScope === 'selection' && !selectionRange) {
-			clearHighlight();
-			return;
-		}
-		cursor = createCursor(selectionRange ?? null);
+	if (rect.bottom > window.innerHeight || rect.right < 0 || rect.left > window.innerWidth) {
+		range.startContainer.parentElement?.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'nearest' });
 	}
-	const range = findNextWordRange(cursor, word);
-	if (!range) {
-		if (contentScope === 'selection') {
-			clearHighlight();
-		}
+}
+
+function applyHighlightForIndex(wordIndex: number): void {
+	const mapped = wordRanges?.get(wordIndex);
+	if (!mapped || !isMappedRangeUsable(mapped)) {
+		wordRanges?.delete(wordIndex);
+		clearHighlight();
 		return;
 	}
 	ensureStyleInjected();
-	CSS.highlights?.set(WORD_HIGHLIGHT_NAME, new Highlight(range));
+	CSS.highlights?.set(WORD_HIGHLIGHT_NAME, new Highlight(mapped.range));
+	scrollIntoViewIfNeeded(mapped.range);
+}
+
+function handleHighlightUpdate(wordIndex: number): void {
+	currentWordIndex = wordIndex;
+	if (enabled && visualUpdatesAllowed && wordRanges) {
+		applyHighlightForIndex(wordIndex);
+	}
+}
+
+function updateVisualUpdatePermission(): void {
+	visualUpdatesAllowed = document.visibilityState === 'visible';
+	if (visualUpdatesAllowed && enabled && currentWordIndex >= 0) {
+		applyHighlightForIndex(currentWordIndex);
+	} else if (!visualUpdatesAllowed) {
+		clearHighlight();
+	}
 }
 
 export function installWordHighlight(): void {
@@ -245,38 +284,50 @@ export function installWordHighlight(): void {
 		true,
 	);
 
-	chrome.runtime.onMessage.addListener((message: unknown) => {
-		const msg = message as { action?: string; sessionId?: string; word?: string; contentScope?: string; selectionText?: string };
+	chrome.runtime.onMessage.addListener((message: unknown, _sender: chrome.runtime.MessageSender, sendResponse: (response?: unknown) => void) => {
+		const msg = message as { action?: string; sessionId?: string; selectionText?: string };
 		if (
 			msg.action === 'WORD_HIGHLIGHT_SET_SELECTION_SCOPE' &&
 			typeof msg.sessionId === 'string' &&
 			typeof msg.selectionText === 'string'
 		) {
 			if (currentSessionId && currentSessionId !== msg.sessionId) {
-				clearActiveSelectionScope(currentSessionId);
+				disposeCurrentHighlightSession();
 			}
 			currentSessionId = msg.sessionId;
-			cursor = null;
+			wordRanges = null;
+			currentWordIndex = -1;
 			activatePendingSelectionScope(msg.sessionId, msg.selectionText);
 			clearHighlight();
-		} else if (msg.action === 'WORD_HIGHLIGHT_UPDATE' && typeof msg.word === 'string') {
-			if (msg.sessionId !== currentSessionId) {
-				if (currentSessionId) {
-					clearActiveSelectionScope(currentSessionId);
-				}
-				currentSessionId = msg.sessionId ?? null;
-				cursor = null;
+		} else if (isWordHighlightInitMessage(message)) {
+			if (currentSessionId !== message.sessionId) {
+				disposeCurrentHighlightSession();
+				currentSessionId = message.sessionId;
+			} else {
+				wordRanges = null;
+				currentWordIndex = -1;
+				clearHighlight();
 			}
-			applyWordHighlight(msg.word, msg.contentScope === 'selection' ? 'selection' : 'article');
+			const selectionRange = message.contentScope === 'selection' ? getActiveSelectionRange(message.sessionId) : null;
+			wordRanges =
+				message.contentScope === 'selection' && !selectionRange
+					? new Map()
+					: precomputeWordRanges(message.words, selectionRange ?? null);
+			sendResponse({ success: true });
+		} else if (isWordHighlightUpdateMessage(message)) {
+			if (message.sessionId !== currentSessionId || !wordRanges) {
+				return;
+			}
+			handleHighlightUpdate(message.wordIndex);
 		} else if (msg.action === 'WORD_HIGHLIGHT_CLEAR' && typeof msg.sessionId === 'string') {
 			clearActiveSelectionScope(msg.sessionId);
 			if (msg.sessionId === currentSessionId) {
-				currentSessionId = null;
-				cursor = null;
-				clearHighlight();
+				disposeCurrentHighlightSession();
 			}
 		}
 	});
+
+	document.addEventListener('visibilitychange', updateVisualUpdatePermission);
 
 	chrome.storage.onChanged.addListener((changes, areaName) => {
 		if (areaName !== 'local' || !(STORAGE_KEYS.WORD_HIGHLIGHT_ENABLED in changes)) {
@@ -285,10 +336,15 @@ export function installWordHighlight(): void {
 		enabled = isWordHighlightEnabled(changes[STORAGE_KEYS.WORD_HIGHLIGHT_ENABLED].newValue);
 		if (!enabled) {
 			clearHighlight();
+		} else if (visualUpdatesAllowed && currentWordIndex >= 0) {
+			applyHighlightForIndex(currentWordIndex);
 		}
 	});
 
 	void chrome.storage.local.get(STORAGE_KEYS.WORD_HIGHLIGHT_ENABLED).then((stored) => {
 		enabled = isWordHighlightEnabled(stored[STORAGE_KEYS.WORD_HIGHLIGHT_ENABLED]);
+		if (enabled && visualUpdatesAllowed && currentWordIndex >= 0) {
+			applyHighlightForIndex(currentWordIndex);
+		}
 	});
 }

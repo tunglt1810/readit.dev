@@ -141,7 +141,7 @@ export default function App() {
 	const sessionHost = tabSource ? getHost(tabSource.url) : '';
 	const manifest = chrome.runtime.getManifest();
 	const displayVersion = manifest.version_name ?? manifest.version;
-	const feedbackUrl = buildFeedbackUrl(manifest.version);
+	const feedbackUrl = buildFeedbackUrl(displayVersion);
 
 
 	// Fetch initial states on mount

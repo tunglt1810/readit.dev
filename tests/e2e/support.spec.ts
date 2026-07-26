@@ -1,14 +1,4 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
 import { expect, installPopupRuntimeMock, test } from './fixtures';
-
-// package.json's version is the source of truth (see rsbuild.config.ts's manifest-version-sync
-// plugin, which copies it into dist/manifest.json at build time) — read it dynamically instead of
-// hardcoding a version string that goes stale on every version bump.
-const packageJsonPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../package.json');
-const expectedVersion = `v${(JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8')) as { version: string }).version}`;
 
 test.use({ browserLocale: 'en-US' });
 
@@ -30,6 +20,10 @@ test('shows privacy-safe support links and the exact extension version', async (
 		currentTabId: 7,
 	});
 	await openPopup(page);
+	const expectedVersion = await page.evaluate(() => {
+		const manifest = chrome.runtime.getManifest();
+		return `v${manifest.version_name ?? manifest.version}`;
+	});
 
 	const feedback = page.getByRole('link', { name: 'Feedback' });
 	await expect(feedback).toHaveAttribute('target', '_blank');

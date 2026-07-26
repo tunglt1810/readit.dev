@@ -1,6 +1,10 @@
 import { MODEL_FILES, VOICE_STYLES } from '../shared/constants';
 import { isPanelInstanceId } from '../shared/manual_playback';
 import type { PlaybackContent, PlaybackProgress, PlaybackStatus } from '../shared/types';
+import {
+	buildWordHighlightWords,
+	type WordHighlightContentScope,
+} from '../shared/word_highlight';
 import { createSpeechAudioBuffer, synthesizeSpeechUnitSamples } from './audio';
 import { captureManualCheckpoint, isCheckpointOwner, type ManualCheckpoint, resumeOffsetSeconds } from './manual_checkpoint';
 import { METRICS_STORAGE_KEY, PlaybackMetricsRecorder, summarizePlaybackMetrics } from './playback_metrics';
@@ -39,6 +43,7 @@ let currentPlaybackLanguage: string | null = null;
 let currentPlaybackStyle: Style | null = null;
 let currentVoiceStyleId = '';
 let currentWordIndex = -1;
+let currentHighlightContentScope: WordHighlightContentScope | null = null;
 
 type PendingManualPlayback = {
 	sessionId: string;
@@ -79,7 +84,7 @@ initStorage();
 const playbackMetrics = new PlaybackMetricsRecorder();
 
 /**
- * Persist the playback numbers where they can be read from outside this document:
+ * Persist the Phase 0 baseline numbers where they can be read from outside this document:
  * E2E drives the extension through the service worker and cannot reach the offscreen page.
  *
  * Called after each unit starts (not only at the end of the article) so the numbers are
@@ -283,20 +288,29 @@ function stopCurrentSource() {
 }
 
 let wordHighlightTimer: ReturnType<typeof setInterval> | null = null;
-let lastHighlightedWord: string | null = null;
+let lastHighlightedWordIndex = -1;
 let lastHighlightedManualWordIndex = -1;
+let genericHighlightReady = false;
 
-function clearWordHighlightTracking() {
+function isWordHighlightContentScope(value: unknown): value is WordHighlightContentScope {
+	return value === 'article' || value === 'selection';
+}
+
+function resetHighlightTimer() {
 	if (wordHighlightTimer !== null) {
 		clearInterval(wordHighlightTimer);
 		wordHighlightTimer = null;
 	}
-	const hadGenericHighlight = lastHighlightedWord !== null;
-	lastHighlightedWord = null;
+	lastHighlightedWordIndex = -1;
 	lastHighlightedManualWordIndex = -1;
-	if (hadGenericHighlight) {
-		chrome.runtime.sendMessage({ action: 'WORD_HIGHLIGHT_CLEAR', sessionId: currentExtensionSessionId });
+}
+
+function clearWordHighlightTracking() {
+	resetHighlightTimer();
+	if (genericHighlightReady && currentExtensionSessionId) {
+		void chrome.runtime.sendMessage({ action: 'WORD_HIGHLIGHT_CLEAR', sessionId: currentExtensionSessionId }).catch(() => undefined);
 	}
+	genericHighlightReady = false;
 }
 
 function wordIndexBase(unitIndex: number): number {
@@ -304,7 +318,7 @@ function wordIndexBase(unitIndex: number): number {
 }
 
 function startWordHighlightTracking(windows: WordTimingWindow[], unitStartTime: number, offsetSec: number, unitIndex: number) {
-	clearWordHighlightTracking();
+	resetHighlightTimer();
 	if (windows.length === 0 || !audioCtx) {
 		return;
 	}
@@ -335,10 +349,13 @@ function startWordHighlightTracking(windows: WordTimingWindow[], unitStartTime: 
 			});
 			return;
 		}
-		if (wordTiming.text !== lastHighlightedWord) {
-			lastHighlightedWord = wordTiming.text;
-			chrome.runtime.sendMessage({ action: 'WORD_HIGHLIGHT_UPDATE', sessionId: currentExtensionSessionId, word: wordTiming.text });
+		if (!genericHighlightReady || !currentExtensionSessionId || wordIndex === lastHighlightedWordIndex) {
+			return;
 		}
+		lastHighlightedWordIndex = wordIndex;
+		void chrome.runtime
+			.sendMessage({ action: 'WORD_HIGHLIGHT_UPDATE', sessionId: currentExtensionSessionId, wordIndex })
+			.catch(() => undefined);
 	}, 50);
 }
 
@@ -358,6 +375,7 @@ function stopAudio() {
 	currentBufferStartedAt = 0;
 	currentBufferOffsetSec = 0;
 	currentManualPanelInstanceId = null;
+	currentHighlightContentScope = null;
 	currentPlaybackLanguage = null;
 	currentPlaybackStyle = null;
 	currentVoiceStyleId = '';
@@ -566,8 +584,6 @@ function checkpointManual(payload: unknown): { success: boolean; checkpoint?: Re
 		return { success: false };
 	}
 
-	// Capturing a checkpoint stops playback, so the pending boundary is not a gap either.
-	playbackMetrics.discardPendingTransition();
 	const bufferDurationSec = currentBuffer?.duration ?? 0;
 	const checkpoint = captureManualCheckpoint({
 		sessionId: input.sessionId,
@@ -590,6 +606,7 @@ function checkpointManual(payload: unknown): { success: boolean; checkpoint?: Re
 
 	stopCurrentSource();
 	clearWordHighlightTracking();
+	playbackMetrics.discardPendingTransition();
 	playbackSession++;
 	isPaused = false;
 	playbackStatus = 'stopped';
@@ -701,6 +718,7 @@ chrome.runtime.onMessage.addListener(
 						voiceStyleId: string;
 						speed: number;
 						panelInstanceId?: unknown;
+						contentScope?: unknown;
 					};
 					const { article, voiceStyleId, speed } = data;
 					if (data.panelInstanceId !== undefined && !isPanelInstanceId(data.panelInstanceId)) {
@@ -709,10 +727,12 @@ chrome.runtime.onMessage.addListener(
 					}
 					const session = ++playbackSession;
 					stopAudio();
-					// After stopAudio, which flushes the previous run: this starts a fresh one.
-					playbackMetrics.markPlayRequested(performance.now());
 					currentExtensionSessionId = sessionId;
 					currentManualPanelInstanceId = data.panelInstanceId ?? null;
+					currentHighlightContentScope =
+						currentManualPanelInstanceId === null && isWordHighlightContentScope(data.contentScope)
+							? data.contentScope
+							: null;
 					currentPlaybackLanguage = article.lang;
 					currentVoiceStyleId = voiceStyleId;
 					currentWordIndex = -1;
@@ -727,6 +747,7 @@ chrome.runtime.onMessage.addListener(
 						};
 					}
 					currentSpeed = speed;
+					playbackMetrics.markPlayRequested(performance.now());
 					reportProgress('loading');
 
 					(async () => {
@@ -752,6 +773,32 @@ chrome.runtime.onMessage.addListener(
 
 							if (speechUnits.length === 0) {
 								sendResponse({ success: false, error: 'No readable text content found.' });
+								return;
+							}
+
+							const highlightContentScope = currentHighlightContentScope;
+							const words = highlightContentScope ? buildWordHighlightWords(speechUnits) : [];
+							genericHighlightReady = false;
+							if (currentExtensionSessionId && highlightContentScope && words.length > 0) {
+								try {
+									const response = await chrome.runtime.sendMessage({
+										action: 'WORD_HIGHLIGHT_INIT',
+										sessionId: currentExtensionSessionId,
+										contentScope: highlightContentScope,
+										words,
+									});
+									if (session === playbackSession) {
+										genericHighlightReady = response?.success === true;
+									}
+								} catch (_error) {
+									if (session === playbackSession) {
+										genericHighlightReady = false;
+									}
+								}
+							}
+
+							if (session !== playbackSession) {
+								sendResponse({ success: false, error: 'Playback superseded' });
 								return;
 							}
 
@@ -814,9 +861,8 @@ chrome.runtime.onMessage.addListener(
 				(async () => {
 					if (audioCtx && audioCtx.state === 'running') {
 						await audioCtx.suspend();
-						isPaused = true;
-						// A pause is not a gap between units; drop the pending boundary.
 						playbackMetrics.discardPendingTransition();
+						isPaused = true;
 						reportProgress('paused');
 						sendResponse({ success: true });
 					} else {

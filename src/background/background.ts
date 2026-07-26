@@ -2,6 +2,7 @@ import { GOOGLE_DOCS_EXPORT_UNAVAILABLE, MODEL_FILES, STORAGE_KEYS } from '../sh
 import { isManualPlaybackControlMessage, isManualWordTimingMessage } from '../shared/manual_playback';
 import { fetchWithCache, MODEL_CACHE_NAME } from '../shared/model_cache';
 import { warmCache } from '../shared/warm_cache';
+import { isWordHighlightInitMessage, isWordHighlightUpdateMessage } from '../shared/word_highlight';
 import { createModelCacheWarmer } from './model_cache_warmer';
 import { registerModelCacheWarmLifecycle } from './model_cache_lifecycle';
 import type {
@@ -33,6 +34,7 @@ import {
 } from './playback_state';
 import { createSelectedTextArticle } from './selected_text';
 import { prepareSelectedTextRequest } from './selected_text_request';
+import { createWordHighlightUpdateCoalescer } from './word_highlight_update_coalescer';
 import { handleOpenSidePanelCommand } from '../popup/side_panel';
 
 const DEFAULT_VOICE_STYLE_ID = 'M1';
@@ -60,6 +62,7 @@ type StartPlaybackInput =
 	| { contentScope: 'manual'; source: { kind: 'manual'; panelInstanceId: string }; content: PlaybackContent };
 
 let activeSession: PlaybackSessionSnapshot | null = null;
+let initializedWordHighlightSessionId: string | null = null;
 let suspendedManualCheckpoint: ManualCheckpointMetadata | null = null;
 let suspendedManualSession: ManualPlaybackSessionSnapshot | null = null;
 let hydrated = false;
@@ -166,6 +169,10 @@ async function publishSession(session: PlaybackSessionSnapshot): Promise<void> {
 async function clearSession(): Promise<PlaybackSessionSnapshot | null> {
 	const session = activeSession;
 	activeSession = null;
+	initializedWordHighlightSessionId = null;
+	if (session?.source.kind === 'tab') {
+		wordHighlightUpdateCoalescer.discard(session.sessionId);
+	}
 
 	if (session?.source.kind === 'tab') {
 		try {
@@ -489,6 +496,7 @@ async function startPlayback(input: StartPlaybackInput): Promise<CommandResponse
 				article: input.content,
 				voiceStyleId,
 				speed,
+				...(input.source.kind === 'tab' ? { contentScope: input.contentScope } : {}),
 				...(input.contentScope === 'manual' ? { panelInstanceId: input.source.panelInstanceId } : {}),
 			},
 		});
@@ -772,13 +780,27 @@ async function applyProgressMessage(message: Record<string, unknown>): Promise<v
 	await publishSession(updatedSession);
 }
 
-async function relayWordHighlightUpdate(message: Record<string, unknown>): Promise<void> {
+async function relayWordHighlightInit(message: unknown): Promise<{ success: boolean }> {
+	await ensureHydrated();
+	if (!isWordHighlightInitMessage(message) || activeSession?.source.kind !== 'tab' || message.sessionId !== activeSession.sessionId) {
+		return { success: false };
+	}
+	try {
+		await chrome.tabs.sendMessage(activeSession.source.tabId, message);
+		initializedWordHighlightSessionId = activeSession.sessionId;
+		return { success: true };
+	} catch (_error) {
+		return { success: false };
+	}
+}
+
+async function relayWordHighlightUpdate(message: unknown): Promise<void> {
 	await ensureHydrated();
 	if (
 		activeSession?.source.kind !== 'tab' ||
-		typeof message.sessionId !== 'string' ||
+		!isWordHighlightUpdateMessage(message) ||
 		message.sessionId !== activeSession.sessionId ||
-		typeof message.word !== 'string'
+		initializedWordHighlightSessionId !== activeSession.sessionId
 	) {
 		return;
 	}
@@ -786,23 +808,33 @@ async function relayWordHighlightUpdate(message: Record<string, unknown>): Promi
 		await chrome.tabs.sendMessage(activeSession.source.tabId, {
 			action: 'WORD_HIGHLIGHT_UPDATE',
 			sessionId: activeSession.sessionId,
-			word: message.word,
-			contentScope: activeSession.contentScope,
+			wordIndex: message.wordIndex,
 		});
 	} catch (_error) {
 		// The content script may not be listening (e.g. the tab navigated away); ignore.
 	}
 }
 
+const wordHighlightUpdateCoalescer = createWordHighlightUpdateCoalescer((operation) => {
+	void enqueue(operation);
+}, relayWordHighlightUpdate);
+
 async function relayWordHighlightClear(message: Record<string, unknown>): Promise<void> {
 	await ensureHydrated();
-	if (activeSession?.source.kind !== 'tab' || typeof message.sessionId !== 'string' || message.sessionId !== activeSession.sessionId) {
+	if (
+		activeSession?.source.kind !== 'tab' ||
+		typeof message.sessionId !== 'string' ||
+		message.sessionId !== activeSession.sessionId ||
+		initializedWordHighlightSessionId !== activeSession.sessionId
+	) {
 		return;
 	}
 	try {
 		await chrome.tabs.sendMessage(activeSession.source.tabId, { action: 'WORD_HIGHLIGHT_CLEAR', sessionId: activeSession.sessionId });
 	} catch (_error) {
 		// The content script may not be listening; ignore.
+	} finally {
+		initializedWordHighlightSessionId = null;
 	}
 }
 
@@ -924,11 +956,19 @@ chrome.runtime.onMessage.addListener(
 				void enqueue(() => applyProgressMessage(msg));
 				break;
 
+			case 'WORD_HIGHLIGHT_INIT':
+				return respondFromQueue(() => relayWordHighlightInit(msg), sendResponse);
+
 			case 'WORD_HIGHLIGHT_UPDATE':
-				void enqueue(() => relayWordHighlightUpdate(msg));
+				if (isWordHighlightUpdateMessage(msg)) {
+					wordHighlightUpdateCoalescer.submit(msg);
+				}
 				break;
 
 			case 'WORD_HIGHLIGHT_CLEAR':
+				if (typeof msg.sessionId === 'string') {
+					wordHighlightUpdateCoalescer.discard(msg.sessionId);
+				}
 				void enqueue(() => relayWordHighlightClear(msg));
 				break;
 
