@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { computeWordTimings, findWordAtTime, predictSpokenWordDurations } from '../../src/offscreen/word_timing.ts';
+import { computeWordTimings, findWordAtTime } from '../../src/offscreen/word_timing.ts';
 
 test('allocates duration proportionally to each word length', () => {
 	const wordMap = [
@@ -52,77 +52,16 @@ test('returns an empty list when there is no spoken duration or no words', () =>
 	assert.deepEqual(computeWordTimings([{ text: 'x', start: 0, end: 1 }], 0), []);
 });
 
-test('scales model-predicted durations to the decoded spoken duration', () => {
-	const wordMap = [
-		{ text: 'short', start: 0, end: 5 },
-		{ text: 'long', start: 6, end: 10 },
-	];
-	assert.deepEqual(computeWordTimings(wordMap, 6, [1, 2]), [
-		{ text: 'short', wordIndex: 0, startSec: 0, endSec: 2 },
-		{ text: 'long', wordIndex: 1, startSec: 2, endSec: 6 },
-	]);
-});
-
-test('falls back to heuristic weights when model durations are invalid', () => {
-	const wordMap = [
-		{ text: 'a', start: 0, end: 1 },
-		{ text: 'bb', start: 2, end: 4 },
-	];
-	assert.deepEqual(computeWordTimings(wordMap, 3, [1, Number.NaN]), computeWordTimings(wordMap, 3));
-	assert.deepEqual(computeWordTimings(wordMap, 3, [1]), computeWordTimings(wordMap, 3));
-	assert.deepEqual(computeWordTimings(wordMap, 3, [1, 0]), computeWordTimings(wordMap, 3));
-});
-
-test('predicts cumulative contextual prefixes for the reported Markdown and mixed-language text', async () => {
-	const text =
-		'**Channel Activity Analysis (4.6.6):** Phân tích hoạt động kênh để hỗ trợ phát triển quan hệ. **Ví dụ sử dụng trong tài liệu khớp hoàn toàn với yêu cầu này**: Khách hàng đăng ký online thất bại/gián đoạn sẽ được ghi nhận để chuyển thông tin cho RM liên hệ hỗ trợ kịp thời';
-	const wordMap = [
-		{ text: 'Channel', start: 2, end: 9 },
-		{ text: 'Activity', start: 10, end: 18 },
-		{ text: 'Analysis', start: 19, end: 27 },
-	];
-	assert.deepEqual(
-		await predictSpokenWordDurations(text, wordMap, async (prefixes) => {
-			assert.deepEqual(prefixes, ['**Channel', '**Channel Activity', '**Channel Activity Analysis']);
-			return [0.5, 1, 1.5];
-		}),
-		[0.5, 0.5, 0.5],
-	);
-	const windows = computeWordTimings(wordMap, 6, [0.5, 0.5, 0.5]);
-	assert.equal(findWordAtTime(windows, 0.05)?.text, 'Channel');
-});
-
-test('keeps normalized expansions inside each cumulative prefix', async () => {
+test('spreads a normalized expansion over the span it is actually spoken in', () => {
+	// "20/05" reads as "ngày hai mươi tháng năm": its own five characters say nothing about how
+	// long it takes to speak, so the spoken span drives the weight instead of the syllable count.
 	const wordMap = [
 		{ text: 'hi', start: 0, end: 2 },
 		{ text: '20/05', start: 3, end: 26 },
 	];
-	assert.deepEqual(
-		await predictSpokenWordDurations('hi ngày hai mươi tháng năm', wordMap, async (prefixes) => {
-			assert.deepEqual(prefixes, ['hi', 'hi ngày hai mươi tháng năm']);
-			return [0.25, 2];
-		}),
-		[0.25, 1.75],
-	);
-});
-
-test('rejects invalid cumulative prefix totals and contains predictor failures', async () => {
-	const wordMap = [
-		{ text: 'hi', start: 0, end: 2 },
-		{ text: '20/05', start: 3, end: 26 },
-	];
-	assert.equal(await predictSpokenWordDurations('hi ngày hai mươi tháng năm', wordMap, async () => [1]), undefined);
-	assert.equal(await predictSpokenWordDurations('hi ngày hai mươi tháng năm', wordMap, async () => [Number.NaN, 2]), undefined);
-	assert.equal(await predictSpokenWordDurations('hi ngày hai mươi tháng năm', wordMap, async () => [0, 2]), undefined);
-	assert.equal(await predictSpokenWordDurations('hi ngày hai mươi tháng năm', wordMap, async () => [1, 1]), undefined);
-	assert.equal(await predictSpokenWordDurations('hi ngày hai mươi tháng năm', wordMap, async () => [2, 1]), undefined);
-	assert.equal(await predictSpokenWordDurations('hi', [{ text: 'empty', start: 0, end: 0 }], async () => [1]), undefined);
-	assert.equal(
-		await predictSpokenWordDurations('hi ngày hai mươi tháng năm', wordMap, async () => {
-			throw new Error('duration model unavailable');
-		}),
-		undefined,
-	);
+	const windows = computeWordTimings(wordMap, 5);
+	assert.ok(windows[1].endSec - windows[1].startSec > windows[0].endSec - windows[0].startSec);
+	assert.equal(windows.at(-1)?.endSec, 5);
 });
 
 test('finds the word whose window contains the elapsed time', () => {

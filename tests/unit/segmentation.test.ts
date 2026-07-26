@@ -13,6 +13,8 @@ const policy: SegmentationPolicy<Kind> = {
 	shortRemainderLength: 80,
 	shortRemainderPenalty: 30,
 	minimumScore: 0,
+	interiorSplitKinds: ['sentence'],
+	interiorSplitMinLength: 60,
 	boundaryWeights: {
 		sentence: 40,
 		semicolon: 30,
@@ -39,6 +41,59 @@ function assertSourceCoverage(source: string, units: readonly { text: string }[]
 function orphanSource(firstBoundaryEnd: number, secondBoundaryEnd: number, remainderLength: number): string {
 	return `${'a'.repeat(firstBoundaryEnd - 1)}; ${'b'.repeat(secondBoundaryEnd - firstBoundaryEnd - 2)}. ${'c'.repeat(remainderLength)}`;
 }
+
+test('ends a unit at a sentence even when everything left would fit in one unit', () => {
+	// Both sentences clear the interior minimum, so the pause between them becomes appended silence
+	// instead of a pause the model has to produce inside a single unit.
+	const first = `${'a'.repeat(78)}.`;
+	const second = `${'b'.repeat(78)}.`;
+	const source = `${first} ${second}`;
+	assert.ok(source.length <= policy.hardMax);
+	const boundaries: BoundaryCandidate<Kind>[] = [
+		{ end: first.length, kind: 'sentence', pauseAfterMs: 180 },
+		{ end: source.length, kind: 'sentence', pauseAfterMs: 180 },
+	];
+
+	const units = planTextSegments(source, boundaries, policy, 260);
+
+	assert.deepEqual(
+		units.map((unit) => unit.text),
+		[first, second],
+	);
+	assert.equal(units[0].pauseAfterMs, 180);
+	assert.equal(units[1].pauseAfterMs, 260);
+	assertSourceCoverage(source, units);
+});
+
+test('does not split off a sentence too short to stand as its own unit', () => {
+	// The tail clears nothing near the interior minimum, so gluing it on beats emitting a scrap.
+	const first = `${'a'.repeat(78)}.`;
+	const source = `${first} ${'b'.repeat(19)}.`;
+	const boundaries: BoundaryCandidate<Kind>[] = [
+		{ end: first.length, kind: 'sentence', pauseAfterMs: 180 },
+		{ end: source.length, kind: 'sentence', pauseAfterMs: 180 },
+	];
+
+	assert.deepEqual(
+		planTextSegments(source, boundaries, policy, 260).map((unit) => unit.text),
+		[source],
+	);
+});
+
+test('only ends a unit early on a kind listed for interior splits', () => {
+	// A comma is not a sentence end: splitting there would cut a clause in half.
+	const first = `${'a'.repeat(78)},`;
+	const source = `${first} ${'b'.repeat(78)}.`;
+	const boundaries: BoundaryCandidate<Kind>[] = [
+		{ end: first.length, kind: 'comma', pauseAfterMs: 60 },
+		{ end: source.length, kind: 'sentence', pauseAfterMs: 180 },
+	];
+
+	assert.deepEqual(
+		planTextSegments(source, boundaries, policy, 260).map((unit) => unit.text),
+		[source],
+	);
+});
 
 test('keeps a complete paragraph under the hard limit in one unit', () => {
 	const source = 'Một câu ngắn. Câu thứ hai cũng ngắn.';

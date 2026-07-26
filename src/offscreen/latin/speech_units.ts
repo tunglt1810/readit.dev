@@ -13,6 +13,9 @@ export const LATIN_PREFERRED_MIN_LENGTH = 140;
 export const LATIN_PREFERRED_CENTER_LENGTH = 190;
 export const LATIN_PREFERRED_MAX_LENGTH = 240;
 export const LATIN_MAX_UNIT_LENGTH = 300;
+// Sentences in real articles run about 90 characters, so this lets most of them stand as their own
+// unit while still gluing very short ones to their neighbour rather than emitting a scrap.
+export const LATIN_INTERIOR_SPLIT_MIN_LENGTH = 60;
 
 type LatinBoundaryKind = 'sentence' | 'semicolon' | 'colon' | 'spacedDash' | 'comma';
 
@@ -25,6 +28,8 @@ const LATIN_SEGMENTATION_POLICY: SegmentationPolicy<LatinBoundaryKind> = Object.
 	shortRemainderLength: 80,
 	shortRemainderPenalty: 30,
 	minimumScore: 0,
+	interiorSplitKinds: Object.freeze(['sentence'] as const),
+	interiorSplitMinLength: LATIN_INTERIOR_SPLIT_MIN_LENGTH,
 	boundaryWeights: Object.freeze({
 		sentence: 40,
 		semicolon: 30,

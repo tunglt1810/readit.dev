@@ -27,51 +27,19 @@ function estimateSpeakingWeight(entry: { text: string; start: number; end: numbe
 	return syllables && syllables.length > 0 ? syllables.length : spokenLength;
 }
 
-function validPredictedDurations(values: readonly number[] | undefined, count: number): values is readonly number[] {
-	return values?.length === count && values.every((value) => Number.isFinite(value) && value > 0);
-}
-
-function cumulativeDurationsToWeights(values: readonly number[], count: number): number[] | undefined {
-	if (values.length !== count) {
-		return undefined;
-	}
-	const weights: number[] = [];
-	let previous = 0;
-	for (const value of values) {
-		if (!Number.isFinite(value) || value <= previous) {
-			return undefined;
-		}
-		weights.push(value - previous);
-		previous = value;
-	}
-	return weights;
-}
-
-export async function predictSpokenWordDurations(
-	unitText: string,
-	wordMap: readonly { start: number; end: number }[],
-	predict: (prefixes: readonly string[]) => Promise<readonly number[]>,
-): Promise<readonly number[] | undefined> {
-	const prefixes = wordMap.map(({ end }) => unitText.slice(0, end).trimEnd());
-	if (prefixes.length === 0 || prefixes.some((prefix) => prefix.length === 0)) {
-		return undefined;
-	}
-	try {
-		return cumulativeDurationsToWeights(await predict(prefixes), prefixes.length);
-	} catch {
-		return undefined;
-	}
-}
-
+// Word timings are estimated, never predicted by the duration model. Asking the model for a
+// per-word timing costs one duration pass per word — and because the batch is padded to the
+// longest prefix, that is O(words × unit length) tokens against O(unit length) for the audio
+// itself. Measured on a real article: 8.2s of prediction to protect 1.0s of synthesis, which
+// stalled playback for seconds at every unit boundary.
 export function computeWordTimings(
 	wordMap: readonly { text: string; start: number; end: number }[],
 	spokenDurationSec: number,
-	predictedDurations?: readonly number[],
 ): WordTimingWindow[] {
 	if (wordMap.length === 0 || spokenDurationSec <= 0) {
 		return [];
 	}
-	const weights = validPredictedDurations(predictedDurations, wordMap.length) ? predictedDurations : wordMap.map(estimateSpeakingWeight);
+	const weights = wordMap.map(estimateSpeakingWeight);
 	const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
 	const windows: WordTimingWindow[] = [];
 	let elapsed = 0;

@@ -1,16 +1,17 @@
 import { MODEL_FILES, VOICE_STYLES } from '../shared/constants';
 import { isPanelInstanceId } from '../shared/manual_playback';
 import type { PlaybackContent, PlaybackProgress, PlaybackStatus } from '../shared/types';
-import { synthesizeSpeechUnitSamples } from './audio';
+import { createSpeechAudioBuffer, synthesizeSpeechUnitSamples } from './audio';
 import { captureManualCheckpoint, isCheckpointOwner, type ManualCheckpoint, resumeOffsetSeconds } from './manual_checkpoint';
+import { METRICS_STORAGE_KEY, PlaybackMetricsRecorder, summarizePlaybackMetrics } from './playback_metrics';
 import { isVietnameseLanguage, preparePlaybackUnits, VietnameseTextNormalizer } from './playback_preparation';
 import { createSingleFlight } from './single_flight';
 import type { SpeechUnit } from './speech_unit';
-import { loadTextToSpeech, loadVoiceStyle, Style, TextToSpeech, writeWavFile } from './supertonic_helper';
+import { loadTextToSpeech, loadVoiceStyle, Style, TextToSpeech } from './supertonic_helper';
 import { IndexedSynthesisCoordinator, type SynthesisKey } from './synthesis_coordinator';
 import { loadVietnameseNormalizerAssets } from './vietnamese/assets';
 import { normalizeVietnameseText } from './vietnamese/normalizer';
-import { computeWordTimings, findWordAtTime, predictSpokenWordDurations, type WordTimingWindow } from './word_timing';
+import { computeWordTimings, findWordAtTime, type WordTimingWindow } from './word_timing';
 
 // Global Engine State
 let ttsEngine: TextToSpeech | null = null;
@@ -31,7 +32,6 @@ let speechUnits: SpeechUnit[] = [];
 let currentUnitIndex = 0;
 let currentSourceNode: AudioBufferSourceNode | null = null;
 let currentBuffer: AudioBuffer | null = null;
-const predictedWordDurationsByBuffer = new WeakMap<AudioBuffer, readonly number[]>();
 let currentBufferStartedAt = 0;
 let currentBufferOffsetSec = 0;
 let currentManualPanelInstanceId: string | null = null;
@@ -75,6 +75,32 @@ async function initStorage() {
 
 // Request persistent storage on load
 initStorage();
+
+const playbackMetrics = new PlaybackMetricsRecorder();
+
+/**
+ * Persist the playback numbers where they can be read from outside this document:
+ * E2E drives the extension through the service worker and cannot reach the offscreen page.
+ *
+ * Called after each unit starts (not only at the end of the article) so the numbers are
+ * readable mid-playback; the recorder accumulates until the next play request resets it.
+ */
+function flushPlaybackMetrics() {
+	if (!playbackMetrics.hasSamples()) {
+		return;
+	}
+	const summary = summarizePlaybackMetrics(playbackMetrics.snapshot());
+	console.info('[readit] playback metrics', JSON.stringify(summary));
+	try {
+		void chrome.storage.local.set({ [METRICS_STORAGE_KEY]: summary });
+	} catch (_error) {
+		// Diagnostics only — a storage failure must never affect playback.
+	}
+}
+
+// Readable from the offscreen document's own devtools console while playback is running.
+(globalThis as unknown as { __readitPlaybackMetrics?: () => unknown }).__readitPlaybackMetrics = () =>
+	summarizePlaybackMetrics(playbackMetrics.snapshot());
 
 /**
  * Report playback progress to background/popup
@@ -138,6 +164,7 @@ const loadModels = createSingleFlight(async () => {
 			ttsEngine = result.textToSpeech;
 			executionProvider = 'wasm';
 		}
+		playbackMetrics.recordExecutionProvider(executionProvider);
 		chrome.runtime.sendMessage({ action: 'MODEL_LOADED', executionProvider });
 	} catch (error) {
 		const err = error as Error;
@@ -177,39 +204,19 @@ async function synthesizeUnit(unit: SpeechUnit, lang: string, style: Style, spee
 		throw new Error('TTS Engine is not initialized');
 	}
 	const engine = ttsEngine;
+	const synthesisStartedAtMs = performance.now();
 	if (!audioCtx) {
 		audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
 	}
-	const predictedWordDurations = await predictSpokenWordDurations(unit.text, unit.wordMap ?? [], (prefixes) =>
-		engine.predictDurations(
-			[...prefixes],
-			prefixes.map(() => lang),
-			style,
-			speed,
-		),
-	);
+	const inferStartedAtMs = performance.now();
+	const wav = await synthesizeSpeechUnitSamples(unit, lang, speed, async (text, requestedLang, steps, requestedSpeed, silenceDuration) => {
+		const result = await engine.call(text, requestedLang, style, steps, requestedSpeed, silenceDuration);
+		return result.wav;
+	});
+	playbackMetrics.recordInferDuration(performance.now() - inferStartedAtMs);
 
-	const wav = await synthesizeSpeechUnitSamples(
-		unit,
-		lang,
-		speed,
-		engine.sampleRate,
-		async (text, requestedLang, steps, requestedSpeed, silenceDuration) => {
-			const result = await engine.call(text, requestedLang, style, steps, requestedSpeed, silenceDuration);
-			return result.wav;
-		},
-	);
-
-	const sampleRate = engine.sampleRate;
-
-	// Write WAV array buffer
-	const wavBuffer = writeWavFile(wav, sampleRate);
-
-	// Decode into AudioBuffer
-	const buffer = await audioCtx.decodeAudioData(wavBuffer);
-	if (predictedWordDurations) {
-		predictedWordDurationsByBuffer.set(buffer, predictedWordDurations);
-	}
+	const buffer = createSpeechAudioBuffer(audioCtx, wav, engine.sampleRate, unit.pauseAfterMs ?? 0);
+	playbackMetrics.recordSynthDuration(performance.now() - synthesisStartedAtMs);
 	return buffer;
 }
 
@@ -302,10 +309,12 @@ function startWordHighlightTracking(windows: WordTimingWindow[], unitStartTime: 
 		return;
 	}
 	const base = wordIndexBase(unitIndex);
+	playbackMetrics.beginHighlightTracking();
 	wordHighlightTimer = setInterval(() => {
 		if (!audioCtx) {
 			return;
 		}
+		playbackMetrics.recordHighlightTick(performance.now());
 		const elapsed = audioCtx.currentTime - unitStartTime + offsetSec;
 		const wordTiming = findWordAtTime(windows, elapsed);
 		if (wordTiming === null) {
@@ -339,6 +348,7 @@ function startWordHighlightTracking(windows: WordTimingWindow[], unitStartTime: 
 function stopAudio() {
 	stopCurrentSource();
 	clearWordHighlightTracking();
+	flushPlaybackMetrics();
 	isPaused = false;
 	synthesisCoordinator.clear();
 	reportProgress('stopped');
@@ -367,7 +377,22 @@ function playAudioBuffer(
 	unitIndex: number,
 	offsetSec = 0,
 ) {
-	if (!audioCtx || currentSourceNode !== null || session !== playbackSession || unitIndex !== currentUnitIndex) {
+	// Split from one combined guard so a refusal names its cause: each of these silently drops
+	// a whole unit, which is heard as missing text.
+	if (!audioCtx) {
+		playbackMetrics.recordDroppedStart(unitIndex, 'no-audio-context');
+		return;
+	}
+	if (currentSourceNode !== null) {
+		playbackMetrics.recordDroppedStart(unitIndex, 'source-already-playing');
+		return;
+	}
+	if (session !== playbackSession) {
+		playbackMetrics.recordDroppedStart(unitIndex, 'stale-session');
+		return;
+	}
+	if (unitIndex !== currentUnitIndex) {
+		playbackMetrics.recordDroppedStart(unitIndex, 'stale-unit-index');
 		return;
 	}
 	const sourceOffsetSec = resumeOffsetSeconds({ bufferDurationSec: buffer.duration, elapsedSec: offsetSec });
@@ -393,6 +418,9 @@ function playAudioBuffer(
 			return;
 		}
 
+		if (audioCtx) {
+			playbackMetrics.recordUnitEnded(audioCtx.currentTime);
+		}
 		currentSourceNode = null;
 		currentBuffer = null;
 		currentBufferStartedAt = 0;
@@ -407,10 +435,14 @@ function playAudioBuffer(
 
 	const unit = speechUnits[unitIndex];
 	const spokenDurationSec = Math.max(buffer.duration - (unit?.pauseAfterMs ?? 0) / 1000, 0);
-	const windows = computeWordTimings(unit?.wordMap ?? [], spokenDurationSec, predictedWordDurationsByBuffer.get(buffer));
+	const windows = computeWordTimings(unit?.wordMap ?? [], spokenDurationSec);
 	const unitStartTime = audioCtx.currentTime;
 	source.start(0, sourceOffsetSec);
+	playbackMetrics.recordUnitStart(unitIndex, unitStartTime, performance.now(), buffer.duration, sourceOffsetSec);
 	startWordHighlightTracking(windows, unitStartTime, sourceOffsetSec, unitIndex);
+	// Flushed here rather than in `onended`: this point is after the gap has been measured,
+	// so the write cost lands mid-unit instead of on the boundary being measured.
+	flushPlaybackMetrics();
 }
 
 async function playNextUnit(lang: string, style: Style, session: number) {
@@ -449,6 +481,7 @@ async function playNextUnit(lang: string, style: Style, session: number) {
 			void playNextUnit(lang, style, session);
 			return;
 		}
+		playbackMetrics.recordSynthError(unitIndex, (error as Error).message);
 		if (isCurrentSynthesisKey(key)) {
 			clearWordHighlightTracking();
 			reportProgress('error', { error: (error as Error).message });
@@ -533,6 +566,8 @@ function checkpointManual(payload: unknown): { success: boolean; checkpoint?: Re
 		return { success: false };
 	}
 
+	// Capturing a checkpoint stops playback, so the pending boundary is not a gap either.
+	playbackMetrics.discardPendingTransition();
 	const bufferDurationSec = currentBuffer?.duration ?? 0;
 	const checkpoint = captureManualCheckpoint({
 		sessionId: input.sessionId,
@@ -674,6 +709,8 @@ chrome.runtime.onMessage.addListener(
 					}
 					const session = ++playbackSession;
 					stopAudio();
+					// After stopAudio, which flushes the previous run: this starts a fresh one.
+					playbackMetrics.markPlayRequested(performance.now());
 					currentExtensionSessionId = sessionId;
 					currentManualPanelInstanceId = data.panelInstanceId ?? null;
 					currentPlaybackLanguage = article.lang;
@@ -711,6 +748,7 @@ chrome.runtime.onMessage.addListener(
 							speechUnits = preparedUnits;
 							currentUnitIndex = 0;
 							isPaused = false;
+							playbackMetrics.recordTotalUnits(speechUnits.length);
 
 							if (speechUnits.length === 0) {
 								sendResponse({ success: false, error: 'No readable text content found.' });
@@ -777,6 +815,8 @@ chrome.runtime.onMessage.addListener(
 					if (audioCtx && audioCtx.state === 'running') {
 						await audioCtx.suspend();
 						isPaused = true;
+						// A pause is not a gap between units; drop the pending boundary.
+						playbackMetrics.discardPendingTransition();
 						reportProgress('paused');
 						sendResponse({ success: true });
 					} else {

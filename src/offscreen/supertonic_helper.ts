@@ -1,4 +1,5 @@
 import * as ort from 'onnxruntime-web/webgpu';
+
 import { fetchWithCache } from '../shared/model_cache.ts';
 
 // Set WebAssembly paths to the extension root where the .wasm files are copied
@@ -50,6 +51,22 @@ export function isValidLang(lang: string): boolean {
 
 export function resolveLanguage(lang: string): string {
 	return isValidLang(lang) ? lang : 'na';
+}
+
+// The duration predictor charges a Vietnamese syllable what it charges an English word: measured
+// on this model, 0.428 s/syllable against 0.429 s/word, where real Vietnamese speech runs about
+// 0.19 s/syllable. `sampleNoisyLatent` sizes the latent from that prediction, so the vector
+// estimator is handed roughly twice the frames the text can fill — and being non-autoregressive it
+// cannot simply speak slower. It emits leading silence, races the text, then re-decodes a span it
+// has already produced, which is heard as swallowed and repeated words.
+//
+// Scaling the prediction resizes the latent. This is deliberately separate from the user's speed
+// setting: it corrects the model, so the speed control still means the same thing to the listener
+// in every language. Chosen by listening to the same unit rendered across a range of scales.
+const DURATION_SCALE_BY_LANGUAGE: Readonly<Record<string, number>> = Object.freeze({ vi: 1.5 });
+
+export function durationScaleForLanguage(lang: string): number {
+	return DURATION_SCALE_BY_LANGUAGE[lang] ?? 1;
 }
 
 // Interface for configuration
@@ -270,7 +287,10 @@ export class TextToSpeech {
 			style_dp: repeatStyleBatch(style.dp, bsz),
 			text_mask: textMaskTensor,
 		});
-		const duration = Array.from(dpOutputs.duration.data as Float32Array, (value) => value / speed);
+		const duration = Array.from(
+			dpOutputs.duration.data as Float32Array,
+			(value, index) => value / (speed * durationScaleForLanguage(langList[index])),
+		);
 
 		return { duration, textIdsTensor, textMaskTensor };
 	}
@@ -300,13 +320,22 @@ export class TextToSpeech {
 		const textEmb = textEncOutputs.text_emb;
 
 		// Sample noisy latent
-		let { xt, latentMask } = this.sampleNoisyLatent(
+		const {
+			xt: initialLatent,
+			latentMask,
+			latentDim: latentRows,
+			latentLen,
+		} = this.sampleNoisyLatent(
 			duration,
 			this.sampleRate,
 			this.cfgs.ae.base_chunk_size,
 			this.cfgs.ttl.chunk_compress_factor,
 			this.cfgs.ttl.latent_dim,
 		);
+		// Widened because each step replaces it with the denoiser's own output, which makes no promise
+		// about the kind of buffer backing it.
+		let xt: Float32Array<ArrayBufferLike> = initialLatent;
+		const xtShape = [bsz, latentRows, latentLen];
 
 		const latentMaskFlat = new Float32Array(latentMask.flat(2));
 		const latentMaskShape = [bsz, 1, latentMask[0][0].length];
@@ -325,9 +354,7 @@ export class TextToSpeech {
 			const currentStepArray = new Float32Array(bsz).fill(step);
 			const currentStepTensor = new ort.Tensor('float32', currentStepArray, [bsz]);
 
-			const xtFlat = new Float32Array(xt.flat(2));
-			const xtShape = [bsz, xt[0].length, xt[0][0].length];
-			const xtTensor = new ort.Tensor('float32', xtFlat, xtShape);
+			const xtTensor = new ort.Tensor('float32', xt, xtShape);
 
 			const vectorEstOutputs = await this.vectorEstOrt.run({
 				noisy_latent: xtTensor,
@@ -339,36 +366,21 @@ export class TextToSpeech {
 				total_step: totalStepTensor,
 			});
 
-			const denoised = Array.from(vectorEstOutputs.denoised_latent.data as Float32Array);
-
-			// Reshape to 3D
-			const latentDim = xt[0].length;
-			const latentLen = xt[0][0].length;
-			xt = [];
-			let idx = 0;
-			for (let b = 0; b < bsz; b++) {
-				const batch: number[][] = [];
-				for (let d = 0; d < latentDim; d++) {
-					const row: number[] = [];
-					for (let t = 0; t < latentLen; t++) {
-						row.push(denoised[idx++]);
-					}
-					batch.push(row);
-				}
-				xt.push(batch);
-			}
+			// The denoiser returns the shape it was handed, already flat and row-major, so it becomes
+			// the next step's latent untouched. Unpacking it into nested arrays only to flatten them
+			// again allocated the whole latent twice per step — about 6 MB a step, measured.
+			xt = vectorEstOutputs.denoised_latent.data as Float32Array;
 		}
 
 		// Generate waveform
-		const finalXtFlat = new Float32Array(xt.flat(2));
-		const finalXtShape = [bsz, xt[0].length, xt[0][0].length];
-		const finalXtTensor = new ort.Tensor('float32', finalXtFlat, finalXtShape);
-
 		const vocoderOutputs = await this.vocoderOrt.run({
-			latent: finalXtTensor,
+			latent: new ort.Tensor('float32', xt, xtShape),
 		});
 
-		const wav = Array.from(vocoderOutputs.wav_tts.data as Float32Array);
+		// Handed on as the vocoder's own Float32Array. Copying it into a JS number[] here doubled the
+		// footprint of every unit — eight bytes a sample instead of four — for a buffer that is copied
+		// into an AudioBuffer moments later anyway.
+		const wav = vocoderOutputs.wav_tts.data as Float32Array;
 
 		return { wav, duration };
 	}
@@ -389,23 +401,34 @@ export class TextToSpeech {
 		const maxLen = resolvedLang === 'ko' || resolvedLang === 'ja' ? 120 : 300;
 		const textList = chunkText(text, maxLen);
 		const langList = new Array<string>(textList.length).fill(resolvedLang);
-		let wavCat: number[] = [];
+		// Collected and joined once at the end. Growing the result chunk by chunk reallocated and
+		// recopied every sample already produced, and a single chunk — the usual case — is returned
+		// untouched.
+		const chunks: Float32Array[] = [];
+		const silenceLen = Math.floor(silenceDuration * this.sampleRate);
 		let durCat = 0;
 
 		for (let i = 0; i < textList.length; i++) {
 			const { wav, duration } = await this._infer([textList[i]], [langList[i]], style, totalStep, speed, progressCallback);
 
-			if (wavCat.length === 0) {
-				wavCat = wav;
-				durCat = duration[0];
-			} else {
-				const silenceLen = Math.floor(silenceDuration * this.sampleRate);
-				const silence = new Array<number>(silenceLen).fill(0);
-				wavCat = [...wavCat, ...silence, ...wav];
-				durCat += duration[0] + silenceDuration;
+			if (chunks.length > 0) {
+				chunks.push(new Float32Array(silenceLen));
+				durCat += silenceDuration;
 			}
+			chunks.push(wav);
+			durCat += duration[0];
 		}
 
+		if (chunks.length === 1) {
+			return { wav: chunks[0], duration: [durCat] };
+		}
+
+		const wavCat = new Float32Array(chunks.reduce((total, chunk) => total + chunk.length, 0));
+		let offset = 0;
+		for (const chunk of chunks) {
+			wavCat.set(chunk, offset);
+			offset += chunk.length;
+		}
 		return { wav: wavCat, duration: [durCat] };
 	}
 
@@ -420,36 +443,26 @@ export class TextToSpeech {
 		const latentLen = Math.floor((wavLenMax + chunkSize - 1) / chunkSize);
 		const latentDimVal = latentDim * chunkCompress;
 
-		const xt: number[][][] = [];
+		const latentLengths = wavLengths.map((len) => Math.floor((len + chunkSize - 1) / chunkSize));
+		const latentMask = this.lengthToMask(latentLengths, latentLen);
+
+		// Flat and row-major: the layout the tensor takes, and the one the denoiser hands back. The
+		// mask is applied as each sample is drawn rather than in a second pass over the whole latent.
+		const xt = new Float32Array(bsz * latentDimVal * latentLen);
 		for (let b = 0; b < bsz; b++) {
-			const batch: number[][] = [];
+			const mask = latentMask[b][0];
 			for (let d = 0; d < latentDimVal; d++) {
-				const row: number[] = [];
+				const rowStart = (b * latentDimVal + d) * latentLen;
 				for (let t = 0; t < latentLen; t++) {
 					// Box-Muller transform
 					const u1 = Math.max(0.0001, Math.random());
 					const u2 = Math.random();
-					const val = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
-					row.push(val);
-				}
-				batch.push(row);
-			}
-			xt.push(batch);
-		}
-
-		const latentLengths = wavLengths.map((len) => Math.floor((len + chunkSize - 1) / chunkSize));
-		const latentMask = this.lengthToMask(latentLengths, latentLen);
-
-		// Apply mask
-		for (let b = 0; b < bsz; b++) {
-			for (let d = 0; d < latentDimVal; d++) {
-				for (let t = 0; t < latentLen; t++) {
-					xt[b][d][t] *= latentMask[b][0][t];
+					xt[rowStart + t] = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2) * mask[t];
 				}
 			}
 		}
 
-		return { xt, latentMask };
+		return { xt, latentMask, latentDim: latentDimVal, latentLen };
 	}
 
 	lengthToMask(lengths: number[], maxLen: number | null = null): number[][][] {
@@ -636,47 +649,3 @@ export function chunkText(text: string, maxLen = 300): string[] {
 	return chunks;
 }
 
-/**
- * Write WAV file to ArrayBuffer
- */
-export function writeWavFile(audioData: number[] | Float32Array, sampleRate: number): ArrayBuffer {
-	const numChannels = 1;
-	const bitsPerSample = 16;
-	const byteRate = (sampleRate * numChannels * bitsPerSample) / 8;
-	const blockAlign = (numChannels * bitsPerSample) / 8;
-	const dataSize = audioData.length * 2;
-
-	const buffer = new ArrayBuffer(44 + dataSize);
-	const view = new DataView(buffer);
-
-	const writeString = (offset: number, string: string) => {
-		for (let i = 0; i < string.length; i++) {
-			view.setUint8(offset + i, string.charCodeAt(i));
-		}
-	};
-
-	writeString(0, 'RIFF');
-	view.setUint32(4, 36 + dataSize, true);
-	writeString(8, 'WAVE');
-	writeString(12, 'fmt ');
-	view.setUint32(16, 16, true);
-	view.setUint16(20, 1, true); // PCM
-	view.setUint16(22, numChannels, true);
-	view.setUint32(24, sampleRate, true);
-	view.setUint32(28, byteRate, true);
-	view.setUint16(32, blockAlign, true);
-	view.setUint16(34, bitsPerSample, true);
-	writeString(36, 'data');
-	view.setUint32(40, dataSize, true);
-
-	const int16Data = new Int16Array(audioData.length);
-	for (let i = 0; i < audioData.length; i++) {
-		const clamped = Math.max(-1.0, Math.min(1.0, audioData[i]));
-		int16Data[i] = Math.floor(clamped * 32767);
-	}
-
-	const dataView = new Uint8Array(buffer, 44);
-	dataView.set(new Uint8Array(int16Data.buffer));
-
-	return buffer;
-}

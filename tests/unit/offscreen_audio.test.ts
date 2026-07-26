@@ -1,27 +1,37 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { appendSilenceSamples, synthesizeSpeechUnitSamples } from '../../src/offscreen/audio.ts';
+import { type AudioBufferFactory, createSpeechAudioBuffer, synthesizeSpeechUnitSamples } from '../../src/offscreen/audio.ts';
 
-test('appends the requested silence without changing waveform samples', () => {
-	const output = appendSilenceSamples(new Float32Array([0.25, -0.5]), 1_000, 80);
-	assert.equal(output.length, 82);
-	assert.deepEqual(Array.from(output.slice(0, 2)), [0.25, -0.5]);
-	assert.ok(output.slice(2).every((sample) => sample === 0));
-});
+function stubAudioContext(): AudioBufferFactory & { readonly created: { length: number; sampleRate: number }[] } {
+	const created: { length: number; sampleRate: number }[] = [];
+	return {
+		created,
+		createBuffer(_channels: number, length: number, sampleRate: number) {
+			created.push({ length, sampleRate });
+			const channel = new Float32Array(length);
+			return {
+				length,
+				sampleRate,
+				duration: length / sampleRate,
+				getChannelData: () => channel,
+			} as unknown as AudioBuffer;
+		},
+	};
+}
 
-test('uses zero internal silence and appends a numeric Latin pause', async () => {
+test('uses zero internal silence for a numeric Latin pause', async () => {
 	const calls: unknown[][] = [];
-	const output = await synthesizeSpeechUnitSamples({ text: 'Hello.', pauseAfterMs: 60 }, 'en', 1.15, 1_000, async (...args) => {
+	const output = await synthesizeSpeechUnitSamples({ text: 'Hello.', pauseAfterMs: 60 }, 'en', 1.15, async (...args) => {
 		calls.push(args);
 		return [0.5];
 	});
 	assert.deepEqual(calls, [['Hello.', 'en', 8, 1.15, 0]]);
-	assert.equal(output.length, 61);
+	assert.deepEqual(Array.from(output), [0.5]);
 });
 
 test('treats numeric zero as an explicit pause', async () => {
 	const calls: unknown[][] = [];
-	const output = await synthesizeSpeechUnitSamples({ text: 'No punctuation', pauseAfterMs: 0 }, 'fr', 1, 1_000, async (...args) => {
+	const output = await synthesizeSpeechUnitSamples({ text: 'No punctuation', pauseAfterMs: 0 }, 'fr', 1, async (...args) => {
 		calls.push(args);
 		return [0.25];
 	});
@@ -29,9 +39,9 @@ test('treats numeric zero as an explicit pause', async () => {
 	assert.deepEqual(Array.from(output), [0.25]);
 });
 
-test('uses engine silence without appending for a null compatibility pause', async () => {
+test('asks the engine for its own silence when the pause is a null compatibility marker', async () => {
 	const calls: unknown[][] = [];
-	const output = await synthesizeSpeechUnitSamples({ text: '中文内容', pauseAfterMs: null }, 'zh', 1.05, 1_000, async (...args) => {
+	const output = await synthesizeSpeechUnitSamples({ text: '中文内容', pauseAfterMs: null }, 'zh', 1.05, async (...args) => {
 		calls.push(args);
 		return [0.75, -0.25];
 	});
@@ -39,25 +49,37 @@ test('uses engine silence without appending for a null compatibility pause', asy
 	assert.deepEqual(Array.from(output), [0.75, -0.25]);
 });
 
-test('forwards Vietnamese and appends its existing explicit pause', async () => {
-	const calls: unknown[][] = [];
-	const output = await synthesizeSpeechUnitSamples({ text: 'xin chào', pauseAfterMs: 80 }, 'vi', 1.15, 1_000, async (...args) => {
-		calls.push(args);
-		return [0.5];
-	});
-	assert.deepEqual(calls, [['xin chào', 'vi', 8, 1.15, 0]]);
-	assert.equal(output.length, 81);
+test('passes an engine Float32Array straight through instead of copying it', async () => {
+	const samples = new Float32Array([0.5, -0.5]);
+	const output = await synthesizeSpeechUnitSamples({ text: 'xin chào', pauseAfterMs: 80 }, 'vi', 1.15, async () => samples);
+	assert.equal(output, samples);
 });
 
-test('returns a copy for zero silence and validates numeric inputs', () => {
-	const input = new Float32Array([1]);
-	const output = appendSilenceSamples(input, 24_000, 0);
-	assert.notEqual(output, input);
-	assert.deepEqual(output, input);
+test('sizes the buffer for the pause and leaves that tail silent', () => {
+	const audioCtx = stubAudioContext();
+	const buffer = createSpeechAudioBuffer(audioCtx, new Float32Array([0.25, -0.5]), 1_000, 80);
+
+	assert.deepEqual(audioCtx.created, [{ length: 82, sampleRate: 1_000 }]);
+	const channel = buffer.getChannelData(0);
+	assert.deepEqual(Array.from(channel.slice(0, 2)), [0.25, -0.5]);
+	assert.ok(channel.slice(2).every((sample) => sample === 0));
+});
+
+test('keeps the engine sample rate rather than resampling into the context rate', () => {
+	const audioCtx = stubAudioContext();
+	const buffer = createSpeechAudioBuffer(audioCtx, new Float32Array(44_100), 44_100, 0);
+
+	assert.equal(buffer.sampleRate, 44_100);
+	assert.equal(buffer.duration, 1);
+});
+
+test('validates numeric inputs', () => {
+	const audioCtx = stubAudioContext();
+	const samples = new Float32Array([1]);
 	for (const sampleRate of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
-		assert.throws(() => appendSilenceSamples(input, sampleRate, 1), /sample rate/);
+		assert.throws(() => createSpeechAudioBuffer(audioCtx, samples, sampleRate, 1), /sample rate/);
 	}
 	for (const pause of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
-		assert.throws(() => appendSilenceSamples(input, 24_000, pause), /pause/);
+		assert.throws(() => createSpeechAudioBuffer(audioCtx, samples, 24_000, pause), /pause/);
 	}
 });

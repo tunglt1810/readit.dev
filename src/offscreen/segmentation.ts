@@ -13,6 +13,16 @@ export interface SegmentationPolicy<Kind extends string> {
 	shortRemainderLength: number;
 	shortRemainderPenalty: number;
 	minimumScore: number;
+	/**
+	 * Boundary kinds worth ending a unit on even when everything left would fit in one unit.
+	 *
+	 * A pause the model produces itself is part of its predicted duration, so it shrinks with any
+	 * duration scaling applied to that language. A pause at a unit boundary is appended as real
+	 * silence after synthesis, so it survives and stays tunable.
+	 */
+	interiorSplitKinds: readonly Kind[];
+	/** Shortest unit an interior split may produce, on either side of the split. */
+	interiorSplitMinLength: number;
 	boundaryWeights: Readonly<Record<Kind, number>>;
 }
 
@@ -105,6 +115,31 @@ function surrogateSafeSplit(text: string, split: number): number {
 	return previous >= 0xd800 && previous <= 0xdbff && next >= 0xdc00 && next <= 0xdfff ? split - 1 : split;
 }
 
+/** The first boundary worth ending a unit on when the rest of the text would otherwise fit in one. */
+function interiorSplit<Kind extends string>(
+	boundaries: readonly BoundaryCandidate<Kind>[],
+	start: number,
+	end: number,
+	policy: SegmentationPolicy<Kind>,
+): BoundaryCandidate<Kind> | null {
+	for (const boundary of boundaries) {
+		if (boundary.end <= start) {
+			continue;
+		}
+		if (boundary.end >= end) {
+			break;
+		}
+		if (end - boundary.end < policy.interiorSplitMinLength) {
+			// Every later boundary leaves an even shorter tail, so none of them qualify either.
+			break;
+		}
+		if (boundary.end - start >= policy.interiorSplitMinLength && policy.interiorSplitKinds.includes(boundary.kind)) {
+			return boundary;
+		}
+	}
+	return null;
+}
+
 export function planTextSegments<Kind extends string>(
 	text: string,
 	boundaries: readonly BoundaryCandidate<Kind>[],
@@ -117,8 +152,14 @@ export function planTextSegments<Kind extends string>(
 
 	while (start < end) {
 		if (end - start <= policy.hardMax) {
-			units.push({ text: text.slice(start, end).trim(), pauseAfterMs: finalPauseAfterMs });
-			break;
+			const interior = interiorSplit(boundaries, start, end, policy);
+			if (!interior) {
+				units.push({ text: text.slice(start, end).trim(), pauseAfterMs: finalPauseAfterMs });
+				break;
+			}
+			units.push({ text: text.slice(start, interior.end).trim(), pauseAfterMs: interior.pauseAfterMs });
+			start = skipWhitespace(text, interior.end, end);
+			continue;
 		}
 
 		const hardEnd = Math.min(start + policy.hardMax, end);
