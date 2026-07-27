@@ -68,6 +68,16 @@ test('uses longest-match measurement units', () => {
 	assert.deepEqual(structured, ['42 km/h', '10 m²']);
 });
 
+test('treats a single line break as its own paragraph instead of erasing it to a plain space', () => {
+	// Google Docs' plain-text export puts headings and standalone citation lines on their own line
+	// separated by a single \n (only genuine new-paragraph breaks get \n\n+). Collapsing that single
+	// \n to a bare space fused unrelated lines together with zero pause between them downstream.
+	const document = tokenizeVietnameseText('Dòng một\nDòng hai.');
+	assert.equal(document.paragraphs.length, 2);
+	assert.equal(document.paragraphs[0].source, 'Dòng một');
+	assert.equal(document.paragraphs[1].source, 'Dòng hai.');
+});
+
 test('protects full month, quarter, and malformed date-like tokens without prefix splitting', () => {
 	const tokens = tokenizeVietnameseText('Tháng 07/2026, quý II/2026, mã 11/99/2026.').paragraphs[0].tokens;
 	assert.deepEqual(

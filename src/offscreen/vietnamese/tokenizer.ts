@@ -25,7 +25,7 @@ const TRAILING_URL_PUNCTUATION = /[….,!?;:()[\]{}"'“”‘’]+$/u;
 function normalizeSource(input: string): string {
 	const canonicalNewlines = input.normalize('NFC').replace(/\r\n?/g, '\n');
 	return canonicalNewlines
-		.split(/\n[\t ]*\n+/u)
+		.split(/\n[\t ]*\n*/u)
 		.map((part) => part.replace(/[\t ]*\n[\t ]*/gu, ' ').replace(/[\t ]+/gu, ' '))
 		.join('\n\n');
 }

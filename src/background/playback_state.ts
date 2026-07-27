@@ -136,3 +136,26 @@ export function isPlaybackSessionSnapshot(value: unknown): value is PlaybackSess
 export function ownsTab(session: PlaybackSessionSnapshot | null, tabId: number): boolean {
 	return session?.source.kind === 'tab' && session.source.tabId === tabId;
 }
+
+/**
+ * Whether two URLs address the same document, i.e. differ at most by their fragment.
+ *
+ * `chrome.tabs.onUpdated` reports a fragment change, a `pushState`, a reload and a real navigation
+ * as the same `status: "loading"` update, with no `url` field to tell them apart. Google Docs
+ * rewrites its own `#heading=…` every time the caret moves, so treating every such update as a
+ * navigation stopped playback on each click into the document.
+ */
+export function isSameDocumentUrl(left: string, right: string): boolean {
+	if (left === right) {
+		return true;
+	}
+	try {
+		const from = new URL(left);
+		const to = new URL(right);
+		from.hash = '';
+		to.hash = '';
+		return from.href === to.href;
+	} catch {
+		return false;
+	}
+}

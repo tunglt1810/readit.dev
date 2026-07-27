@@ -1,4 +1,5 @@
 import { GOOGLE_DOCS_EXPORT_UNAVAILABLE } from '../shared/constants.ts';
+import { detectContentLanguage } from '../shared/language_detection.ts';
 import type { Article } from '../shared/types.ts';
 
 export type GoogleDocsFetch = (
@@ -57,7 +58,7 @@ export async function extractGoogleDocsArticle(
 			return { success: false, error: GOOGLE_DOCS_EXPORT_UNAVAILABLE };
 		}
 
-		return { success: true, article: { ...input, content } };
+		return { success: true, article: { ...input, content, lang: detectContentLanguage(content, input.lang) } };
 	} catch {
 		return { success: false, error: GOOGLE_DOCS_EXPORT_UNAVAILABLE };
 	}

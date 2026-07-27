@@ -32,6 +32,7 @@ import {
 	createPlaybackErrorSession,
 	createPlaybackSession,
 	isPlaybackSessionSnapshot,
+	isSameDocumentUrl,
 	ownsTab,
 } from './playback_state';
 import { createSelectedTextArticle } from './selected_text';
@@ -406,6 +407,42 @@ async function stopIfOwner(tabId: number, reason: string): Promise<void> {
 	await ensureHydrated();
 	if (ownsTab(activeSession, tabId)) {
 		await stopActiveSession(reason);
+	}
+}
+
+/**
+ * Stops playback only when the owning tab actually left the document being read.
+ *
+ * `changeInfo` reports a fragment change, a `pushState`, a reload and a real navigation all as the
+ * same `status: "loading"` update, so it cannot tell them apart on its own. The document the tab is
+ * on now is compared against the one the session started on. Google Docs rewrites `#heading=…`
+ * every time the caret moves, which used to stop playback on each click into the document.
+ *
+ * The URL comes from the content script rather than `chrome.tabs.get`, which reports no URL without
+ * the broad `tabs` permission this extension deliberately does not request. A document that has
+ * gone away takes its content script with it, so a silent tab is itself the answer.
+ */
+async function stopIfNavigatedAway(tabId: number): Promise<void> {
+	await ensureHydrated();
+	if (!ownsTab(activeSession, tabId)) {
+		return;
+	}
+	const startedOn = activeSession?.source.kind === 'tab' ? activeSession.source.url : null;
+	const currentUrl = await liveDocumentUrl(tabId);
+	if (startedOn !== null && currentUrl !== null && isSameDocumentUrl(startedOn, currentUrl)) {
+		return;
+	}
+	await stopActiveSession('tab-navigation');
+}
+
+async function liveDocumentUrl(tabId: number): Promise<string | null> {
+	try {
+		// Frame 0 only: Google Docs and other embedders would otherwise answer from an iframe.
+		const info = (await chrome.tabs.sendMessage(tabId, { action: 'GET_PAGE_INFO' }, { frameId: 0 })) as { url?: unknown };
+		return typeof info?.url === 'string' ? info.url : null;
+	} catch (_error) {
+		// No content script answered, so the document that was being read is gone.
+		return null;
 	}
 }
 
@@ -1016,8 +1053,10 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-	if (changeInfo.status === 'loading' || changeInfo.url !== undefined) {
-		void enqueue(() => stopIfOwner(tabId, 'tab-navigation'));
+	// Checked on `complete` as well as `loading`: while a navigation is still loading the tab can
+	// still report the URL it is leaving, and that update is the only other chance to notice.
+	if (changeInfo.status !== undefined || changeInfo.url !== undefined) {
+		void enqueue(() => stopIfNavigatedAway(tabId));
 	}
 });
 

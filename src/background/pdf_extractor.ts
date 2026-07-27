@@ -1,4 +1,5 @@
 import { PDF_ERROR_CODES, type PdfErrorCode } from '../shared/constants.ts';
+import { detectContentLanguage } from '../shared/language_detection.ts';
 import type { Article } from '../shared/types.ts';
 
 const PDF_FETCH_TIMEOUT_MS = 30_000;
@@ -184,7 +185,7 @@ export async function extractPdfArticle(
 				title: documentTitle(metadata, source),
 				content,
 				url: source.url,
-				lang: 'na',
+				lang: detectContentLanguage(content, 'na'),
 			},
 		};
 	} catch (error) {

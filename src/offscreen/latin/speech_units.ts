@@ -129,7 +129,7 @@ function planParagraph(text: string, paragraphPauseAfterMs: number): SpeechUnit[
 export function planLatinSpeechUnits(text: string): SpeechUnit[] {
 	const paragraphs = text
 		.normalize('NFC')
-		.split(/\n[\t ]*\n+/u)
+		.split(/\n[\t ]*\n*/u)
 		.map((paragraph) => paragraph.replace(/\s+/gu, ' ').trim())
 		.filter(Boolean);
 	const units: SpeechUnit[] = [];

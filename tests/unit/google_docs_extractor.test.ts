@@ -52,6 +52,21 @@ test('creates an Article from same-origin plain text without collapsing paragrap
 	]);
 });
 
+test('tags a Vietnamese export as vi even when the page declares another language', async () => {
+	const fetcher: GoogleDocsFetch = async () => ({
+		ok: true,
+		headers: new Headers({ 'content-type': 'text/plain; charset=utf-8' }),
+		text: async () => 'Chia tay không chỉ là buồn trong lòng, mà còn là một cú sốc mạnh với não bộ và cơ thể.',
+	});
+
+	const result = await extractGoogleDocsArticle(
+		{ url: 'https://docs.google.com/document/d/google-doc-id/edit', title: 'Doc', lang: 'en' },
+		fetcher,
+	);
+
+	assert.equal(result?.success && result.article.lang, 'vi');
+});
+
 test('returns the shared code for denied, non-text, empty, and rejected exports', async () => {
 	const response =
 		(ok: boolean, contentType: string, text: string): GoogleDocsFetch =>

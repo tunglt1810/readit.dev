@@ -73,6 +73,24 @@ test('keeps a display heading separate while joining its body line-wraps', async
 	);
 });
 
+test('tags Vietnamese PDF text as vi, since a PDF declares no language of its own', async () => {
+	const vietnamese = dependencies({
+		loadDocument: async () => ({
+			numPages: 1,
+			getMetadata: async () => ({ info: { Title: 'Báo cáo' } }),
+			getPage: async () => ({
+				getTextContent: async () => ({
+					items: [{ str: 'Chia tay không chỉ là buồn trong lòng, mà còn là một cú sốc mạnh với não bộ và cơ thể.' }],
+				}),
+			}),
+			destroy: async () => undefined,
+		}),
+	});
+
+	const result = await extractPdfArticle(source, vietnamese);
+	assert.equal(result.success && result.article.lang, 'vi');
+});
+
 test('uses tab title and filename fallbacks, recognizes PDF signatures, and ignores non-PDF fallbacks', async () => {
 	const noMetadata = dependencies({
 		fetchPdf: async () => ({

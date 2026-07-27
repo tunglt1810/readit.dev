@@ -5,6 +5,7 @@ import {
 	createPlaybackErrorSession,
 	createPlaybackSession,
 	isPlaybackSessionSnapshot,
+	isSameDocumentUrl,
 	ownsTab,
 } from '../../src/background/playback_state.ts';
 
@@ -158,6 +159,25 @@ test('matches only the owning tab', () => {
 	assert.equal(ownsTab(session, 42), true);
 	assert.equal(ownsTab(session, 7), false);
 	assert.equal(ownsTab(null, 42), false);
+});
+
+const doc = 'https://docs.google.com/document/d/abc/edit';
+
+test('treats a fragment-only change as the same document', () => {
+	// Google Docs rewrites `#heading=…` whenever the caret moves, and Chrome reports that as an
+	// ordinary `status: "loading"` update — indistinguishable from a real navigation without
+	// comparing the URLs themselves.
+	assert.equal(isSameDocumentUrl(`${doc}?tab=t.0`, `${doc}?tab=t.0#heading=h.7v`), true);
+	assert.equal(isSameDocumentUrl(`${doc}#heading=h.1`, `${doc}#heading=h.9`), true);
+	assert.equal(isSameDocumentUrl('https://example.com/article', 'https://example.com/article'), true);
+});
+
+test('treats path, query, and origin changes as leaving the document', () => {
+	assert.equal(isSameDocumentUrl(doc, 'https://docs.google.com/document/d/xyz/edit'), false);
+	assert.equal(isSameDocumentUrl('https://example.com/article', 'https://example.com/article?page=2'), false);
+	assert.equal(isSameDocumentUrl('https://example.com/article', 'https://other.example.com/article'), false);
+	// An unparsable URL is not evidence that the reader stayed put, so it must not suppress a stop.
+	assert.equal(isSameDocumentUrl('https://example.com/article', 'not a url'), false);
 });
 
 test('manual sessions never own browser tabs', () => {

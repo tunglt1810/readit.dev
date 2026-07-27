@@ -98,3 +98,21 @@ test('returns no empty units', () => {
 test('keeps consecutive short sentences in one synthesis unit', () => {
 	assert.deepEqual(planLatinSpeechUnits('Câu đầu… Câu sau.'), [{ text: 'Câu đầu… Câu sau.', pauseAfterMs: 180 }]);
 });
+
+test('treats a single line break as a paragraph boundary instead of erasing it to a plain space', () => {
+	// Google Docs' plain-text export puts headings and standalone citation lines on their own line
+	// separated by a single \n (only genuine new-paragraph breaks get \n\n+). Collapsing that single
+	// \n to a bare space fused unrelated lines together with zero pause between them.
+	assert.deepEqual(planLatinSpeechUnits('First line\nSecond line.'), [
+		{ text: 'First line', pauseAfterMs: 260 },
+		{ text: 'Second line.', pauseAfterMs: 180 },
+	]);
+});
+
+test('treats several consecutive single line breaks the same as paragraph breaks', () => {
+	assert.deepEqual(planLatinSpeechUnits('First line\nSecond line\nThird line.'), [
+		{ text: 'First line', pauseAfterMs: 260 },
+		{ text: 'Second line', pauseAfterMs: 260 },
+		{ text: 'Third line.', pauseAfterMs: 180 },
+	]);
+});
