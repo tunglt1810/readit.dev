@@ -1,4 +1,5 @@
-import { STORAGE_KEYS, THEME_TRANSLATIONS } from '../shared/constants';
+import { STORAGE_KEYS } from '../shared/constants';
+import { THEME_TRANSLATIONS } from '../shared/i18n';
 import {
 	isSelectionButtonEnabled,
 	SELECTION_BUTTON_HOST_ID,

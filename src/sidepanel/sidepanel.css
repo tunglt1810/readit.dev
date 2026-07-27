@@ -10,7 +10,8 @@ body,
 
 body {
 	margin: 0;
-	background: #09090b;
+	background: radial-gradient(circle at 88% 0%, rgba(0, 135, 113, 0.14), transparent 34%), var(--bg-app);
+	color: var(--color-text-primary);
 }
 
 button,
@@ -27,9 +28,24 @@ input {
 	flex-direction: column;
 	gap: var(--space-4);
 	overflow-y: auto;
-	background: var(--bg-app);
+	background: radial-gradient(circle at 88% 0%, rgba(0, 135, 113, 0.14), transparent 34%), var(--bg-app);
 	color: var(--color-text-primary);
 	font-family: var(--font-sans);
+	position: relative;
+}
+
+.side-panel::before {
+	content: "";
+	position: fixed;
+	top: -94px;
+	right: -94px;
+	width: 250px;
+	height: 250px;
+	border-radius: 50%;
+	background: radial-gradient(circle, rgba(0, 135, 113, 0.15) 0%, rgba(4, 97, 163, 0.05) 50%, transparent 100%);
+	filter: blur(40px);
+	z-index: 0;
+	pointer-events: none;
 }
 
 .side-panel-header {
@@ -48,7 +64,7 @@ input {
 }
 
 .side-panel-header h1 span {
-	color: #10bba3;
+	color: var(--color-logo-span);
 }
 
 .extension-version,
@@ -89,9 +105,11 @@ input {
 .alert {
 	margin-inline: var(--space-4);
 	border: 1px solid var(--border-glass);
-	border-radius: 12px;
+	border-radius: 14px;
 	background: var(--bg-glass);
-	box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+	backdrop-filter: blur(12px);
+	-webkit-backdrop-filter: blur(12px);
+	box-shadow: 0 10px 26px rgba(0, 0, 0, 0.2);
 }
 
 .current-page-card,
@@ -99,6 +117,11 @@ input {
 	display: grid;
 	gap: var(--space-3);
 	padding: var(--space-4);
+}
+
+.current-page-card .btn-read {
+	justify-self: center;
+	margin-top: var(--space-1);
 }
 
 .current-page-card h2,
@@ -286,31 +309,13 @@ input:focus-visible {
 	font-size: 0.82rem;
 }
 
-.side-panel-player {
-	position: sticky;
-	z-index: 2;
-	bottom: 0;
-	display: grid;
-	gap: var(--space-3);
-	margin-bottom: var(--space-4);
-	padding: var(--space-4);
-	backdrop-filter: blur(18px);
-}
-
-.side-panel-player:empty,
-.side-panel-player:not(:has(.session-meta)) {
-	display: none;
+.session-title {
+	font-weight: 700;
 }
 
 
 .session-title {
 	font-weight: 700;
-}
-
-.player-controls button {
-	width: 40px;
-	padding: 0;
-	font-size: 1rem;
 }
 
 .side-panel .settings-card {
@@ -321,7 +326,6 @@ input:focus-visible {
 
 .side-panel[data-theme="winamp"] .current-page-card,
 .side-panel[data-theme="winamp"] .manual-text-card,
-.side-panel[data-theme="winamp"] .side-panel-player,
 .side-panel[data-theme="winamp"] .alert,
 .side-panel[data-theme="winamp"] button,
 .side-panel[data-theme="winamp"] textarea,
@@ -330,15 +334,26 @@ input:focus-visible {
 	border-radius: 0;
 }
 
-.side-panel[data-theme="winamp"] .primary-button {
+.side-panel[data-theme="winamp"] {
+	background: repeating-linear-gradient(135deg, #303338 0 2px, #25272b 2px 4px);
+}
+
+.side-panel[data-theme="winamp"]::before {
+	display: none;
+}
+
+.side-panel[data-theme="winamp"] .primary-button,
+.side-panel[data-theme="winamp"] .btn-read-page {
 	border-color: #3d9840;
 	background: #1f4219;
 	color: #8fdf53;
 	font-family: "Courier New", Courier, monospace;
 	box-shadow: inset 0 0 10px #061106, 0 0 8px rgba(143, 223, 83, 0.4);
+	border-radius: 0;
 }
 
-.side-panel[data-theme="winamp"] .primary-button:hover:not(:disabled) {
+.side-panel[data-theme="winamp"] .primary-button:hover:not(:disabled),
+.side-panel[data-theme="winamp"] .btn-read-page:hover:not(:disabled) {
 	background: #285421;
 	color: #a3ff64;
 	border-color: #71ea64;
@@ -360,16 +375,20 @@ input:focus-visible {
 	background: radial-gradient(ellipse at 50% 18%, #183f5a 0%, #0a1c2b 43%, #05080a 80%);
 }
 
+.side-panel[data-theme="wmp12"]::before {
+	display: none;
+}
+
 .side-panel[data-theme="wmp12"] .current-page-card,
 .side-panel[data-theme="wmp12"] .manual-text-card,
-.side-panel[data-theme="wmp12"] .side-panel-player,
 .side-panel[data-theme="wmp12"] .settings-card {
 	border-color: #43525b;
 	background: rgba(16, 21, 23, 0.85);
 	box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.4);
 }
 
-.side-panel[data-theme="wmp12"] .primary-button {
+.side-panel[data-theme="wmp12"] .primary-button,
+.side-panel[data-theme="wmp12"] .btn-read-page {
 	border-color: #269bd8;
 	background: linear-gradient(180deg, #249bd7, #125c98);
 }

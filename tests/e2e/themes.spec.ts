@@ -293,3 +293,22 @@ test.describe('English popup locale', () => {
 		await expect(page.locator('.alert-danger')).toHaveText('Unable to load model: Unknown error');
 	});
 });
+
+test('synchronizes title logo span (.dev) color with --color-logo-span CSS variable in Popup across themes', async ({ page, openPopup }) => {
+	await installPopupRuntimeMock(page, { session: null, currentTabId: 7 });
+	await openPopup(page);
+
+	const logoSpan = page.locator('.logo-text span');
+	await expect(logoSpan).toBeVisible();
+
+	// Default theme
+	await expect(logoSpan).toHaveCSS('color', 'rgb(9, 159, 181)');
+
+	// Winamp theme
+	await selectTheme(page, '🕹️ Classic (1998)');
+	await expect(logoSpan).toHaveCSS('color', 'rgb(143, 223, 83)');
+
+	// WMP12 theme
+	await selectTheme(page, '💿 Vista Aero (2006)');
+	await expect(logoSpan).toHaveCSS('color', 'rgb(86, 198, 251)');
+});

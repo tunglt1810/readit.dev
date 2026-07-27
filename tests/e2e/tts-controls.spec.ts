@@ -73,11 +73,58 @@ test.describe('Kịch bản 3: Điều khiển TTS (TTS Controls)', () => {
 	test('opens the Side Panel from a labeled secondary action', async ({ page }) => {
 		const button = page.getByRole('button', { name: 'Mở Side Panel' });
 		await expect(button).toBeVisible();
-		await expect(page.locator('.playback-controls + .open-side-panel')).toHaveCount(1);
+		await expect(page.locator('.status-row .btn-icon-sidepanel')).toHaveCount(1);
 		await expect.poll(() => page.evaluate(() => (window as any).tabsQueryCalls)).toBe(1);
 		await button.click();
 		expect(await page.evaluate(() => (window as any).sidePanelOpenCalls)).toEqual([{ windowId: 7 }]);
 		expect(await page.evaluate(() => (window as any).tabsQueryCalls)).toBe(1);
+	});
+
+	test('renders status-row container with compact status display pill and side panel icon button', async ({ page }) => {
+		const statusRow = page.locator('.status-row');
+		const statusDisplay = statusRow.locator('.status-display');
+		const sidePanelBtn = statusRow.locator('.btn-icon-sidepanel');
+
+		await expect(statusRow).toBeVisible();
+		await expect(statusRow).toHaveCSS('display', 'flex');
+		await expect(statusRow).toHaveCSS('justify-content', 'space-between');
+		await expect(statusRow).toHaveCSS('align-items', 'center');
+
+		await expect(statusDisplay).toBeVisible();
+		await expect(statusDisplay).toHaveAttribute('role', 'status');
+		await expect(sidePanelBtn).toBeVisible();
+		await expect(sidePanelBtn).toHaveAttribute('title', 'Mở Side Panel');
+		await expect(sidePanelBtn).toHaveAttribute('aria-label', 'Mở Side Panel');
+		await expect(sidePanelBtn).toHaveAttribute('type', 'button');
+
+		const svg = sidePanelBtn.locator('svg');
+		await expect(svg).toBeVisible();
+		await expect(svg).toHaveAttribute('aria-hidden', 'true');
+		await expect(svg.locator('rect, line, path, polygon')).toHaveCount(2);
+
+		// Kiểm tra trạng thái hover/tooltip
+		await sidePanelBtn.hover();
+		await expect(sidePanelBtn).toHaveCSS('cursor', 'pointer');
+	});
+
+	test('supports keyboard navigation and activation (Enter and Space) on Side Panel toggle button', async ({ page }) => {
+		const sidePanelBtn = page.locator('.status-row .btn-icon-sidepanel');
+
+		// Focus nút Side Panel qua bàn phím
+		await sidePanelBtn.focus();
+		await expect(sidePanelBtn).toBeFocused();
+
+		// Nhấn phím Enter để kích hoạt mở Side Panel
+		await page.keyboard.press('Enter');
+		expect(await page.evaluate(() => (window as any).sidePanelOpenCalls)).toEqual([{ windowId: 7 }]);
+
+		// Clear mock calls và thử kích hoạt bằng phím Space (Spacebar)
+		await page.evaluate(() => {
+			(window as any).sidePanelOpenCalls = [];
+		});
+		await sidePanelBtn.focus();
+		await page.keyboard.press('Space');
+		expect(await page.evaluate(() => (window as any).sidePanelOpenCalls)).toEqual([{ windowId: 7 }]);
 	});
 
 	test('shows a localized error when the Side Panel cannot be opened', async ({ page }) => {
@@ -213,4 +260,136 @@ test.describe('Kịch bản 3: Điều khiển TTS (TTS Controls)', () => {
 		await expect(readButton).toBeFocused();
 	});
 });
+
+test.describe('Popup Layout & Localization - English (en-US)', () => {
+	test.use({ browserLocale: 'en-US' });
+
+	test.beforeEach(async ({ page, openPopup }) => {
+		await installPopupRuntimeMock(page, { session: null, currentTabId: 7 });
+		await openPopup(page);
+	});
+
+	test('renders Popup status display and side panel toggle button in English locale', async ({ page }) => {
+		const statusRow = page.locator('.status-row');
+		const sidePanelBtn = statusRow.locator('.btn-icon-sidepanel');
+		const statusText = page.locator('.status-text');
+
+		await expect(statusText).toHaveText('Ready to read page');
+		await expect(sidePanelBtn).toBeVisible();
+		await expect(sidePanelBtn).toHaveAttribute('title', 'Open Side Panel');
+		await expect(sidePanelBtn).toHaveAttribute('aria-label', 'Open Side Panel');
+		await expect(sidePanelBtn).toHaveAttribute('data-tooltip', 'Open Side Panel');
+		await expect(sidePanelBtn).toHaveAttribute('aria-pressed', 'false');
+		await expect(sidePanelBtn).not.toHaveClass(/active/);
+		await expect(sidePanelBtn.locator('svg')).toBeVisible();
+
+		// Update open sidepanel storage state
+		await page.evaluate(async () => {
+			await chrome.storage.local.set({ readit_open_sidepanel_windows: [7] });
+		});
+
+		await expect(sidePanelBtn).toHaveAttribute('aria-pressed', 'true');
+		await expect(sidePanelBtn).toHaveClass(/active/);
+		await expect(sidePanelBtn).toHaveAttribute('title', 'Close side panel');
+		await expect(sidePanelBtn).toHaveAttribute('aria-label', 'Close side panel');
+		await expect(sidePanelBtn).toHaveAttribute('data-tooltip', 'Close side panel');
+
+		// Keyboard focus and interaction in English locale
+		await sidePanelBtn.focus();
+		await expect(sidePanelBtn).toBeFocused();
+		await page.keyboard.press('Enter');
+		expect(await page.evaluate(() => (window as any).sentMessages.at(-1))).toEqual({
+			action: 'CLOSE_SIDEPANEL',
+			payload: { windowId: 7 },
+		});
+	});
+
+	test('verifies JSON localization in English without broken fallback keys', async ({ page }) => {
+		// Header links & titles
+		await expect(page.locator('.header-support-link')).toContainText('Buy me a coffee');
+
+		// Settings Card labels
+		await expect(page.getByRole('button', { name: 'Theme' })).toBeVisible();
+		await expect(page.getByRole('combobox', { name: 'Voice' })).toBeVisible();
+		await expect(page.getByRole('slider', { name: 'Speed' })).toBeVisible();
+		await expect(page.getByRole('checkbox', { name: 'Selection button' })).toBeVisible();
+		await expect(page.getByRole('checkbox', { name: 'Word highlight' })).toBeVisible();
+
+		// Footer links
+		await expect(page.getByRole('link', { name: 'Feedback' })).toBeVisible();
+		await expect(page.getByRole('link', { name: 'Privacy Policy' })).toBeVisible();
+
+		// Primary playback action tooltip & aria-label
+		await expect(page.getByRole('button', { name: 'Read current page' })).toBeVisible();
+
+		// Ensure no raw untranslated i18n keys are visible on the page
+		const rawFallbackKeys = [
+			'appName',
+			'readPage',
+			'stopReading',
+			'openSidePanel',
+			'selectTheme',
+			'voiceConfig',
+			'readingSpeed',
+			'showSelectionButton',
+			'showWordHighlight',
+			'buyMeCoffee',
+			'feedback',
+			'privacyPolicy',
+			'readyStatus',
+		];
+		for (const key of rawFallbackKeys) {
+			await expect(page.locator(`text="${key}"`)).toHaveCount(0);
+		}
+	});
+});
+
+test.describe('Popup Layout & Localization - Vietnamese (vi-VN)', () => {
+	test.use({ browserLocale: 'vi-VN' });
+
+	test.beforeEach(async ({ page, openPopup }) => {
+		await installPopupRuntimeMock(page, { session: null, currentTabId: 7 });
+		await openPopup(page);
+	});
+
+	test('verifies JSON localization in Vietnamese without broken fallback keys', async ({ page }) => {
+		// Header links & titles
+		await expect(page.locator('.header-support-link')).toContainText('Ủng hộ tôi một ly cà phê');
+
+		// Settings Card labels
+		await expect(page.getByRole('button', { name: 'Giao diện' })).toBeVisible();
+		await expect(page.getByRole('combobox', { name: 'Giọng đọc' })).toBeVisible();
+		await expect(page.getByRole('slider', { name: 'Tốc độ' })).toBeVisible();
+		await expect(page.getByRole('checkbox', { name: 'Nút chọn nhanh' })).toBeVisible();
+		await expect(page.getByRole('checkbox', { name: 'Tô sáng từ' })).toBeVisible();
+
+		// Footer links
+		await expect(page.getByRole('link', { name: 'Phản hồi' })).toBeVisible();
+		await expect(page.getByRole('link', { name: 'Chính sách quyền riêng tư' })).toBeVisible();
+
+		// Primary playback action tooltip & aria-label
+		await expect(page.getByRole('button', { name: 'Đọc trang hiện tại' })).toBeVisible();
+
+		// Ensure no raw untranslated i18n keys are visible on the page
+		const rawFallbackKeys = [
+			'appName',
+			'readPage',
+			'stopReading',
+			'openSidePanel',
+			'selectTheme',
+			'voiceConfig',
+			'readingSpeed',
+			'showSelectionButton',
+			'showWordHighlight',
+			'buyMeCoffee',
+			'feedback',
+			'privacyPolicy',
+			'readyStatus',
+		];
+		for (const key of rawFallbackKeys) {
+			await expect(page.locator(`text="${key}"`)).toHaveCount(0);
+		}
+	});
+});
+
 

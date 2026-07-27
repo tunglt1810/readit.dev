@@ -11,10 +11,11 @@
 
 	--color-text-primary: #f4f4f5;
 	--color-text-secondary: #a1a1aa;
+	--color-logo-span: #099fb5;
 
-	/* Brand Gradients – Teal to Blue (matches logo) */
-	--gradient-brand: linear-gradient(135deg, #008771, #0461a3);
-	--gradient-brand-hover: linear-gradient(135deg, #099fb5, #1a6ac6);
+	/* Brand Gradients – Teal to Cyan */
+	--gradient-brand: linear-gradient(135deg, #008771, #088195);
+	--gradient-brand-hover: linear-gradient(135deg, #099fb5, #008771);
 	/* Status Colors */
 	--color-success: #10b981;
 	--color-danger: #ef4444;
@@ -37,6 +38,7 @@
 	--border-glass-focus: #8fdf53;
 	--color-text-primary: #71ea64;
 	--color-text-secondary: #3d9840;
+	--color-logo-span: #8fdf53;
 	--font-sans: "Courier New", Courier, monospace;
 	--font-display: "Courier New", Courier, monospace;
 }
@@ -50,21 +52,96 @@
 	--border-glass-focus: #56c6fb;
 	--color-text-primary: #eaf8ff;
 	--color-text-secondary: #a8c9db;
+	--color-logo-span: #56c6fb;
 	--font-sans: "Segoe UI", system-ui, sans-serif;
 	--font-display: "Segoe UI", system-ui, sans-serif;
 }
 
-/* Shared Status Indicator Pill / Badge */
-.status-display {
+/* Shared Status Indicator Container & Pill Badge */
+.status-row {
 	display: flex;
 	align-items: center;
-	align-self: flex-start;
+	justify-content: space-between;
+	width: 100%;
+	gap: 8px;
+}
+
+.status-display {
+	display: inline-flex;
+	align-items: center;
 	gap: 7px;
 	padding: 6px 10px;
 	border: 1px solid rgba(255, 255, 255, 0.06);
 	border-radius: 999px;
 	background: rgba(255, 255, 255, 0.025);
 	width: fit-content;
+}
+
+.btn-icon-sidepanel {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	background: transparent;
+	border: none;
+	color: var(--color-text-secondary);
+	cursor: pointer;
+	padding: 4px;
+	border-radius: 6px;
+	transition: all 0.2s ease;
+	flex-shrink: 0;
+}
+
+.btn-icon-sidepanel:hover {
+	color: var(--color-text-primary);
+	background: rgba(255, 255, 255, 0.12);
+}
+
+.btn-icon-sidepanel:focus-visible {
+	outline: 2px solid var(--border-glass-focus);
+	outline-offset: 1px;
+}
+
+.btn-icon-sidepanel.active,
+.btn-icon-sidepanel[aria-pressed="true"] {
+	color: #099fb5;
+	background: rgba(9, 159, 181, 0.18);
+	border: 1px solid rgba(9, 159, 181, 0.4);
+	box-shadow: 0 0 8px rgba(9, 159, 181, 0.35);
+}
+
+.btn-icon-sidepanel[data-tooltip] {
+	position: relative;
+}
+
+.btn-icon-sidepanel[data-tooltip]::after {
+	content: attr(data-tooltip);
+	position: absolute;
+	top: calc(100% + 6px);
+	right: 0;
+	white-space: nowrap;
+	padding: 4px 8px;
+	border-radius: 6px;
+	background: rgba(18, 18, 24, 0.95);
+	color: #f4f4f5;
+	font-size: 11px;
+	font-weight: 500;
+	line-height: 1.2;
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+	backdrop-filter: blur(8px);
+	pointer-events: none;
+	z-index: 100;
+	opacity: 0;
+	visibility: hidden;
+	transform: translateY(-2px);
+	transition: opacity 0.12s ease, transform 0.12s ease, visibility 0.12s;
+}
+
+.btn-icon-sidepanel[data-tooltip]:hover::after,
+.btn-icon-sidepanel[data-tooltip]:focus-visible::after {
+	opacity: 1;
+	visibility: visible;
+	transform: translateY(0);
 }
 
 .status-display[data-status="playing"] {
@@ -150,6 +227,130 @@
 		transform: scale(0.95);
 		box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
 	}
+}
+
+/* Shared Button Styles */
+.btn {
+	border: none;
+	border-radius: 10px;
+	font-weight: 600;
+	font-size: 14px;
+	cursor: pointer;
+	transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+}
+
+.btn-block {
+	width: 100%;
+	padding: 12px;
+}
+
+.btn-large {
+	min-height: 46px;
+	padding: 12px 16px;
+}
+
+.btn-icon-only {
+	width: 52px;
+	height: 52px;
+	border-radius: 50%;
+	padding: 0;
+	font-size: 20px;
+}
+
+.btn-icon-only svg {
+	width: 22px;
+	height: 22px;
+}
+
+.btn:focus-visible {
+	outline: 2px solid #099fb5;
+	outline-offset: 3px;
+}
+
+.btn-primary {
+	background: var(--gradient-brand);
+	color: #fff;
+	box-shadow:
+		0 8px 20px rgba(0, 135, 113, 0.28),
+		inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.btn-primary:hover:not(:disabled) {
+	background: var(--gradient-brand-hover);
+	transform: translateY(-1px);
+	box-shadow:
+		0 10px 24px rgba(0, 135, 113, 0.38),
+		inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+.btn-primary:active:not(:disabled) {
+	transform: translateY(0);
+}
+
+.btn-primary.active {
+	background: var(--color-danger);
+	box-shadow: 0 4px 14px 0 rgba(239, 68, 68, 0.3);
+}
+
+.btn-read {
+	font-size: 15px;
+	letter-spacing: -0.1px;
+}
+
+.btn-read-current-page {
+	align-self: center;
+	padding: var(--space-2) var(--space-3);
+	font-size: 12px;
+}
+
+.btn-primary.active:hover {
+	background: #f87171;
+	box-shadow: 0 6px 20px 0 rgba(239, 68, 68, 0.4);
+}
+
+.btn-secondary {
+	background: rgba(255, 255, 255, 0.06);
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	color: var(--color-text-primary);
+}
+
+.btn-secondary:hover:not(:disabled) {
+	background: rgba(255, 255, 255, 0.1);
+	transform: translateY(-1px);
+}
+
+.btn:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+/* Progress Bar & Playback Controls */
+.progress-bar-container {
+	width: 100%;
+	height: 4px;
+	background: rgba(255, 255, 255, 0.05);
+	border-radius: 9999px;
+	overflow: hidden;
+	margin-top: 0;
+}
+
+.progress-bar {
+	height: 100%;
+	background: var(--gradient-brand);
+	border-radius: 9999px;
+	transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.playback-controls {
+	display: flex;
+	flex-direction: row;
+	justify-content: center;
+	align-items: center;
+	gap: 16px;
 }
 
 /* Base Form Controls for Settings */
@@ -426,7 +627,19 @@
 	margin-block: var(--space-1);
 }
 
-/* WINAMP THEME STYLES */
+[data-theme="winamp"] .progress-bar-container {
+	height: 10px;
+	border: 2px solid;
+	border-color: #111 #8e8e8e #8e8e8e #111;
+	border-radius: 0;
+	background: #151719;
+}
+
+[data-theme="winamp"] .progress-bar {
+	background: repeating-linear-gradient(90deg, #8fdf53 0 7px, #1b4422 7px 9px);
+	border-radius: 0;
+}
+
 [data-theme="winamp"] .settings-card {
 	background: #020303;
 	border: 2px solid;
@@ -535,6 +748,17 @@
 }
 
 /* WMP12 THEME STYLES */
+[data-theme="wmp12"] .progress-bar-container {
+	height: 5px;
+	border-radius: 0;
+	background: #101517;
+}
+
+[data-theme="wmp12"] .progress-bar {
+	background: linear-gradient(90deg, #0f74bf, #56c6fb);
+	box-shadow: 0 0 5px #1b92df;
+}
+
 [data-theme="wmp12"] .settings-card {
 	background: rgba(16, 21, 23, 0.85);
 	border: 1px solid #43525b;

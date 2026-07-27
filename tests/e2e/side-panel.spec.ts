@@ -205,15 +205,24 @@ test('sends pause, resume, and stop through the shared playback coordinator', as
 	await installExtensionUiRuntimeMock(page, { session: manualSession }, pageInfo);
 	await openSidePanel(page);
 
-	await page.getByRole('button', { name: 'Tạm dừng' }).click();
+	const player = page.locator('.manual-text-card');
+	await player.getByRole('button', { name: 'Tạm dừng' }).click();
 	await page.evaluate((session) => {
 		(window as any).mockReceiveMessage({ action: 'PLAYBACK_STATE_UPDATE', session: { ...session, status: 'paused' } });
 	}, manualSession);
-	await page.getByRole('button', { name: 'Tiếp tục' }).click();
-	await page.getByRole('button', { name: 'Dừng đọc bài' }).click();
+	await player.getByRole('button', { name: 'Tiếp tục' }).click();
+	await player.getByRole('button', { name: 'Dừng đọc bài' }).click();
 
 	const actions = await page.evaluate(() => (window as any).sentMessages.map((message: any) => message.action));
 	expect(actions).toEqual(expect.arrayContaining(['PAUSE_READING', 'RESUME_READING', 'STOP_READING']));
+});
+
+test('renders SVG playback icons for page action and player controls', async ({ page, openSidePanel }) => {
+	await installExtensionUiRuntimeMock(page, { session: manualSession }, pageInfo);
+	await openSidePanel(page);
+
+	await expect(page.locator('.current-page-card .btn-read svg')).toBeVisible();
+	await expect(page.locator('.manual-text-card .playback-controls svg')).toHaveCount(2);
 });
 
 test('maps invalid manual text errors to the localized message', async ({ page, openSidePanel }) => {
@@ -339,7 +348,6 @@ for (const theme of ['default', 'winamp', 'wmp12'] as ThemeName[]) {
 		const currentPageBox = await page.getByRole('button', { name: 'Đọc trang hiện tại' }).boundingBox();
 		const textboxBox = await textbox.boundingBox();
 		expect(currentPageBox?.y).toBeLessThan(textboxBox?.y ?? 0);
-		await expect(page.locator('.side-panel-player')).toHaveCSS('position', 'sticky');
 	});
 }
 
@@ -363,4 +371,236 @@ test('localizes Google Docs current-page export failures', async ({ page, openSi
 	await page.getByRole('button', { name: 'Đọc trang hiện tại' }).click();
 	await expect(page.getByText('Không thể đọc Google Docs này. Hãy kiểm tra quyền xem hoặc tải xuống, hoặc đọc văn bản đã chọn/dán.')).toBeVisible();
 });
+
+test('verifies keyboard navigation and hover states for page card and bottom player controls', async ({ page, openSidePanel }) => {
+	await installExtensionUiRuntimeMock(page, { session: manualSession }, pageInfo);
+	await openSidePanel(page);
+
+	// Nút Đọc trang hiện tại: hover và keyboard focus
+	const readPageBtn = page.locator('.current-page-card .btn-read');
+	await expect(readPageBtn).toBeVisible();
+	await readPageBtn.hover();
+	await expect(readPageBtn).toHaveCSS('cursor', 'pointer');
+	await expect(readPageBtn.locator('svg')).toBeVisible();
+
+	// Player controls nút Tạm dừng: focus, hover và nhấn phím Space
+	const playerSection = page.locator('.manual-text-card');
+	const pauseBtn = playerSection.getByRole('button', { name: 'Tạm dừng' });
+	await expect(pauseBtn).toBeVisible();
+	await expect(pauseBtn).toHaveAttribute('title', 'Tạm dừng');
+	await expect(pauseBtn.locator('svg')).toBeVisible();
+	await pauseBtn.hover();
+	await expect(pauseBtn).toHaveCSS('cursor', 'pointer');
+	await pauseBtn.focus();
+	await expect(pauseBtn).toBeFocused();
+
+	// Dừng đọc bài button
+	const stopBtn = playerSection.getByRole('button', { name: 'Dừng đọc bài' });
+	await expect(stopBtn).toBeVisible();
+	await expect(stopBtn).toHaveAttribute('title', 'Dừng đọc bài');
+	await expect(stopBtn.locator('svg')).toBeVisible();
+	await stopBtn.hover();
+	await expect(stopBtn).toHaveCSS('cursor', 'pointer');
+
+	// Kích hoạt Tạm dừng bằng phím Space
+	await page.keyboard.press('Space');
+	const actions = await page.evaluate(() => (window as any).sentMessages.map((m: any) => m.action));
+	expect(actions).toContain('PAUSE_READING');
+});
+
+for (const theme of ['default', 'winamp', 'wmp12'] as ThemeName[]) {
+	test(`renders SVG playback icons and supports keyboard navigation for player controls in ${theme} theme`, async ({ page, openSidePanel }) => {
+		await installExtensionUiRuntimeMock(page, { session: manualSession }, pageInfo);
+		await openSidePanel(page);
+		await page.evaluate(async (selectedTheme) => {
+			await chrome.storage.local.set({ readit_active_theme: selectedTheme });
+		}, theme);
+		await page.reload();
+
+		// Player section inside manual-text-card
+		const playerSection = page.locator('.manual-text-card');
+		await expect(playerSection).toBeVisible();
+		await expect(playerSection.locator('.playback-controls svg')).toHaveCount(2);
+
+		const pauseBtn = playerSection.getByRole('button', { name: 'Tạm dừng' });
+		const stopBtn = playerSection.getByRole('button', { name: 'Dừng đọc bài' });
+
+		await expect(pauseBtn).toBeVisible();
+		await expect(stopBtn).toBeVisible();
+
+		// Thử kích hoạt nút Dừng đọc bài bằng phím Enter trong giao diện theme
+		await stopBtn.focus();
+		await page.keyboard.press('Enter');
+		const actions = await page.evaluate(() => (window as any).sentMessages.map((m: any) => m.action));
+		expect(actions).toContain('STOP_READING');
+	});
+}
+
+test.describe('Side Panel Localization - English (en-US)', () => {
+	test.use({ browserLocale: 'en-US' });
+
+	test('renders all Side Panel UI elements accurately in English locale', async ({ page, openSidePanel }) => {
+		await installExtensionUiRuntimeMock(page, { session: manualSession }, pageInfo);
+		await openSidePanel(page);
+
+		// Header
+		await expect(page.locator('.header-support-link')).toContainText('Buy me a coffee');
+
+		// Current Page Card
+		await expect(page.getByRole('heading', { name: 'Current page' })).toBeVisible();
+		await expect(page.locator('.current-page-card .btn-read')).toBeVisible();
+
+		// Paste text section
+		await expect(page.getByRole('heading', { name: 'Or paste text' })).toBeVisible();
+		await expect(page.locator('.paste-divider')).toHaveText('Or paste text');
+		await expect(page.locator('.manual-meta')).toContainText('Text is processed only on this device.');
+		await expect(page.locator('.manual-meta')).toContainText('characters');
+		await expect(page.locator('.field-label')).toContainText('Text language');
+		await expect(page.getByRole('button', { name: 'Clear' })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Read pasted text' })).toBeVisible();
+
+		// Player Section inside manual-text-card
+		await expect(page.locator('.manual-text-card').getByRole('button', { name: 'Pause' })).toBeVisible();
+		await expect(page.locator('.manual-text-card').getByRole('button', { name: 'Stop reading' })).toBeVisible();
+
+		// Verify no raw key fallbacks
+		const rawFallbackKeys = [
+			'currentPage',
+			'readPage',
+			'orPasteText',
+			'pasteTextPlaceholder',
+			'readPastedText',
+			'clearText',
+			'manualLanguage',
+			'textProcessedLocally',
+			'nowPlaying',
+			'stopReading',
+			'pauseState',
+		];
+		for (const key of rawFallbackKeys) {
+			await expect(page.locator(`text="${key}"`)).toHaveCount(0);
+		}
+	});
+});
+
+test.describe('Side Panel Localization - Vietnamese (vi-VN)', () => {
+	test.use({ browserLocale: 'vi-VN' });
+
+	test('renders all Side Panel UI elements accurately in Vietnamese locale', async ({ page, openSidePanel }) => {
+		await installExtensionUiRuntimeMock(page, { session: manualSession }, pageInfo);
+		await openSidePanel(page);
+
+		// Header
+		await expect(page.locator('.header-support-link')).toContainText('Ủng hộ tôi một ly cà phê');
+
+		// Current Page Card
+		await expect(page.getByRole('heading', { name: 'Trang hiện tại' })).toBeVisible();
+		await expect(page.locator('.current-page-card .btn-read')).toBeVisible();
+
+		// Paste text section
+		await expect(page.getByRole('heading', { name: 'Hoặc dán văn bản' })).toBeVisible();
+		await expect(page.locator('.paste-divider')).toHaveText('Hoặc dán văn bản');
+		await expect(page.locator('.manual-meta')).toContainText('Nội dung chỉ được xử lý trên thiết bị.');
+		await expect(page.locator('.manual-meta')).toContainText('ký tự');
+		await expect(page.locator('.field-label')).toContainText('Ngôn ngữ văn bản');
+		await expect(page.getByRole('button', { name: 'Xóa' })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Đọc văn bản đã dán' })).toBeVisible();
+
+		// Player Section inside manual-text-card
+		await expect(page.locator('.manual-text-card').getByRole('button', { name: 'Tạm dừng' })).toBeVisible();
+		await expect(page.locator('.manual-text-card').getByRole('button', { name: 'Dừng đọc bài' })).toBeVisible();
+
+		// Verify no raw key fallbacks
+		const rawFallbackKeys = [
+			'currentPage',
+			'readPage',
+			'orPasteText',
+			'pasteTextPlaceholder',
+			'readPastedText',
+			'clearText',
+			'manualLanguage',
+			'textProcessedLocally',
+			'nowPlaying',
+			'stopReading',
+			'pauseState',
+		];
+		for (const key of rawFallbackKeys) {
+			await expect(page.locator(`text="${key}"`)).toHaveCount(0);
+		}
+	});
+});
+
+test('verifies UI layout fixes: compact status display pill, standard read-page primary button, and consistent theme background', async ({ page, openSidePanel }) => {
+	await installExtensionUiRuntimeMock(page, { session: null }, pageInfo);
+	await openSidePanel(page);
+
+	// 1. Status display in Side Panel is a compact fit-content pill without full-width stretching
+	const statusDisplay = page.locator('.current-page-card .status-display');
+	await expect(statusDisplay).toBeVisible();
+	const statusBox = await statusDisplay.boundingBox();
+	const cardBox = await page.locator('.current-page-card').boundingBox();
+	expect(statusBox && cardBox && statusBox.width < cardBox.width * 0.8).toBe(true);
+
+	// 2. Button at Current Page is a compact circular button (.btn-icon-only.btn-read) without text label
+	const readPageBtn = page.getByRole('button', { name: 'Đọc trang hiện tại' });
+	await expect(readPageBtn).toBeVisible();
+	await expect(readPageBtn).toHaveClass(/btn-icon-only/);
+	await expect(readPageBtn).toHaveClass(/btn-read/);
+	await expect(readPageBtn).not.toHaveClass(/btn-read-page/);
+	await expect(readPageBtn).toHaveText('');
+
+	const btnBox = await readPageBtn.boundingBox();
+	expect(btnBox && Math.abs(btnBox.width - btnBox.height) < 2).toBe(true);
+
+	const btnSvg = readPageBtn.locator('svg');
+	await expect(btnSvg).toBeVisible();
+
+	// 3. Theme color consistency: side panel background has radial-gradient
+	const sidePanel = page.locator('.side-panel');
+	await expect(sidePanel).toHaveCSS('background-image', /radial-gradient/);
+});
+
+for (const [theme, expectedColor] of [
+	['default', 'rgb(9, 159, 181)'],
+	['winamp', 'rgb(143, 223, 83)'],
+	['wmp12', 'rgb(86, 198, 251)'],
+] as const) {
+	test(`synchronizes title logo span (.dev) color in Side Panel header for ${theme} theme`, async ({ page, openSidePanel }) => {
+		await installExtensionUiRuntimeMock(page, { session: null }, pageInfo);
+		await openSidePanel(page);
+		await page.evaluate(async (selectedTheme) => {
+			await chrome.storage.local.set({ readit_active_theme: selectedTheme });
+		}, theme);
+		await page.reload();
+
+		const logoSpan = page.locator('.side-panel-header h1 span');
+		await expect(logoSpan).toBeVisible();
+		await expect(logoSpan).toHaveCSS('color', expectedColor);
+	});
+}
+
+test('shows session meta and playback controls in current-page-card during an active tab session, and page info when stopped', async ({ page, openSidePanel }) => {
+	// 1. Tab session active: session-meta and playback-controls in current-page-card should be visible, page-info hidden
+	const tabSession: PlaybackSessionSnapshot = {
+		...manualSession,
+		source: { kind: 'tab', tabId: 7, title: 'Web Article', url: 'https://example.com/article' },
+	};
+	await installExtensionUiRuntimeMock(page, { session: tabSession }, pageInfo);
+	await openSidePanel(page);
+
+	await expect(page.locator('.current-page-card .session-meta')).toBeVisible();
+	await expect(page.locator('.current-page-card .playback-controls')).toBeVisible();
+	await expect(page.locator('.current-page-card .page-info')).not.toBeVisible();
+
+	// 2. Stopped session: page-info and read button in current-page-card should be visible, session-meta hidden
+	await page.evaluate(() => {
+		(window as any).mockReceiveMessage({ action: 'PLAYBACK_STATE_UPDATE', session: null });
+	});
+	await expect(page.locator('.current-page-card .page-info')).toBeVisible();
+	await expect(page.locator('.current-page-card .btn-read')).toBeVisible();
+	await expect(page.locator('.current-page-card .session-meta')).not.toBeVisible();
+});
+
+
+
 

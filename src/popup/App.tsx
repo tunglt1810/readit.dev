@@ -1,60 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { BUY_ME_A_COFFEE_URL, PRIVACY_POLICY_URL, STORAGE_KEYS } from '../shared/constants';
+import { BUY_ME_A_COFFEE_URL, DEFAULT_SPEED, PRIVACY_POLICY_URL, STORAGE_KEYS } from '../shared/constants';
 import { getLocalizedPlaybackError, t } from '../shared/i18n';
 import { requestPlaybackState, sendPlaybackCommand, subscribePlaybackState } from '../shared/playback_client';
 import { isSelectionButtonEnabled } from '../shared/selection_button';
 import type { PlaybackSessionSnapshot, PlaybackStatus, ThemeName } from '../shared/types';
 import { isWordHighlightEnabled } from '../shared/word_highlight';
+import { PlaybackIcon } from '../shared/components/PlaybackIcon';
+import { PlaybackControlButton } from '../shared/components/PlaybackControlButton';
 import { SettingsCard } from '../shared/components/SettingsCard';
 import { buildFeedbackUrl } from './feedback';
 import { openSidePanelForCurrentWindow } from './side_panel';
-
-type PlaybackIconName = 'read' | 'stop' | 'pause' | 'resume';
-
-
-
-function PlaybackIcon({ name }: { name: PlaybackIconName }) {
-	const commonProps = {
-		viewBox: '0 0 24 24',
-		'aria-hidden': true,
-		focusable: false,
-		fill: 'none',
-		stroke: 'currentColor',
-		strokeWidth: 2,
-		strokeLinecap: 'round' as const,
-		strokeLinejoin: 'round' as const,
-	};
-
-	switch (name) {
-		case 'stop':
-			return (
-				<svg {...commonProps}>
-					<rect x="7" y="7" width="10" height="10" rx="1" />
-				</svg>
-			);
-		case 'pause':
-			return (
-				<svg {...commonProps}>
-					<line x1="9" y1="6" x2="9" y2="18" />
-					<line x1="15" y1="6" x2="15" y2="18" />
-				</svg>
-			);
-		case 'resume':
-			return (
-				<svg {...commonProps}>
-					<polygon points="8 5 19 12 8 19 8 5" />
-				</svg>
-			);
-		default:
-			return (
-				<svg {...commonProps}>
-					<path d="M5 9v6h4l5 4V5L9 9H5z" />
-					<path d="M17 9a4 4 0 0 1 0 6" />
-				</svg>
-			);
-	}
-}
 
 
 
@@ -68,9 +24,10 @@ export default function App() {
 
 	// Settings States
 	const [activeVoice, setActiveVoice] = useState('M1');
-	const [speed, setSpeed] = useState(1.05);
+	const [speed, setSpeed] = useState(DEFAULT_SPEED);
 	const [selectionButtonEnabled, setSelectionButtonEnabled] = useState(true);
 	const [wordHighlightEnabled, setWordHighlightEnabled] = useState(true);
+	const [openSidePanelWindows, setOpenSidePanelWindows] = useState<number[]>([]);
 
 	// Model Loading States
 	const [modelLoading, setModelLoading] = useState(false);
@@ -172,6 +129,37 @@ export default function App() {
 		primaryButtonRef.current?.focus();
 	}, [session, activeTheme]);
 
+	useEffect(() => {
+		if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+			chrome.storage.local.get(['readit_open_sidepanel_windows'], (res) => {
+				if (Array.isArray(res?.readit_open_sidepanel_windows)) {
+					setOpenSidePanelWindows(res.readit_open_sidepanel_windows);
+				}
+			});
+		}
+
+		const handleStorageChange = (changes: { [key: string]: chrome.storage.StorageChange }) => {
+			if (changes.readit_open_sidepanel_windows) {
+				const newValue = changes.readit_open_sidepanel_windows.newValue;
+				if (Array.isArray(newValue)) {
+					setOpenSidePanelWindows(newValue);
+				} else {
+					setOpenSidePanelWindows([]);
+				}
+			}
+		};
+
+		if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
+			chrome.storage.onChanged.addListener(handleStorageChange);
+		}
+
+		return () => {
+			if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
+				chrome.storage.onChanged.removeListener(handleStorageChange);
+			}
+		};
+	}, []);
+
 
 	// Handler: Start/Stop Reading Page
 	const handleStartCurrentPage = () => {
@@ -225,12 +213,20 @@ export default function App() {
 		handleStartCurrentPage();
 	};
 
-	const handleOpenSidePanel = () => {
+	const isSidePanelOpen = Boolean(sidePanelWindowId && openSidePanelWindows.includes(sidePanelWindowId));
+
+	const handleToggleSidePanel = () => {
 		setCommandError('');
-		void openSidePanelForCurrentWindow({
-			windowId: sidePanelWindowId,
-			open: (options) => chrome.sidePanel.open(options),
-		}).catch(() => setCommandError(t('openSidePanelFailed')));
+		if (isSidePanelOpen) {
+			if (sidePanelWindowId && typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+				void chrome.runtime.sendMessage({ action: 'CLOSE_SIDEPANEL', payload: { windowId: sidePanelWindowId } });
+			}
+		} else {
+			void openSidePanelForCurrentWindow({
+				windowId: sidePanelWindowId,
+				open: (options) => chrome.sidePanel.open(options),
+			}).catch(() => setCommandError(t('openSidePanelFailed')));
+		}
 	};
 
 	// Handler: Change Voice
@@ -317,22 +313,35 @@ export default function App() {
 				{/* Error Message */}
 				{errorMsg && <div className="alert alert-danger">{errorMsg}</div>}
 
-				{/* Status Indicator */}
-				<div className="status-display" data-status={status} role="status">
-					<div className="status-dot-pulse" data-status={status} />
-					<span className="status-text">{getStatusText()}</span>
-					{activeTheme === 'winamp' && status === 'playing' && (
-						<div className="winamp-visualizer" aria-hidden="true">
-							<div className="v-bar" />
-							<div className="v-bar" />
-							<div className="v-bar" />
-							<div className="v-bar" />
-							<div className="v-bar" />
-							<div className="v-bar" />
-							<div className="v-bar" />
-							<div className="v-bar" />
-						</div>
-					)}
+				{/* Status Indicator Row */}
+				<div className="status-row">
+					<div className="status-display" data-status={status} role="status">
+						<div className="status-dot-pulse" data-status={status} />
+						<span className="status-text">{getStatusText()}</span>
+						{activeTheme === 'winamp' && status === 'playing' && (
+							<div className="winamp-visualizer" aria-hidden="true">
+								<div className="v-bar" />
+								<div className="v-bar" />
+								<div className="v-bar" />
+								<div className="v-bar" />
+								<div className="v-bar" />
+								<div className="v-bar" />
+								<div className="v-bar" />
+								<div className="v-bar" />
+							</div>
+						)}
+					</div>
+					<button
+						className={`btn-icon-sidepanel ${isSidePanelOpen ? 'active' : ''}`}
+						type="button"
+						onClick={handleToggleSidePanel}
+						title={isSidePanelOpen ? t('closeSidePanel') : t('openSidePanel')}
+						aria-label={isSidePanelOpen ? t('closeSidePanel') : t('openSidePanel')}
+						aria-pressed={isSidePanelOpen}
+						data-tooltip={isSidePanelOpen ? t('closeSidePanel') : t('openSidePanel')}
+					>
+						<PlaybackIcon name="sidepanel" />
+					</button>
 				</div>
 
 				{session && (
@@ -403,22 +412,13 @@ export default function App() {
 									<PlaybackIcon name={status === 'playing' ? 'pause' : 'resume'} />
 								</button>
 							)}
-							<button
-								ref={status === 'playing' || status === 'paused' ? undefined : primaryButtonRef}
-								className={`btn btn-primary btn-icon-only btn-read ${status !== 'stopped' && status !== 'error' ? 'active' : ''}`}
+							<PlaybackControlButton
+								status={status}
 								onClick={handleReadPage}
-								aria-label={status === 'stopped' || status === 'error' ? t('readPage') : t('stopReading')}
-								title={status === 'stopped' || status === 'error' ? t('readPage') : t('stopReading')}
-							>
-								<PlaybackIcon name={status === 'stopped' || status === 'error' ? 'read' : 'stop'} />
-							</button>
+								buttonRef={status === 'playing' || status === 'paused' ? undefined : primaryButtonRef}
+							/>
 						</div>
 					)}
-
-					<button className="btn btn-secondary open-side-panel" type="button" onClick={handleOpenSidePanel}>
-						<span aria-hidden="true">▱</span>
-						{t('openSidePanel')}
-					</button>
 
 					{session && isSessionOnAnotherTab && (
 						<button className="btn btn-secondary btn-read-current-page" onClick={handleReadCurrentPage}>

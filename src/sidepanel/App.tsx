@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 
+import { PlaybackControlButton } from '../shared/components/PlaybackControlButton.tsx';
+import { PlaybackIcon } from '../shared/components/PlaybackIcon.tsx';
 import { SettingsCard } from '../shared/components/SettingsCard.tsx';
-import { BUY_ME_A_COFFEE_URL, STORAGE_KEYS } from '../shared/constants.ts';
+import { BUY_ME_A_COFFEE_URL, DEFAULT_SPEED, STORAGE_KEYS } from '../shared/constants.ts';
 import { getLocalizedPlaybackError, t } from '../shared/i18n.ts';
 import { normalizeManualText } from '../shared/manual_text.ts';
 import { requestPlaybackState, sendPlaybackCommand, sendRuntimeRequest, subscribePlaybackState } from '../shared/playback_client.ts';
@@ -49,7 +51,7 @@ export default function App() {
 	const [commandError, setCommandError] = useState('');
 	const [session, setSession] = useState<PlaybackSessionSnapshot | null>(null);
 	const [activeVoice, setActiveVoice] = useState('M1');
-	const [speed, setSpeed] = useState(1);
+	const [speed, setSpeed] = useState(DEFAULT_SPEED);
 	const [theme, setTheme] = useState<ThemeName>('default');
 	const [selectionButtonEnabled, setSelectionButtonEnabled] = useState(true);
 	const [wordHighlightEnabled, setWordHighlightEnabled] = useState(true);
@@ -219,6 +221,39 @@ export default function App() {
 		return () => window.removeEventListener('pagehide', handlePageHide);
 	}, [panelInstanceId]);
 
+	useEffect(() => {
+		let port: chrome.runtime.Port | null = null;
+		try {
+			if (typeof chrome !== 'undefined' && chrome.runtime?.connect) {
+				port = chrome.runtime.connect({ name: 'sidepanel-port' });
+				port.onMessage?.addListener((msg) => {
+					if (msg?.action === 'CLOSE_SIDEPANEL') {
+						window.close();
+					}
+				});
+			}
+		} catch (_e) {
+			// ignore in environments without full chrome runtime port support
+		}
+
+		const handleMessage = (msg: any) => {
+			if (msg?.action === 'CLOSE_SIDEPANEL') {
+				window.close();
+			}
+		};
+
+		if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
+			chrome.runtime.onMessage.addListener(handleMessage);
+		}
+
+		return () => {
+			port?.disconnect();
+			if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
+				chrome.runtime.onMessage.removeListener(handleMessage);
+			}
+		};
+	}, []);
+
 	const handleReadCurrentPage = async () => {
 		setCommandError('');
 		const response = await sendPlaybackCommand({ action: 'START_CURRENT_PAGE' });
@@ -340,24 +375,66 @@ export default function App() {
 					<span className="status-text">{getStatusText(session)}</span>
 				</div>
 				<h2 id="current-page-title">{t('currentPage')}</h2>
-				{pageInfo.available ? (
-					<div className="page-info">
-						<strong>{pageInfo.title}</strong>
-						<span>
-							{getHost(pageInfo.url)} · {pageInfo.lang}
-						</span>
-					</div>
+				{session && session.source.kind === 'tab' ? (
+					<>
+						<div className="session-meta">
+							<span className="session-title" title={sessionTitle}>
+								{sessionTitle}
+							</span>
+							{sessionHost && <span className="session-host">{sessionHost}</span>}
+							<div className="session-context">
+								<span>
+									{session.totalParagraphs > 0
+										? `${t('paragraphLabel')} ${session.currentParagraphIndex + 1}/${session.totalParagraphs} • ${Math.round(session.progressPercentage)}%`
+										: t('preparingContent')}
+								</span>
+								<span>{t('readingThisTab')}</span>
+							</div>
+						</div>
+						{session.status !== 'stopped' && session.status !== 'error' && (
+							<div className="progress-bar-container">
+								<div className="progress-bar" style={{ width: `${session.progressPercentage}%` }} />
+							</div>
+						)}
+						<div className="playback-controls">
+							{(session.status === 'playing' || session.status === 'paused') && (
+								<button
+									ref={primaryButtonRef}
+									className="btn btn-secondary btn-icon-only btn-playpause"
+									type="button"
+									aria-label={session.status === 'playing' ? t('pauseState') : t('resumeStatus')}
+									title={session.status === 'playing' ? t('pauseState') : t('resumeStatus')}
+									onClick={() => handlePlaybackCommand(session.status === 'playing' ? 'PAUSE_READING' : 'RESUME_READING')}
+								>
+									<PlaybackIcon name={session.status === 'playing' ? 'pause' : 'resume'} />
+								</button>
+							)}
+							<PlaybackControlButton
+								status={session.status}
+								onClick={() => handlePlaybackCommand('STOP_READING')}
+								buttonRef={session.status === 'playing' || session.status === 'paused' ? undefined : primaryButtonRef}
+							/>
+						</div>
+					</>
 				) : (
-					<p>{t('currentPageUnavailable')}</p>
+					<>
+						{pageInfo.available ? (
+							<div className="page-info">
+								<strong>{pageInfo.title}</strong>
+								<span>
+									{getHost(pageInfo.url)} · {pageInfo.lang}
+								</span>
+							</div>
+						) : (
+							<p>{t('currentPageUnavailable')}</p>
+						)}
+						<PlaybackControlButton
+							status="stopped"
+							onClick={handleReadCurrentPage}
+							buttonRef={session?.status === 'playing' || session?.status === 'paused' ? undefined : primaryButtonRef}
+						/>
+					</>
 				)}
-				<button
-					ref={session?.status === 'playing' || session?.status === 'paused' ? undefined : primaryButtonRef}
-					className="primary-button"
-					type="button"
-					onClick={handleReadCurrentPage}
-				>
-					{t('readPage')}
-				</button>
 			</section>
 
 			<div className="paste-divider">{t('orPasteText')}</div>
@@ -420,6 +497,47 @@ export default function App() {
 						</div>
 					</div>
 				)}
+				{session && session.source.kind === 'manual' && (
+					<>
+						<div className="session-meta">
+							<span className="session-title" title={sessionTitle}>
+								{sessionTitle}
+							</span>
+							<div className="session-context">
+								<span>
+									{session.totalParagraphs > 0
+										? `${t('paragraphLabel')} ${session.currentParagraphIndex + 1}/${session.totalParagraphs} • ${Math.round(session.progressPercentage)}%`
+										: t('preparingContent')}
+								</span>
+								<span>{t('manualSession')}</span>
+							</div>
+						</div>
+						{session.status !== 'stopped' && session.status !== 'error' && (
+							<div className="progress-bar-container">
+								<div className="progress-bar" style={{ width: `${session.progressPercentage}%` }} />
+							</div>
+						)}
+						<div className="playback-controls">
+							{(session.status === 'playing' || session.status === 'paused') && (
+								<button
+									ref={primaryButtonRef}
+									className="btn btn-secondary btn-icon-only btn-playpause"
+									type="button"
+									aria-label={session.status === 'playing' ? t('pauseState') : t('resumeStatus')}
+									title={session.status === 'playing' ? t('pauseState') : t('resumeStatus')}
+									onClick={() => handlePlaybackCommand(session.status === 'playing' ? 'PAUSE_READING' : 'RESUME_READING')}
+								>
+									<PlaybackIcon name={session.status === 'playing' ? 'pause' : 'resume'} />
+								</button>
+							)}
+							<PlaybackControlButton
+								status={session.status}
+								onClick={() => handlePlaybackCommand('STOP_READING')}
+								buttonRef={session.status === 'playing' || session.status === 'paused' ? undefined : primaryButtonRef}
+							/>
+						</div>
+					</>
+				)}
 			</section>
 
 			<SettingsCard
@@ -437,32 +555,6 @@ export default function App() {
 				onWordHighlightEnabledChange={handleWordHighlightEnabledChange}
 				onThemeChange={handleThemeChange}
 			/>
-
-			<section className="side-panel-player" aria-label={t('nowPlaying')}>
-				{session && (
-					<>
-						<div className="session-meta">
-							<div className="session-title">{sessionTitle}</div>
-							{sessionHost && <div className="session-host">{sessionHost}</div>}
-						</div>
-						<div className="player-controls">
-							{session.status === 'playing' && (
-								<button ref={primaryButtonRef} type="button" aria-label={t('pauseState')} onClick={() => handlePlaybackCommand('PAUSE_READING')}>
-									Ⅱ
-								</button>
-							)}
-							{session.status === 'paused' && (
-								<button ref={primaryButtonRef} type="button" aria-label={t('resumeStatus')} onClick={() => handlePlaybackCommand('RESUME_READING')}>
-									▶
-								</button>
-							)}
-							<button type="button" aria-label={t('stopReading')} onClick={() => handlePlaybackCommand('STOP_READING')}>
-								■
-							</button>
-						</div>
-					</>
-				)}
-			</section>
 		</main>
 	);
 }

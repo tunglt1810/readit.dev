@@ -1,4 +1,4 @@
-import { GOOGLE_DOCS_EXPORT_UNAVAILABLE, MODEL_FILES, PDF_ERROR_CODES, STORAGE_KEYS, type PdfErrorCode } from '../shared/constants';
+import { DEFAULT_SPEED, GOOGLE_DOCS_EXPORT_UNAVAILABLE, MODEL_FILES, PDF_ERROR_CODES, STORAGE_KEYS, type PdfErrorCode } from '../shared/constants';
 import { isManualPlaybackControlMessage, isManualWordTimingMessage } from '../shared/manual_playback';
 import { fetchWithCache, MODEL_CACHE_NAME } from '../shared/model_cache';
 import { warmCache } from '../shared/warm_cache';
@@ -41,7 +41,6 @@ import { createWordHighlightUpdateCoalescer } from './word_highlight_update_coal
 import { handleOpenSidePanelCommand } from '../popup/side_panel';
 
 const DEFAULT_VOICE_STYLE_ID = 'M1';
-const DEFAULT_SPEED = 1.05;
 
 const ERROR_MESSAGES = {
 	activeTab: 'Không tìm thấy trang web đang hoạt động.',
@@ -947,6 +946,27 @@ chrome.runtime.onMessage.addListener(
 			case 'START_CURRENT_PAGE':
 				return respondFromQueue(startCurrentPage, sendResponse);
 
+			case 'CLOSE_SIDEPANEL': {
+				const targetWindowId = (msg.payload as Record<string, unknown> | undefined)?.windowId as number | undefined;
+				if (targetWindowId) {
+					const port = openSidePanelPorts.get(targetWindowId);
+					if (port) {
+						try {
+							port.postMessage({ action: 'CLOSE_SIDEPANEL' });
+						} catch (_e) {
+							// ignore
+						}
+					}
+					if (typeof chrome !== 'undefined' && chrome.sidePanel?.setOptions) {
+						void chrome.sidePanel.setOptions({ windowId: targetWindowId, enabled: false } as any).then(() => {
+							void chrome.sidePanel.setOptions({ windowId: targetWindowId, enabled: true } as any);
+						});
+					}
+				}
+				sendResponse?.({ success: true });
+				return true;
+			}
+
 			case 'START_SELECTED_TEXT': {
 				const request = prepareSelectedTextRequest(
 					{ selectionText: msg.selectionText, pageLanguage: msg.pageLanguage },
@@ -1125,3 +1145,38 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 chrome.commands.onCommand.addListener((command, tab) => {
 	handleOpenSidePanelCommand(command, tab);
 });
+
+const openSidePanelPorts = new Map<number, chrome.runtime.Port>();
+
+async function updateOpenSidePanelWindowsStorage() {
+	const openWindowIds = Array.from(openSidePanelPorts.keys());
+	if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+		await chrome.storage.local.set({ readit_open_sidepanel_windows: openWindowIds });
+	}
+}
+
+if (typeof chrome !== 'undefined' && chrome.runtime?.onConnect) {
+	chrome.runtime.onConnect.addListener((port) => {
+		if (port.name === 'sidepanel-port') {
+			const registerPort = (wId: number) => {
+				openSidePanelPorts.set(wId, port);
+				void updateOpenSidePanelWindowsStorage();
+				port.onDisconnect.addListener(() => {
+					openSidePanelPorts.delete(wId);
+					void updateOpenSidePanelWindowsStorage();
+				});
+			};
+
+			const tabWindowId = port.sender?.tab?.windowId;
+			if (tabWindowId !== undefined && tabWindowId !== null && tabWindowId > 0) {
+				registerPort(tabWindowId);
+			} else if (typeof chrome !== 'undefined' && chrome.windows?.getCurrent) {
+				chrome.windows.getCurrent((win) => {
+					if (win?.id) {
+						registerPort(win.id);
+					}
+				});
+			}
+		}
+	});
+}

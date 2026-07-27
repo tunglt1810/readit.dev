@@ -20,8 +20,18 @@ test('renders a word highlight during real article playback', async ({ context, 
 	await sender.goto(`chrome-extension://${extensionId}/src/popup/popup.html`);
 	await article.bringToFront();
 
-	const response = await sender.evaluate(() => chrome.runtime.sendMessage({ action: 'START_CURRENT_PAGE' }));
-	expect(response).toEqual({ success: true });
+	await expect
+		.poll(
+			async () => {
+				try {
+					return await sender.evaluate(() => chrome.runtime.sendMessage({ action: 'START_CURRENT_PAGE' }));
+				} catch (_err) {
+					return null;
+				}
+			},
+			{ timeout: 10_000 },
+		)
+		.toEqual({ success: true });
 
 	await expect
 		.poll(

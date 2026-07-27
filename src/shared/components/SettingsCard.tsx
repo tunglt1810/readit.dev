@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
-import { VOICE_STYLE_TRANSLATIONS, VOICE_STYLES } from '../constants';
-import { t, uiLang } from '../i18n';
+import { VOICE_STYLES } from '../constants';
+import { t, uiLang, VOICE_STYLE_TRANSLATIONS } from '../i18n';
 import type { PlaybackStatus, ThemeName } from '../types';
 
 export interface SettingsCardProps {

@@ -1,10 +1,19 @@
-import { GOOGLE_DOCS_EXPORT_UNAVAILABLE, PDF_ERROR_CODES, THEME_TRANSLATIONS } from './constants.ts';
+import { GOOGLE_DOCS_EXPORT_UNAVAILABLE, PDF_ERROR_CODES } from './constants.ts';
+import en from './locales/en.json';
+import vi from './locales/vi.json';
+
+export const THEME_TRANSLATIONS = { vi, en };
+export const VOICE_STYLE_TRANSLATIONS = {
+	vi: vi.voiceStyles,
+	en: en.voiceStyles,
+};
 
 export type UiLanguage = keyof typeof THEME_TRANSLATIONS;
+export type TranslationKey = Exclude<keyof typeof en, 'voiceStyles'>;
 export const uiLang: UiLanguage = chrome.i18n.getUILanguage().startsWith('vi') ? 'vi' : 'en';
-export const t = (key: keyof typeof THEME_TRANSLATIONS.en): string => THEME_TRANSLATIONS[uiLang][key];
+export const t = (key: TranslationKey): string => THEME_TRANSLATIONS[uiLang][key];
 
-export function getPlaybackErrorTranslationKey(error: string | undefined): keyof typeof THEME_TRANSLATIONS.en | undefined {
+export function getPlaybackErrorTranslationKey(error: string | undefined): TranslationKey | undefined {
 	switch (error) {
 		case GOOGLE_DOCS_EXPORT_UNAVAILABLE:
 			return 'googleDocsExportUnavailable';
