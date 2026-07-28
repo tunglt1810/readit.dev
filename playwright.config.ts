@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const AUDIO_LIFECYCLE_TEST = /resumes the same session after Chrome audio idle cutoff/;
+
 /**
  * Playwright configuration for Chrome Extension E2E testing
  */
@@ -36,8 +38,18 @@ export default defineConfig({
 	projects: [
 		{
 			name: 'chromium',
+			grepInvert: AUDIO_LIFECYCLE_TEST,
 			use: {
 				...devices['Desktop Chrome'],
+			},
+		},
+		{
+			name: 'chromium-audio',
+			testMatch: /reading-state\.spec\.ts/,
+			grep: AUDIO_LIFECYCLE_TEST,
+			use: {
+				...devices['Desktop Chrome'],
+				headless: false,
 			},
 		},
 	],

@@ -1,3 +1,4 @@
+import type { PlaybackStateResponse } from '../../src/shared/types';
 import { expect, test } from './fixtures';
 
 const highlightRegistryName = 'readit-dev-word-highlight';
@@ -5,6 +6,7 @@ const highlightRegistryName = 'readit-dev-word-highlight';
 test.use({ freshExtensionWorker: true });
 
 test('renders a word highlight during real article playback', async ({ context, extensionId }) => {
+	test.setTimeout(300_000);
 	const targetUrl = 'https://readit.test/word-highlight-real-playback';
 	await context.route(targetUrl, (route) =>
 		route.fulfill({
@@ -32,6 +34,18 @@ test('renders a word highlight during real article playback', async ({ context, 
 			{ timeout: 10_000 },
 		)
 		.toEqual({ success: true });
+
+	await expect
+		.poll(
+			async () => {
+				const state = await sender.evaluate(
+					() => chrome.runtime.sendMessage({ action: 'GET_PLAYBACK_STATE' }) as Promise<PlaybackStateResponse>,
+				);
+				return state.session?.status ?? null;
+			},
+			{ timeout: 240_000 },
+		)
+		.toBe('playing');
 
 	await expect
 		.poll(

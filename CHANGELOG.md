@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.1.0] - 2026-07-28
 
 ### Refactor
-- refactor modularize readable surfaces
+- refactor modularize readable surfaces - [@tunglt1810]
 
 ### Added
 - read Google Docs exports via same-origin plain text export - [@tunglt1810]

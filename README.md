@@ -13,18 +13,33 @@
 flowchart TD
 	A["Popup<br/>Quick controls"] -->|Open| C["Side Panel<br/>Current page or pasted text"]
 	A -->|Current page and controls| B["Background service worker<br/>Coordinate one playback session"]
-	C -->|Current page, pasted text, and controls| B
+	C -->|Current page, manual text, and controls| B
 	D["Selection button or context menu<br/>Selected text"] --> B
-	B -->|Current-page and selection inputs only| E["Content script<br/>Extract Article and highlight spoken words"]
-	E -->|Article or selected text| B
-	B --> F["Offscreen document<br/>Normalize and segment local text"]
+	B -->|Request website, selection, or Google Docs content| E["Content script<br/>Extract Article and project website highlights"]
+	E -->|Article + website-dom or none| B
+	B -->|Extract local or remote PDF| P["Background PDF.js extractor<br/>Article + none"]
+	P --> B
+	B -->|Content + Readable Surface kind| F["Offscreen document<br/>Normalize and segment local text"]
 	F --> G["Supertonic TTS<br/>Local synthesis and audio playback"]
 	G --> H["Audio output"]
-	G -. Playback progress and word timing .-> B
+	F -. Playback progress and canonical Readable Surface events .-> B
+	B -. website-dom projection .-> E
+	B -. manual-reader projection .-> C
 	B -. Session state .-> A
 	B -. Session state .-> C
 	B -. Badge state .-> I["Toolbar badge"]
 ```
+
+Successful extraction returns both an Article and an explicit Readable Surface capability. Every Playback Session stores one of three
+surface kinds:
+
+- `website-dom` projects spoken-word updates into the source page through the content script.
+- `manual-reader` projects updates into the Side Panel's locked pasted-text reader.
+- `none` keeps Google Docs export and PDF playback text-only because those sources do not currently expose a supported projection surface.
+
+The offscreen document emits one canonical initialize/update/clear protocol. The background Readable Surface coordinator validates events
+against the active session, coalesces website updates, and routes them to the matching surface without coupling speech synthesis to a
+specific UI.
 
 The Free extension keeps Article and pasted-text processing and speech synthesis on the user's device. Pasted text passes only between
 extension contexts for playback and is never written to extension storage.
@@ -82,11 +97,12 @@ This starts the local Cloudflare Worker with the local D1 database configuration
 
 ## Documentation
 
-- [Product Requirements Document](./_docs/PRD.md)
-- [Free MVP Design Specification](./_docs/specs/2026-07-12-free-mvp-design.md)
-- [Deployment Guide](./_docs/DEPLOYMENT.md)
-- [Release Guide](./_docs/RELEASING.md)
-- [Architecture Decision Record](./_docs/adr)
+- [Product Requirements Document](./docs/PRD.md)
+- [Free MVP Design Specification](./docs/specs/2026-07-12-free-mvp-design.md)
+- [Readable Surface Architecture](./docs/specs/2026-07-28-readable-surface-architecture-design.md)
+- [Deployment Guide](./docs/DEPLOYMENT.md)
+- [Release Guide](./docs/RELEASING.md)
+- [Architecture Decision Record](./docs/adr)
 - [Privacy Policy](https://tunglt1810.github.io/readit.dev/privacy-policy/)
 - [Third-Party Notices](./public/THIRD_PARTY_NOTICES.txt)
 
