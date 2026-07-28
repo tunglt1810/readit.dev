@@ -1,6 +1,6 @@
 import { GOOGLE_DOCS_EXPORT_UNAVAILABLE, PDF_ERROR_CODES } from './constants.ts';
-import en from './locales/en.json';
-import vi from './locales/vi.json';
+import en from './locales/en.json' with { type: 'json' };
+import vi from './locales/vi.json' with { type: 'json' };
 
 export const THEME_TRANSLATIONS = { vi, en };
 export const VOICE_STYLE_TRANSLATIONS = {

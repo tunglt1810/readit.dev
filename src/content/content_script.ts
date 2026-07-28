@@ -5,7 +5,9 @@ import { extractGoogleDocsArticle } from './google_docs_extractor';
 import { installSelectionButton } from './selection_button';
 import { installWordHighlight } from './word_highlight';
 
-type ArticleExtractionResponse = { success: true; article: Article } | { success: false; error: string };
+type ArticleExtractionResponse =
+	| { success: true; article: Article; readableSurface: 'website-dom' | 'none' }
+	| { success: false; error: string };
 
 function getDocumentLanguage(): string {
 	return document.documentElement.lang.trim().toLowerCase().replace('_', '-').split('-')[0] || 'na';
@@ -25,7 +27,9 @@ async function extractArticle(): Promise<ArticleExtractionResponse> {
 	}
 
 	const article = extractArticleFromDocument(document);
-	return article ? { success: true, article } : { success: false, error: 'Could not find a readable article on this page.' };
+	return article
+		? { success: true, article, readableSurface: 'website-dom' }
+		: { success: false, error: 'Could not find a readable article on this page.' };
 }
 
 if (claimContentScriptInitialization(globalThis as unknown as Record<string, unknown>)) {

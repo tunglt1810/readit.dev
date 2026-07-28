@@ -1,7 +1,17 @@
-import type { CommandResponse } from '../shared/types.ts';
 import { isPanelInstanceId } from '../shared/manual_playback.ts';
+import type { CommandResponse, PlaybackContent, PlaybackContentScope, ReadableSurfaceKind } from '../shared/types.ts';
 
 export type OffscreenCommand = { action: string; payload?: unknown };
+
+export type OffscreenPlayPayload = {
+	sessionId: string;
+	article: PlaybackContent;
+	voiceStyleId: string;
+	speed: number;
+	readableSurface: ReadableSurfaceKind;
+	contentScope?: PlaybackContentScope;
+	panelInstanceId?: string;
+};
 
 export type ManualCheckpointMetadata = {
 	sessionId: string;

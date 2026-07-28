@@ -34,8 +34,8 @@ Biome configuration: tabs for indentation, four-space tab width, LF endings,
 and a 140-character line width. Keep component files in PascalCase (for
 example `App.tsx`), utility/module files in lowercase or snake-style names
 matching the existing code, and Playwright specs as `*.spec.ts`. Keep domain
-terms consistent with `CONTEXT.md` (`Article`, `Voice`, `Voice Style`, `Tier`,
-`Activation`, and `License Key`).
+terms consistent with the **Domain language** section in `README.md` and the
+product terms `Voice`, `Voice Style`, `Tier`, `Activation`, and `License Key`.
 
 ## Testing Guidelines
 

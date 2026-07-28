@@ -1,10 +1,10 @@
 import { STORAGE_KEYS } from '../shared/constants';
+import type { ReadableSurfaceWord } from '../shared/readable_surface.ts';
 import {
 	isWordHighlightEnabled,
 	isWordHighlightInitMessage,
 	isWordHighlightUpdateMessage,
 	WORD_HIGHLIGHT_NAME,
-	type WordHighlightWord,
 } from '../shared/word_highlight';
 import { findSemanticRoot, isWithinNoiseRegion } from './article_extractor';
 import {
@@ -148,7 +148,7 @@ function isMappedRangeUsable(mapped: MappedWordRange): boolean {
 	return wordVariants(range.toString()).some((variant) => mapped.variants.includes(variant));
 }
 
-function precomputeWordRanges(words: readonly WordHighlightWord[], scopeRange: Range | null): Map<number, MappedWordRange> {
+function precomputeWordRanges(words: readonly ReadableSurfaceWord[], scopeRange: Range | null): Map<number, MappedWordRange> {
 	const ranges = new Map<number, MappedWordRange>();
 	const walker = createWalker(resolveWalkerRoot(scopeRange));
 	let node = walker.nextNode() as Text | null;

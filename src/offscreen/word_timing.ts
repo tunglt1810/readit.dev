@@ -1,3 +1,5 @@
+import type { ReadableSurfaceKind } from '../shared/types.ts';
+
 export interface WordTimingWindow {
 	text: string;
 	wordIndex: number;
@@ -50,6 +52,14 @@ export function computeWordTimings(
 		elapsed += duration;
 	}
 	return windows;
+}
+
+export function computeReadableSurfaceWordTimings(
+	readableSurface: ReadableSurfaceKind,
+	wordMap: readonly { text: string; start: number; end: number }[],
+	spokenDurationSec: number,
+): WordTimingWindow[] {
+	return readableSurface === 'none' ? [] : computeWordTimings(wordMap, spokenDurationSec);
 }
 
 export function findWordAtTime(windows: readonly WordTimingWindow[], elapsedSec: number): WordTimingWindow | null {

@@ -1,17 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildWordHighlightWords, isWordHighlightInitMessage, isWordHighlightUpdateMessage } from '../../src/shared/word_highlight.ts';
-
-test('flattens every word map entry into stable global indexes, including duplicates', () => {
-	assert.deepEqual(
-		buildWordHighlightWords([{ wordMap: [{ text: 'rất' }, { text: 'rất' }] }, { wordMap: [] }, { wordMap: [{ text: 'nhiều' }] }]),
-		[
-			{ text: 'rất', globalIndex: 0 },
-			{ text: 'rất', globalIndex: 1 },
-			{ text: 'nhiều', globalIndex: 2 },
-		],
-	);
-});
+import { isWordHighlightInitMessage, isWordHighlightUpdateMessage } from '../../src/shared/word_highlight.ts';
 
 test('accepts only a contiguous init word list with non-empty words', () => {
 	assert.equal(

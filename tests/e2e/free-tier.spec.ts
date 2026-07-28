@@ -92,6 +92,7 @@ test('Side Panel stays within the Free runtime and storage boundary', async ({ g
 		STORAGE_KEYS.THEME,
 		STORAGE_KEYS.SELECTION_BUTTON_ENABLED,
 		STORAGE_KEYS.WORD_HIGHLIGHT_ENABLED,
+		'readit_open_sidepanel_windows',
 	];
 	expect(Object.keys(stored.local).every((key) => approvedLocalKeys.includes(key))).toBe(true);
 	expect(Object.keys(stored.session)).toEqual([STORAGE_KEYS.PLAYBACK_SESSION]);
@@ -106,7 +107,12 @@ test('Side Panel stays within the Free runtime and storage boundary', async ({ g
 	).not.toContain(sentinel);
 
 	const snapshot = stored.session[STORAGE_KEYS.PLAYBACK_SESSION] as Record<string, unknown>;
-	expect(snapshot).toMatchObject({ contentScope: 'manual', source: { kind: 'manual' }, lang: 'en' });
+	expect(snapshot).toMatchObject({
+		contentScope: 'manual',
+		readableSurface: 'manual-reader',
+		source: { kind: 'manual' },
+		lang: 'en',
+	});
 	expect(['loading', 'playing']).toContain(snapshot.status);
 	expect(snapshot).not.toHaveProperty('content');
 	expect(snapshot).not.toHaveProperty('text');

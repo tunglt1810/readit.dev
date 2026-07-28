@@ -29,6 +29,20 @@ flowchart TD
 The Free extension keeps Article and pasted-text processing and speech synthesis on the user's device. Pasted text passes only between
 extension contexts for playback and is never written to extension storage.
 
+## Domain language
+
+| Term | Meaning |
+| --- | --- |
+| **Article** | Titled text extracted from a tab for current-page or selected-text playback. |
+| **Content Source** | Origin from which readable text is obtained: website, Google Docs export, PDF, selection, or manual input. |
+| **Readable Surface** | User-visible text that can project the current spoken position, or explicitly has no projection. |
+| **Playback Session** | Single active reading lifecycle that owns content, progress, voice settings, and its Readable Surface. |
+| **Manual Reader** | Side Panel text area that owns pasted-text playback independently of tab lifecycle. |
+
+A website Article or selection uses the page DOM as its Readable Surface. The Manual Reader is both a Content Source and a Readable
+Surface. Google Docs and PDF are Content Sources without a source-view Readable Surface today. Use **Content Source** for extraction origin;
+use Playback Session ownership for runtime lifecycle.
+
 ## Quick start
 
 This monorepo uses `pnpm v11`.

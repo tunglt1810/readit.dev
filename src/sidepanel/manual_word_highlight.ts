@@ -6,6 +6,7 @@ export type ManualHighlightCursor = {
 	text: string;
 	nextOffset: number;
 	lastWordIndex: number;
+	lastRange: ManualWordRange | null;
 };
 
 const WORD_CHAR_PATTERN = /[\p{L}\p{M}\p{N}_]/u;
@@ -30,15 +31,18 @@ function findBoundedMatch(text: string, variant: string, fromOffset: number): nu
 }
 
 export function createManualHighlightCursor(text: string): ManualHighlightCursor {
-	return { text, nextOffset: 0, lastWordIndex: -1 };
+	return { text, nextOffset: 0, lastWordIndex: -1, lastRange: null };
 }
 
 export function advanceManualHighlight(
 	cursor: ManualHighlightCursor,
 	event: { word: string; wordIndex: number },
 ): ManualHighlightAdvanceResult {
-	if (event.wordIndex <= cursor.lastWordIndex) {
+	if (event.wordIndex < cursor.lastWordIndex) {
 		return { kind: 'stale' };
+	}
+	if (event.wordIndex === cursor.lastWordIndex) {
+		return cursor.lastRange ? { kind: 'matched', range: cursor.lastRange } : { kind: 'stale' };
 	}
 	cursor.lastWordIndex = event.wordIndex;
 	const searchText = cursor.text.toLocaleLowerCase();
@@ -49,7 +53,9 @@ export function advanceManualHighlight(
 		}
 		const end = start + variant.length;
 		cursor.nextOffset = end;
-		return { kind: 'matched', range: { start, end } };
+		cursor.lastRange = { start, end };
+		return { kind: 'matched', range: cursor.lastRange };
 	}
+	cursor.lastRange = null;
 	return { kind: 'unmatched' };
 }

@@ -38,12 +38,24 @@ test('matches complete multi-token source entries and avoids substrings inside o
 	});
 });
 
-test('distinguishes a stale duplicate from an unmatched newer word', () => {
+test('replays the last matched range for an equal index after the visible highlight is cleared', () => {
 	const cursor = createManualHighlightCursor('One two');
 	assert.deepEqual(advanceManualHighlight(cursor, { word: 'One', wordIndex: 0 }), {
 		kind: 'matched',
 		range: { start: 0, end: 3 },
 	});
-	assert.deepEqual(advanceManualHighlight(cursor, { word: 'One', wordIndex: 0 }), { kind: 'stale' });
+	assert.deepEqual(advanceManualHighlight(cursor, { word: 'One', wordIndex: 0 }), {
+		kind: 'matched',
+		range: { start: 0, end: 3 },
+	});
+});
+
+test('distinguishes an older event from an unmatched newer word', () => {
+	const cursor = createManualHighlightCursor('One two');
+	assert.deepEqual(advanceManualHighlight(cursor, { word: 'One', wordIndex: 0 }), {
+		kind: 'matched',
+		range: { start: 0, end: 3 },
+	});
 	assert.deepEqual(advanceManualHighlight(cursor, { word: 'Three', wordIndex: 2 }), { kind: 'unmatched' });
+	assert.deepEqual(advanceManualHighlight(cursor, { word: 'One', wordIndex: 0 }), { kind: 'stale' });
 });

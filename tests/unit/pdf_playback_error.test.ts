@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { PDF_ERROR_CODES, THEME_TRANSLATIONS } from '../../src/shared/constants.ts';
+import { PDF_ERROR_CODES } from '../../src/shared/constants.ts';
 
 Object.defineProperty(globalThis, 'chrome', {
 	configurable: true,
@@ -11,7 +11,7 @@ Object.defineProperty(globalThis, 'chrome', {
 	},
 });
 
-const { getLocalizedPlaybackError, getPlaybackErrorTranslationKey } = await import('../../src/shared/i18n.ts');
+const { getLocalizedPlaybackError, getPlaybackErrorTranslationKey, THEME_TRANSLATIONS } = await import('../../src/shared/i18n.ts');
 
 test('maps each PDF extraction error code to its translation key', () => {
 	assert.strictEqual(getPlaybackErrorTranslationKey(PDF_ERROR_CODES.fileAccessRequired), 'pdfFileAccessRequired');

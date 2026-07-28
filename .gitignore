@@ -30,8 +30,6 @@ Thumbs.db
 *.sqlite
 *.sqlite3
 
-CONTEXT.md
-
 scratch/
 /.tmp/
 /.superpowers/

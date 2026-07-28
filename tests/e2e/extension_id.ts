@@ -30,6 +30,19 @@ export async function resolveExtensionId(context: BrowserContext): Promise<strin
 		if (!markerExtensionId) {
 			throw new Error('Không tìm thấy Extension ID từ service worker hoặc content-script marker.');
 		}
+		await wakePage.goto(`chrome-extension://${markerExtensionId}/src/popup/popup.html`);
+		await wakePage.waitForFunction(
+			async () => {
+				try {
+					const response = await chrome.runtime.sendMessage({ action: 'GET_PLAYBACK_STATE' });
+					return response !== undefined;
+				} catch {
+					return false;
+				}
+			},
+			undefined,
+			{ timeout: 10000 },
+		);
 		return markerExtensionId;
 	} finally {
 		await context.unroute(EXTENSION_WAKE_URL);

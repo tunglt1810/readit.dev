@@ -77,9 +77,14 @@ test.describe('Kịch bản 2: Trích xuất nội dung (Reader Mode)', () => {
 		});
 
 		// 4. Kiểm tra kết quả trích xuất
-		const articleResult = result as { success: boolean; article?: { title: string; content: string; lang: string } };
+		const articleResult = result as {
+			success: boolean;
+			article?: { title: string; content: string; lang: string };
+			readableSurface?: string;
+		};
 		expect(articleResult.success).toBe(true);
 		expect(articleResult.article).toBeDefined();
+		expect(articleResult.readableSurface).toBe('website-dom');
 
 		const article = articleResult.article!;
 
@@ -246,6 +251,7 @@ test.describe('Kịch bản 2: Trích xuất nội dung (Reader Mode)', () => {
 		const result = (await requestArticle(extPage)) as { success: boolean; article?: { content: string } };
 		expect(result).toEqual({
 			success: true,
+			readableSurface: 'none',
 			article: expect.objectContaining({ content: 'Đoạn export thứ nhất.\n\nĐoạn export thứ hai.' }),
 		});
 	});

@@ -1,10 +1,7 @@
 import { MODEL_FILES, VOICE_STYLES } from '../shared/constants';
 import { isPanelInstanceId } from '../shared/manual_playback';
-import type { PlaybackContent, PlaybackProgress, PlaybackStatus } from '../shared/types';
-import {
-	buildWordHighlightWords,
-	type WordHighlightContentScope,
-} from '../shared/word_highlight';
+import { buildReadableSurfaceWords } from '../shared/readable_surface.ts';
+import type { PlaybackContent, PlaybackContentScope, PlaybackProgress, PlaybackStatus, ReadableSurfaceKind } from '../shared/types';
 import { createSpeechAudioBuffer, synthesizeSpeechUnitSamples } from './audio';
 import { captureManualCheckpoint, isCheckpointOwner, type ManualCheckpoint, resumeOffsetSeconds } from './manual_checkpoint';
 import { createPauseKeepalive } from './pause_keepalive';
@@ -16,7 +13,7 @@ import { loadTextToSpeech, loadVoiceStyle, Style, TextToSpeech } from './superto
 import { IndexedSynthesisCoordinator, type SynthesisKey } from './synthesis_coordinator';
 import { loadVietnameseNormalizerAssets } from './vietnamese/assets';
 import { normalizeVietnameseText } from './vietnamese/normalizer';
-import { computeWordTimings, findWordAtTime, type WordTimingWindow } from './word_timing';
+import { computeReadableSurfaceWordTimings, findWordAtTime, type WordTimingWindow } from './word_timing';
 
 // Global Engine State
 let ttsEngine: TextToSpeech | null = null;
@@ -45,7 +42,8 @@ let currentPlaybackLanguage: string | null = null;
 let currentPlaybackStyle: Style | null = null;
 let currentVoiceStyleId = '';
 let currentWordIndex = -1;
-let currentHighlightContentScope: WordHighlightContentScope | null = null;
+let currentReadableSurface: ReadableSurfaceKind = 'none';
+let currentReadableSurfaceContentScope: PlaybackContentScope = 'article';
 
 type PendingManualPlayback = {
 	sessionId: string;
@@ -306,12 +304,11 @@ function stopCurrentSource() {
 }
 
 let wordHighlightTimer: ReturnType<typeof setInterval> | null = null;
-let lastHighlightedWordIndex = -1;
-let lastHighlightedManualWordIndex = -1;
-let genericHighlightReady = false;
+let lastReadableSurfaceWordIndex = -1;
+let surfaceReady = false;
 
-function isWordHighlightContentScope(value: unknown): value is WordHighlightContentScope {
-	return value === 'article' || value === 'selection';
+function isReadableSurfaceKind(value: unknown): value is ReadableSurfaceKind {
+	return value === 'website-dom' || value === 'manual-reader' || value === 'none';
 }
 
 function resetHighlightTimer() {
@@ -319,20 +316,42 @@ function resetHighlightTimer() {
 		clearInterval(wordHighlightTimer);
 		wordHighlightTimer = null;
 	}
-	lastHighlightedWordIndex = -1;
-	lastHighlightedManualWordIndex = -1;
+	lastReadableSurfaceWordIndex = -1;
 }
 
 function clearWordHighlightTracking() {
 	resetHighlightTimer();
-	if (genericHighlightReady && currentExtensionSessionId) {
-		void chrome.runtime.sendMessage({ action: 'WORD_HIGHLIGHT_CLEAR', sessionId: currentExtensionSessionId }).catch(() => undefined);
+	if (surfaceReady && currentExtensionSessionId) {
+		void chrome.runtime.sendMessage({ action: 'READABLE_SURFACE_CLEAR', sessionId: currentExtensionSessionId }).catch(() => undefined);
 	}
-	genericHighlightReady = false;
+	surfaceReady = false;
 }
 
 function wordIndexBase(unitIndex: number): number {
 	return speechUnits.slice(0, unitIndex).reduce((count, unit) => count + (unit.wordMap?.length ?? 0), 0);
+}
+
+async function initializeReadableSurface(session: number): Promise<void> {
+	const words = currentReadableSurface === 'none' ? [] : buildReadableSurfaceWords(speechUnits);
+	surfaceReady = false;
+	if (!currentExtensionSessionId || currentReadableSurface === 'none' || words.length === 0) {
+		return;
+	}
+	try {
+		const response = await chrome.runtime.sendMessage({
+			action: 'READABLE_SURFACE_INIT',
+			sessionId: currentExtensionSessionId,
+			contentScope: currentReadableSurfaceContentScope,
+			words,
+		});
+		if (session === playbackSession) {
+			surfaceReady = response?.success === true;
+		}
+	} catch (_error) {
+		if (session === playbackSession) {
+			surfaceReady = false;
+		}
+	}
 }
 
 function startWordHighlightTracking(windows: WordTimingWindow[], unitStartTime: number, offsetSec: number, unitIndex: number) {
@@ -353,26 +372,18 @@ function startWordHighlightTracking(windows: WordTimingWindow[], unitStartTime: 
 			return;
 		}
 		const wordIndex = base + wordTiming.wordIndex;
-		if (currentManualPanelInstanceId) {
-			if (wordIndex === lastHighlightedManualWordIndex) {
-				return;
-			}
-			lastHighlightedManualWordIndex = wordIndex;
-			currentWordIndex = wordIndex;
-			chrome.runtime.sendMessage({
-				action: 'OFFSCREEN_MANUAL_WORD_TIMING',
+		if (!surfaceReady || !currentExtensionSessionId || wordIndex === lastReadableSurfaceWordIndex) {
+			return;
+		}
+		lastReadableSurfaceWordIndex = wordIndex;
+		currentWordIndex = wordIndex;
+		void chrome.runtime
+			.sendMessage({
+				action: 'READABLE_SURFACE_UPDATE',
 				sessionId: currentExtensionSessionId,
 				word: wordTiming.text,
 				wordIndex,
-			});
-			return;
-		}
-		if (!genericHighlightReady || !currentExtensionSessionId || wordIndex === lastHighlightedWordIndex) {
-			return;
-		}
-		lastHighlightedWordIndex = wordIndex;
-		void chrome.runtime
-			.sendMessage({ action: 'WORD_HIGHLIGHT_UPDATE', sessionId: currentExtensionSessionId, wordIndex })
+			})
 			.catch(() => undefined);
 	}, 50);
 }
@@ -394,7 +405,8 @@ function stopAudio() {
 	currentBufferStartedAt = 0;
 	currentBufferOffsetSec = 0;
 	currentManualPanelInstanceId = null;
-	currentHighlightContentScope = null;
+	currentReadableSurface = 'none';
+	currentReadableSurfaceContentScope = 'article';
 	currentPlaybackLanguage = null;
 	currentPlaybackStyle = null;
 	currentVoiceStyleId = '';
@@ -473,7 +485,7 @@ function playAudioBuffer(
 
 	const unit = speechUnits[unitIndex];
 	const spokenDurationSec = Math.max(buffer.duration - (unit?.pauseAfterMs ?? 0) / 1000, 0);
-	const windows = computeWordTimings(unit?.wordMap ?? [], spokenDurationSec);
+	const windows = computeReadableSurfaceWordTimings(currentReadableSurface, unit?.wordMap ?? [], spokenDurationSec);
 	const unitStartTime = audioCtx.currentTime;
 	source.start(0, sourceOffsetSec);
 	playbackMetrics.recordUnitStart(unitIndex, unitStartTime, performance.now(), buffer.duration, sourceOffsetSec);
@@ -569,6 +581,7 @@ async function resumePendingManualPlayback(checkpoint: RuntimeManualCheckpoint, 
 	if (speechUnits.length === 0) {
 		throw new Error('No readable text content found.');
 	}
+	await initializeReadableSurface(session);
 	if (!ttsEngine) {
 		await initModels();
 	}
@@ -638,6 +651,8 @@ function checkpointManual(payload: unknown): { success: boolean; checkpoint?: Re
 	currentBufferStartedAt = 0;
 	currentBufferOffsetSec = 0;
 	currentManualPanelInstanceId = null;
+	currentReadableSurface = 'none';
+	currentReadableSurfaceContentScope = 'article';
 	currentPlaybackLanguage = null;
 	currentPlaybackStyle = null;
 	pendingManualPlayback = null;
@@ -667,6 +682,8 @@ async function resumeManualCheckpoint(payload: unknown): Promise<{ success: bool
 	manualCheckpoint = null;
 	currentExtensionSessionId = checkpoint.sessionId;
 	currentManualPanelInstanceId = checkpoint.panelInstanceId;
+	currentReadableSurface = 'manual-reader';
+	currentReadableSurfaceContentScope = 'manual';
 	currentPlaybackLanguage = checkpoint.lang;
 	currentPlaybackStyle = checkpoint.style;
 	currentVoiceStyleId = checkpoint.voiceStyleId;
@@ -676,6 +693,10 @@ async function resumeManualCheckpoint(payload: unknown): Promise<{ success: bool
 	currentWordIndex = checkpoint.wordIndex;
 	isPaused = false;
 	const session = ++playbackSession;
+
+	if (!checkpoint.pendingArticle) {
+		await initializeReadableSurface(session);
+	}
 
 	if (checkpoint.buffer && checkpoint.style && checkpoint.sourceOffsetSec < checkpoint.buffer.duration) {
 		playAudioBuffer(
@@ -741,8 +762,13 @@ chrome.runtime.onMessage.addListener(
 						speed: number;
 						panelInstanceId?: unknown;
 						contentScope?: unknown;
+						readableSurface?: unknown;
 					};
 					const { article, voiceStyleId, speed } = data;
+					if (!isReadableSurfaceKind(data.readableSurface)) {
+						sendResponse({ success: false, error: 'Invalid readable surface' });
+						break;
+					}
 					if (data.panelInstanceId !== undefined && !isPanelInstanceId(data.panelInstanceId)) {
 						sendResponse({ success: false, error: 'Invalid Side Panel owner ID' });
 						break;
@@ -751,10 +777,9 @@ chrome.runtime.onMessage.addListener(
 					stopAudio();
 					currentExtensionSessionId = sessionId;
 					currentManualPanelInstanceId = data.panelInstanceId ?? null;
-					currentHighlightContentScope =
-						currentManualPanelInstanceId === null && isWordHighlightContentScope(data.contentScope)
-							? data.contentScope
-							: null;
+					currentReadableSurface = data.readableSurface;
+					currentReadableSurfaceContentScope =
+						data.readableSurface === 'manual-reader' ? 'manual' : data.contentScope === 'selection' ? 'selection' : 'article';
 					currentPlaybackLanguage = article.lang;
 					currentVoiceStyleId = voiceStyleId;
 					currentWordIndex = -1;
@@ -798,26 +823,7 @@ chrome.runtime.onMessage.addListener(
 								return;
 							}
 
-							const highlightContentScope = currentHighlightContentScope;
-							const words = highlightContentScope ? buildWordHighlightWords(speechUnits) : [];
-							genericHighlightReady = false;
-							if (currentExtensionSessionId && highlightContentScope && words.length > 0) {
-								try {
-									const response = await chrome.runtime.sendMessage({
-										action: 'WORD_HIGHLIGHT_INIT',
-										sessionId: currentExtensionSessionId,
-										contentScope: highlightContentScope,
-										words,
-									});
-									if (session === playbackSession) {
-										genericHighlightReady = response?.success === true;
-									}
-								} catch (_error) {
-									if (session === playbackSession) {
-										genericHighlightReady = false;
-									}
-								}
-							}
+							await initializeReadableSurface(session);
 
 							if (session !== playbackSession) {
 								sendResponse({ success: false, error: 'Playback superseded' });

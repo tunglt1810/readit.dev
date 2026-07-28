@@ -37,6 +37,7 @@ test('creates an Article from same-origin plain text without collapsing paragrap
 
 	assert.deepEqual(result, {
 		success: true,
+		readableSurface: 'none',
 		article: {
 			title: 'Tài liệu thử nghiệm - Google Tài liệu',
 			content: 'Đoạn đầu.\n\nĐoạn sau.',

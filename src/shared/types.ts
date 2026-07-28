@@ -10,6 +10,13 @@ export interface Article extends PlaybackContent {
 	url: string;
 }
 
+export type ReadableSurfaceKind = 'website-dom' | 'manual-reader' | 'none';
+
+export interface ExtractedArticle {
+	article: Article;
+	readableSurface: Extract<ReadableSurfaceKind, 'website-dom' | 'none'>;
+}
+
 export type ManualTextLanguage = 'auto' | 'en' | 'vi' | 'zh';
 export type ResolvedManualTextLanguage = Exclude<ManualTextLanguage, 'auto'>;
 
@@ -52,6 +59,7 @@ export interface PlaybackProgress {
 
 export interface PlaybackSessionBase {
 	sessionId: string;
+	readableSurface: ReadableSurfaceKind;
 	lang: string;
 	status: PlaybackStatus;
 	currentParagraphIndex: number;
@@ -65,11 +73,13 @@ export interface PlaybackSessionBase {
 
 export interface TabPlaybackSessionSnapshot extends PlaybackSessionBase {
 	contentScope: 'article' | 'selection';
+	readableSurface: 'website-dom' | 'none';
 	source: { kind: 'tab'; tabId: number; title: string; url: string };
 }
 
 export interface ManualPlaybackSessionSnapshot extends PlaybackSessionBase {
 	contentScope: 'manual';
+	readableSurface: 'manual-reader';
 	source: { kind: 'manual'; panelInstanceId: string };
 }
 

@@ -45,3 +45,38 @@ test('renders a word highlight during real article playback', async ({ context, 
 		)
 		.not.toBeNull();
 });
+
+test('does not initialize a projection for Google Docs text-only playback', async ({ context, extensionId }) => {
+	const documentUrl = 'https://docs.google.com/document/d/no-surface-doc/edit?tab=t.0';
+	await context.route('https://docs.google.com/document/d/no-surface-doc/edit**', (route) =>
+		route.fulfill({
+			contentType: 'text/html; charset=utf-8',
+			body: '<html lang="en"><head><title>Text-only Google Doc</title></head><body><div role="application"></div></body></html>',
+		}),
+	);
+	await context.route(/\/document\/d\/no-surface-doc\/export\?format=txt$/, (route) =>
+		route.fulfill({
+			contentType: 'text/plain; charset=utf-8',
+			body: 'This exported document has enough text for local speech playback without projecting highlights into the editor surface.',
+		}),
+	);
+
+	const documentPage = await context.newPage();
+	await documentPage.goto(documentUrl, { waitUntil: 'domcontentloaded' });
+	const sender = await context.newPage();
+	await sender.goto(`chrome-extension://${extensionId}/src/popup/popup.html`);
+	await sender.evaluate(() => {
+		(window as any).surfaceLifecycleMessages = [];
+		chrome.runtime.onMessage.addListener((message) => {
+			if (message?.action === 'READABLE_SURFACE_INIT' || message?.action === 'WORD_HIGHLIGHT_INIT') {
+				(window as any).surfaceLifecycleMessages.push(message);
+			}
+		});
+	});
+	await documentPage.bringToFront();
+
+	await expect(sender.evaluate(() => chrome.runtime.sendMessage({ action: 'START_CURRENT_PAGE' }))).resolves.toEqual({
+		success: true,
+	});
+	expect(await sender.evaluate(() => (window as any).surfaceLifecycleMessages)).toEqual([]);
+});

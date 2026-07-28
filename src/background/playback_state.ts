@@ -11,14 +11,23 @@ type PlaybackSessionInputBase = {
 
 type CreatePlaybackSessionInput = PlaybackSessionInputBase &
 	(
-		| { contentScope: 'article' | 'selection'; source: { kind: 'tab'; tabId: number; title: string; url: string } }
-		| { contentScope: 'manual'; source: { kind: 'manual'; panelInstanceId: string } }
+		| {
+				contentScope: 'article' | 'selection';
+				source: { kind: 'tab'; tabId: number; title: string; url: string };
+				readableSurface: 'website-dom' | 'none';
+		  }
+		| {
+				contentScope: 'manual';
+				source: { kind: 'manual'; panelInstanceId: string };
+				readableSurface: 'manual-reader';
+		  }
 	);
 
 const MANUAL_PLAYBACK_SESSION_KEYS = new Set([
 	'sessionId',
 	'contentScope',
 	'source',
+	'readableSurface',
 	'lang',
 	'status',
 	'currentParagraphIndex',
@@ -43,8 +52,8 @@ export function createPlaybackSession(input: CreatePlaybackSessionInput): Playba
 		updatedAt: input.now,
 	};
 	return input.contentScope === 'manual'
-		? { ...base, contentScope: 'manual', source: input.source }
-		: { ...base, contentScope: input.contentScope, source: input.source };
+		? { ...base, contentScope: 'manual', source: input.source, readableSurface: input.readableSurface }
+		: { ...base, contentScope: input.contentScope, source: input.source, readableSurface: input.readableSurface };
 }
 
 export function createPlaybackErrorSession(input: {
@@ -59,6 +68,7 @@ export function createPlaybackErrorSession(input: {
 		sessionId: input.sessionId,
 		contentScope: 'article',
 		source: input.source,
+		readableSurface: 'none',
 		lang: 'und',
 		status: 'error',
 		currentParagraphIndex: 0,
@@ -119,6 +129,7 @@ export function isPlaybackSessionSnapshot(value: unknown): value is PlaybackSess
 	if (source.kind === 'manual') {
 		return (
 			session.contentScope === 'manual' &&
+			session.readableSurface === 'manual-reader' &&
 			isPanelInstanceId(source.panelInstanceId) &&
 			Object.keys(source).length === 2 &&
 			Object.keys(session).every((key) => MANUAL_PLAYBACK_SESSION_KEYS.has(key))
@@ -127,6 +138,7 @@ export function isPlaybackSessionSnapshot(value: unknown): value is PlaybackSess
 	return (
 		source.kind === 'tab' &&
 		(session.contentScope === 'article' || session.contentScope === 'selection') &&
+		(session.readableSurface === 'website-dom' || session.readableSurface === 'none') &&
 		Number.isInteger(source.tabId) &&
 		typeof source.title === 'string' &&
 		typeof source.url === 'string'

@@ -1,8 +1,8 @@
 import { DEFAULT_SPEED, GOOGLE_DOCS_EXPORT_UNAVAILABLE, MODEL_FILES, PDF_ERROR_CODES, STORAGE_KEYS, type PdfErrorCode } from '../shared/constants';
-import { isManualPlaybackControlMessage, isManualWordTimingMessage } from '../shared/manual_playback';
+import { isManualPlaybackControlMessage } from '../shared/manual_playback';
 import { fetchWithCache, MODEL_CACHE_NAME } from '../shared/model_cache';
+import { isReadableSurfaceClearMessage, isReadableSurfaceInitMessage, isReadableSurfaceUpdateMessage } from '../shared/readable_surface';
 import { warmCache } from '../shared/warm_cache';
-import { isWordHighlightInitMessage, isWordHighlightUpdateMessage } from '../shared/word_highlight';
 import { createModelCacheWarmer } from './model_cache_warmer';
 import { registerModelCacheWarmLifecycle } from './model_cache_lifecycle';
 import type {
@@ -22,6 +22,7 @@ import { prepareManualStart } from './manual_text';
 import {
 	type ManualCheckpointMetadata,
 	type OffscreenCommand,
+	type OffscreenPlayPayload,
 	sendOffscreenCommand,
 } from './offscreen_transport';
 import { requestPageInfoFromTab } from './page_info';
@@ -37,7 +38,7 @@ import {
 } from './playback_state';
 import { createSelectedTextArticle } from './selected_text';
 import { prepareSelectedTextRequest } from './selected_text_request';
-import { createWordHighlightUpdateCoalescer } from './word_highlight_update_coalescer';
+import { createReadableSurfaceCoordinator } from './readable_surface';
 import { handleOpenSidePanelCommand } from '../popup/side_panel';
 
 const DEFAULT_VOICE_STYLE_ID = 'M1';
@@ -62,11 +63,16 @@ type StartPlaybackInput =
 			contentScope: 'article' | 'selection';
 			source: { kind: 'tab'; tabId: number; title: string; url: string };
 			content: PlaybackContent;
+			readableSurface: 'website-dom' | 'none';
 	  }
-	| { contentScope: 'manual'; source: { kind: 'manual'; panelInstanceId: string }; content: PlaybackContent };
+	| {
+			contentScope: 'manual';
+			source: { kind: 'manual'; panelInstanceId: string };
+			content: PlaybackContent;
+			readableSurface: 'manual-reader';
+	  };
 
 let activeSession: PlaybackSessionSnapshot | null = null;
-let initializedWordHighlightSessionId: string | null = null;
 let suspendedManualCheckpoint: ManualCheckpointMetadata | null = null;
 let suspendedManualSession: ManualPlaybackSessionSnapshot | null = null;
 let hydrated = false;
@@ -80,6 +86,14 @@ function enqueue<T>(operation: () => Promise<T>): Promise<T> {
 	);
 	return next;
 }
+
+const readableSurface = createReadableSurfaceCoordinator({
+	sendTabMessage: (tabId, message) => chrome.tabs.sendMessage(tabId, message),
+	sendRuntimeMessage: (message) => chrome.runtime.sendMessage(message),
+	enqueue: (operation) => {
+		void enqueue(operation);
+	},
+});
 
 function isPlaybackStatus(value: unknown): value is PlaybackStatus {
 	return value === 'stopped' || value === 'loading' || value === 'playing' || value === 'paused' || value === 'error';
@@ -120,6 +134,10 @@ function isArticle(value: unknown): value is Article {
 	);
 }
 
+function isArticleReadableSurface(value: unknown): value is 'website-dom' | 'none' {
+	return value === 'website-dom' || value === 'none';
+}
+
 async function requestCurrentTabArticle(tabId: number, title: string | undefined, url: string): Promise<ArticleResponse> {
 	const requestPdfFallback = () =>
 		extractPdfArticle(
@@ -136,7 +154,13 @@ async function requestCurrentTabArticle(tabId: number, title: string | undefined
 			sendMessage: (targetTabId, message) => chrome.tabs.sendMessage(targetTabId, message),
 			executeScript: (options) => chrome.scripting.executeScript(options),
 		});
-		if (articleResponse.success && isArticle(articleResponse.article)) return articleResponse;
+		if (
+			articleResponse.success &&
+			isArticle(articleResponse.article) &&
+			isArticleReadableSurface(articleResponse.readableSurface)
+		) {
+			return articleResponse;
+		}
 		return (await requestPdfFallback()) ?? articleResponse;
 	} catch (error) {
 		if (!isMissingReceiverError(error)) throw error;
@@ -154,6 +178,9 @@ async function ensureHydrated(): Promise<void> {
 	const result = (await chrome.storage.session.get(STORAGE_KEYS.PLAYBACK_SESSION)) as Record<string, unknown>;
 	const storedSession = result[STORAGE_KEYS.PLAYBACK_SESSION];
 	activeSession = isPlaybackSessionSnapshot(storedSession) ? storedSession : null;
+	if (activeSession) {
+		readableSurface.activate(activeSession);
+	}
 	hydrated = true;
 
 	if (storedSession !== undefined && activeSession === null) {
@@ -198,19 +225,10 @@ async function publishSession(session: PlaybackSessionSnapshot): Promise<void> {
 
 async function clearSession(): Promise<PlaybackSessionSnapshot | null> {
 	const session = activeSession;
+	if (session) {
+		await readableSurface.clear(session.sessionId);
+	}
 	activeSession = null;
-	initializedWordHighlightSessionId = null;
-	if (session?.source.kind === 'tab') {
-		wordHighlightUpdateCoalescer.discard(session.sessionId);
-	}
-
-	if (session?.source.kind === 'tab') {
-		try {
-			await chrome.tabs.sendMessage(session.source.tabId, { action: 'WORD_HIGHLIGHT_CLEAR', sessionId: session.sessionId });
-		} catch (_error) {
-			// The content script may not be listening (e.g. the tab navigated away); ignore.
-		}
-	}
 
 	if (session) {
 		const stoppedSession: PlaybackSessionSnapshot = {
@@ -229,6 +247,9 @@ async function clearSession(): Promise<PlaybackSessionSnapshot | null> {
 
 async function failSession(error: string): Promise<void> {
 	const session = activeSession;
+	if (session) {
+		await readableSurface.clear(session.sessionId);
+	}
 	activeSession = null;
 
 	if (session) {
@@ -318,6 +339,7 @@ function snapshotFromCheckpoint(checkpoint: ManualCheckpointMetadata): ManualPla
 		sessionId: checkpoint.sessionId,
 		contentScope: 'manual',
 		source: { kind: 'manual', panelInstanceId: checkpoint.panelInstanceId },
+		readableSurface: 'manual-reader',
 		lang: checkpoint.lang,
 		voiceStyleId: checkpoint.voiceStyleId,
 		speed: checkpoint.speed,
@@ -472,6 +494,7 @@ async function preemptManualForWeb(): Promise<CommandResponse> {
 		}
 		suspendedManualCheckpoint = response.checkpoint;
 		suspendedManualSession = manual;
+		await readableSurface.clear(manual.sessionId);
 		activeSession = null;
 		await chrome.storage.session.remove(STORAGE_KEYS.PLAYBACK_SESSION);
 		await broadcastSession(null);
@@ -531,10 +554,21 @@ async function startPlayback(input: StartPlaybackInput): Promise<CommandResponse
 	};
 	const session =
 		input.contentScope === 'manual'
-			? createPlaybackSession({ ...sessionInput, contentScope: 'manual', source: input.source })
-			: createPlaybackSession({ ...sessionInput, contentScope: input.contentScope, source: input.source });
+			? createPlaybackSession({
+					...sessionInput,
+					contentScope: 'manual',
+					source: input.source,
+					readableSurface: input.readableSurface,
+				})
+			: createPlaybackSession({
+					...sessionInput,
+					contentScope: input.contentScope,
+					source: input.source,
+					readableSurface: input.readableSurface,
+				});
 
 	activeSession = session;
+	readableSurface.activate(session);
 	await publishSession(session);
 
 	try {
@@ -555,16 +589,18 @@ async function startPlayback(input: StartPlaybackInput): Promise<CommandResponse
 			// A failed best-effort warm must not prevent the normal offscreen load path.
 		}
 		await setupOffscreen();
+		const playPayload: OffscreenPlayPayload = {
+			sessionId: session.sessionId,
+			article: input.content,
+			voiceStyleId,
+			speed,
+			readableSurface: input.readableSurface,
+			...(input.source.kind === 'tab' ? { contentScope: input.contentScope } : {}),
+			...(input.contentScope === 'manual' ? { panelInstanceId: input.source.panelInstanceId } : {}),
+		};
 		observeOffscreenPlay(session.sessionId, {
 			action: 'PLAY',
-			payload: {
-				sessionId: session.sessionId,
-				article: input.content,
-				voiceStyleId,
-				speed,
-				...(input.source.kind === 'tab' ? { contentScope: input.contentScope } : {}),
-				...(input.contentScope === 'manual' ? { panelInstanceId: input.source.panelInstanceId } : {}),
-			},
+			payload: playPayload,
 		});
 		return { success: true };
 	} catch (_error) {
@@ -602,8 +638,12 @@ async function startCurrentPage(): Promise<CommandResponse> {
 		return { success: false, error: ERROR_MESSAGES.extraction };
 	}
 
-	if (!articleResponse.success || !isArticle(articleResponse.article)) {
-		const extractionError = getExtractionError(articleResponse.error);
+	if (
+		!articleResponse.success ||
+		!isArticle(articleResponse.article) ||
+		!isArticleReadableSurface(articleResponse.readableSurface)
+	) {
+		const extractionError = getExtractionError(articleResponse.success ? undefined : articleResponse.error);
 		if (activeSession?.contentScope === 'manual') {
 			return { success: false, error: extractionError };
 		}
@@ -621,6 +661,7 @@ async function startCurrentPage(): Promise<CommandResponse> {
 			url: articleResponse.article.url || url,
 		},
 		content: articleResponse.article,
+		readableSurface: articleResponse.readableSurface,
 	});
 }
 
@@ -630,7 +671,12 @@ async function startManualText(payload: unknown): Promise<CommandResponse> {
 		return { success: false, error: 'invalidManualText' };
 	}
 	const { panelInstanceId, ...content } = prepared;
-	return startPlayback({ contentScope: 'manual', source: { kind: 'manual', panelInstanceId }, content });
+	return startPlayback({
+		contentScope: 'manual',
+		source: { kind: 'manual', panelInstanceId },
+		content,
+		readableSurface: 'manual-reader',
+	});
 }
 
 async function getCurrentPageInfo(): Promise<PageInfoResponse> {
@@ -764,6 +810,7 @@ async function resumeManualCheckpoint(panelInstanceId: string): Promise<CommandR
 		error: undefined,
 		updatedAt: Date.now(),
 	};
+	readableSurface.activate(activeSession);
 	await publishSession(activeSession);
 	try {
 		const response = await sendOffscreenCommand(
@@ -778,6 +825,7 @@ async function resumeManualCheckpoint(panelInstanceId: string): Promise<CommandR
 		await broadcastManualCheckpointState(panelInstanceId, 'active');
 		return { success: true };
 	} catch (_error) {
+		await readableSurface.clear(activeSession.sessionId);
 		activeSession = null;
 		await chrome.storage.session.remove(STORAGE_KEYS.PLAYBACK_SESSION);
 		await broadcastSession(null);
@@ -841,81 +889,6 @@ async function applyProgressMessage(message: Record<string, unknown>): Promise<v
 
 	activeSession = updatedSession;
 	await publishSession(updatedSession);
-}
-
-async function relayWordHighlightInit(message: unknown): Promise<{ success: boolean }> {
-	await ensureHydrated();
-	if (!isWordHighlightInitMessage(message) || activeSession?.source.kind !== 'tab' || message.sessionId !== activeSession.sessionId) {
-		return { success: false };
-	}
-	try {
-		await chrome.tabs.sendMessage(activeSession.source.tabId, message);
-		initializedWordHighlightSessionId = activeSession.sessionId;
-		return { success: true };
-	} catch (_error) {
-		return { success: false };
-	}
-}
-
-async function relayWordHighlightUpdate(message: unknown): Promise<void> {
-	await ensureHydrated();
-	if (
-		activeSession?.source.kind !== 'tab' ||
-		!isWordHighlightUpdateMessage(message) ||
-		message.sessionId !== activeSession.sessionId ||
-		initializedWordHighlightSessionId !== activeSession.sessionId
-	) {
-		return;
-	}
-	try {
-		await chrome.tabs.sendMessage(activeSession.source.tabId, {
-			action: 'WORD_HIGHLIGHT_UPDATE',
-			sessionId: activeSession.sessionId,
-			wordIndex: message.wordIndex,
-		});
-	} catch (_error) {
-		// The content script may not be listening (e.g. the tab navigated away); ignore.
-	}
-}
-
-const wordHighlightUpdateCoalescer = createWordHighlightUpdateCoalescer((operation) => {
-	void enqueue(operation);
-}, relayWordHighlightUpdate);
-
-async function relayWordHighlightClear(message: Record<string, unknown>): Promise<void> {
-	await ensureHydrated();
-	if (
-		activeSession?.source.kind !== 'tab' ||
-		typeof message.sessionId !== 'string' ||
-		message.sessionId !== activeSession.sessionId ||
-		initializedWordHighlightSessionId !== activeSession.sessionId
-	) {
-		return;
-	}
-	try {
-		await chrome.tabs.sendMessage(activeSession.source.tabId, { action: 'WORD_HIGHLIGHT_CLEAR', sessionId: activeSession.sessionId });
-	} catch (_error) {
-		// The content script may not be listening; ignore.
-	} finally {
-		initializedWordHighlightSessionId = null;
-	}
-}
-
-async function relayManualWordHighlight(message: Record<string, unknown>): Promise<void> {
-	await ensureHydrated();
-	if (activeSession?.contentScope !== 'manual' || !isManualWordTimingMessage(message) || message.sessionId !== activeSession.sessionId) {
-		return;
-	}
-	try {
-		await chrome.runtime.sendMessage({
-			action: 'MANUAL_WORD_HIGHLIGHT_UPDATE',
-			sessionId: activeSession.sessionId,
-			word: message.word,
-			wordIndex: message.wordIndex,
-		});
-	} catch (_error) {
-		// The Side Panel may be closed between the audible word event and the relay.
-	}
 }
 
 function respondFromQueue<T>(operation: () => Promise<T>, sendResponse: (response?: unknown) => void): true {
@@ -995,6 +968,7 @@ chrome.runtime.onMessage.addListener(
 								url: request.article.url || request.url,
 							},
 							content: request.article,
+							readableSurface: 'website-dom',
 						}),
 					sendResponse,
 				);
@@ -1040,24 +1014,32 @@ chrome.runtime.onMessage.addListener(
 				void enqueue(() => applyProgressMessage(msg));
 				break;
 
-			case 'WORD_HIGHLIGHT_INIT':
-				return respondFromQueue(() => relayWordHighlightInit(msg), sendResponse);
+			case 'READABLE_SURFACE_INIT':
+				if (!isReadableSurfaceInitMessage(msg)) {
+					sendResponse({ success: false });
+					return undefined;
+				}
+				return respondFromQueue(async () => {
+					await ensureHydrated();
+					return readableSurface.initialize(msg);
+				}, sendResponse);
 
-			case 'WORD_HIGHLIGHT_UPDATE':
-				if (isWordHighlightUpdateMessage(msg)) {
-					wordHighlightUpdateCoalescer.submit(msg);
+			case 'READABLE_SURFACE_UPDATE':
+				if (isReadableSurfaceUpdateMessage(msg)) {
+					void enqueue(async () => {
+						await ensureHydrated();
+						readableSurface.advance(msg);
+					});
 				}
 				break;
 
-			case 'WORD_HIGHLIGHT_CLEAR':
-				if (typeof msg.sessionId === 'string') {
-					wordHighlightUpdateCoalescer.discard(msg.sessionId);
+			case 'READABLE_SURFACE_CLEAR':
+				if (isReadableSurfaceClearMessage(msg)) {
+					void enqueue(async () => {
+						await ensureHydrated();
+						await readableSurface.clear(msg.sessionId);
+					});
 				}
-				void enqueue(() => relayWordHighlightClear(msg));
-				break;
-
-			case 'OFFSCREEN_MANUAL_WORD_TIMING':
-				void enqueue(() => relayManualWordHighlight(msg));
 				break;
 
 			default:
@@ -1138,6 +1120,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 				url: article.url || url,
 			},
 			content: article,
+			readableSurface: 'website-dom',
 		});
 	});
 });

@@ -1,8 +1,4 @@
-export interface ArticleResponse {
-	success: boolean;
-	error?: string;
-	article?: unknown;
-}
+export type ArticleResponse = { success: true; article: unknown; readableSurface: unknown } | { success: false; error?: string };
 
 export interface ArticleRequestDependencies {
 	sendMessage: (tabId: number, message: { action: 'EXTRACT_ARTICLE' }) => Promise<ArticleResponse>;

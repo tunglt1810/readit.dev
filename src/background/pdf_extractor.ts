@@ -26,7 +26,7 @@ export interface PdfExtractorDependencies {
 }
 
 export type PdfArticleResponse =
-	| { success: true; article: Article }
+	| { success: true; article: Article; readableSurface: 'none' }
 	| { success: false; error: PdfErrorCode };
 
 export interface PdfSource {
@@ -187,6 +187,7 @@ export async function extractPdfArticle(
 				url: source.url,
 				lang: detectContentLanguage(content, 'na'),
 			},
+			readableSurface: 'none',
 		};
 	} catch (error) {
 		return extractionFailure(error instanceof Error && error.name === 'PasswordException' ? PDF_ERROR_CODES.passwordProtected : PDF_ERROR_CODES.extractionFailed);

@@ -91,7 +91,7 @@ export const test = base.extend<{
 	freshExtensionWorker: boolean;
 }>({
 	browserLocale: ['vi-VN', { option: true }],
-	freshExtensionWorker: [false, { option: true }],
+	freshExtensionWorker: [true, { option: true }],
 	context: async ({ browserLocale, headless, freshExtensionWorker }, use) => {
 		const pathToExtension = path.join(process.cwd(), 'dist');
 		const tempDir = path.join(process.cwd(), '.tmp');
@@ -99,20 +99,21 @@ export const test = base.extend<{
 		const userDataDir = fs.mkdtempSync(path.join(tempDir, 'playwright-chrome-profile-'));
 
 		if (fs.existsSync(MODEL_CACHE_SEED_MARKER)) {
-			// Clone the pre-warmed profile (see global_setup.ts) so this test's
-			// Supertonic model Cache Storage is already populated — avoids
-			// racing real network I/O against startPlayback()'s wait for the
-			// background cache warm to settle.
-			fs.rmSync(userDataDir, { recursive: true, force: true });
-			fs.cpSync(MODEL_CACHE_SEED_DIR, userDataDir, { recursive: true });
-			for (const lockFile of ['SingletonLock', 'SingletonCookie', 'SingletonSocket']) {
-				fs.rmSync(path.join(userDataDir, lockFile), { force: true });
-			}
 			if (freshExtensionWorker) {
-				// Keep the seeded model Cache Storage, but force this runtime test to register the
-				// current unpacked service-worker bundle instead of restoring the seed's old worker.
-				fs.rmSync(path.join(userDataDir, 'Default', 'Service Worker', 'ScriptCache'), { recursive: true, force: true });
-				fs.rmSync(path.join(userDataDir, 'Default', 'Service Worker', 'Database'), { recursive: true, force: true });
+				const seedCacheStorage = path.join(MODEL_CACHE_SEED_DIR, 'Default', 'Service Worker', 'CacheStorage');
+				const profileCacheStorage = path.join(userDataDir, 'Default', 'Service Worker', 'CacheStorage');
+				fs.mkdirSync(path.dirname(profileCacheStorage), { recursive: true });
+				fs.cpSync(seedCacheStorage, profileCacheStorage, { recursive: true });
+			} else {
+				// Clone the pre-warmed profile (see global_setup.ts) so this test's
+				// Supertonic model Cache Storage is already populated — avoids
+				// racing real network I/O against startPlayback()'s wait for the
+				// background cache warm to settle.
+				fs.rmSync(userDataDir, { recursive: true, force: true });
+				fs.cpSync(MODEL_CACHE_SEED_DIR, userDataDir, { recursive: true });
+				for (const lockFile of ['SingletonLock', 'SingletonCookie', 'SingletonSocket']) {
+					fs.rmSync(path.join(userDataDir, lockFile), { force: true });
+				}
 			}
 		}
 

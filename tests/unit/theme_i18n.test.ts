@@ -1,18 +1,24 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import * as constants from '../../src/shared/constants.ts';
+import { STORAGE_KEYS } from '../../src/shared/constants.ts';
 
-const { STORAGE_KEYS, THEME_TRANSLATIONS } = constants;
+Object.defineProperty(globalThis, 'chrome', {
+	configurable: true,
+	value: {
+		i18n: {
+			getUILanguage: () => 'en-US',
+		},
+	},
+});
+
+const { THEME_TRANSLATIONS, VOICE_STYLE_TRANSLATIONS } = await import('../../src/shared/i18n.ts');
 
 test('STORAGE_KEYS.THEME có giá trị chính xác', () => {
-	// @ts-expect-error STORAGE_KEYS.THEME will be added in implementation
 	assert.strictEqual(STORAGE_KEYS.THEME, 'readit_active_theme');
 });
 
 test('THEME_TRANSLATIONS dịch ngôn ngữ vi và en hoạt động chính xác', () => {
-	// @ts-expect-error THEME_TRANSLATIONS will be added in implementation
 	const vi = THEME_TRANSLATIONS.vi;
-	// @ts-expect-error THEME_TRANSLATIONS will be added in implementation
 	const en = THEME_TRANSLATIONS.en;
 
 	assert.strictEqual(vi.selectTheme, 'Giao diện');
@@ -125,14 +131,10 @@ test('THEME_TRANSLATIONS dịch ngôn ngữ vi và en hoạt động chính xác
 });
 
 test('VOICE_STYLE_TRANSLATIONS provides localized names for every stable voice ID', () => {
-	const voiceStyleTranslations = Reflect.get(constants, 'VOICE_STYLE_TRANSLATIONS') as
-		| Record<'vi' | 'en', Record<string, string>>
-		| undefined;
-
-	assert.deepStrictEqual(Object.keys(voiceStyleTranslations?.vi ?? {}), ['M1', 'M2', 'M3', 'M4', 'M5', 'F1', 'F2', 'F3', 'F4', 'F5']);
-	assert.deepStrictEqual(Object.keys(voiceStyleTranslations?.en ?? {}), ['M1', 'M2', 'M3', 'M4', 'M5', 'F1', 'F2', 'F3', 'F4', 'F5']);
-	assert.strictEqual(voiceStyleTranslations?.vi.M1, 'Nam 1 (Trầm)');
-	assert.strictEqual(voiceStyleTranslations?.vi.F5, 'Nữ 5 (Vang)');
-	assert.strictEqual(voiceStyleTranslations?.en.M1, 'Male 1 (Deep)');
-	assert.strictEqual(voiceStyleTranslations?.en.F5, 'Female 5 (Resonant)');
+	assert.deepStrictEqual(Object.keys(VOICE_STYLE_TRANSLATIONS.vi), ['M1', 'M2', 'M3', 'M4', 'M5', 'F1', 'F2', 'F3', 'F4', 'F5']);
+	assert.deepStrictEqual(Object.keys(VOICE_STYLE_TRANSLATIONS.en), ['M1', 'M2', 'M3', 'M4', 'M5', 'F1', 'F2', 'F3', 'F4', 'F5']);
+	assert.strictEqual(VOICE_STYLE_TRANSLATIONS.vi.M1, 'Nam 1 (Trầm)');
+	assert.strictEqual(VOICE_STYLE_TRANSLATIONS.vi.F5, 'Nữ 5 (Vang)');
+	assert.strictEqual(VOICE_STYLE_TRANSLATIONS.en.M1, 'Male 1 (Deep)');
+	assert.strictEqual(VOICE_STYLE_TRANSLATIONS.en.F5, 'Female 5 (Resonant)');
 });

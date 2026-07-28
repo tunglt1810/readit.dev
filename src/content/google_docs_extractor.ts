@@ -8,7 +8,7 @@ export type GoogleDocsFetch = (
 ) => Promise<Pick<Response, 'ok' | 'headers' | 'text'>>;
 
 export type GoogleDocsExtractionResponse =
-	| { success: true; article: Article }
+	| { success: true; article: Article; readableSurface: 'none' }
 	| { success: false; error: typeof GOOGLE_DOCS_EXPORT_UNAVAILABLE };
 
 const EXPORT_FETCH_TIMEOUT_MS = 15000;
@@ -58,7 +58,11 @@ export async function extractGoogleDocsArticle(
 			return { success: false, error: GOOGLE_DOCS_EXPORT_UNAVAILABLE };
 		}
 
-		return { success: true, article: { ...input, content, lang: detectContentLanguage(content, input.lang) } };
+		return {
+			success: true,
+			article: { ...input, content, lang: detectContentLanguage(content, input.lang) },
+			readableSurface: 'none',
+		};
 	} catch {
 		return { success: false, error: GOOGLE_DOCS_EXPORT_UNAVAILABLE };
 	}

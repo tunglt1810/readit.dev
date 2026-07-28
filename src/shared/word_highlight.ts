@@ -1,13 +1,9 @@
+import type { ReadableSurfaceWord } from './readable_surface.ts';
 import type { PlaybackContentScope } from './types';
 
 export const WORD_HIGHLIGHT_NAME = 'readit-dev-word-highlight';
 
 export type WordHighlightContentScope = Exclude<PlaybackContentScope, 'manual'>;
-
-export interface WordHighlightWord {
-	text: string;
-	globalIndex: number;
-}
 
 export interface WordHighlightScopeMessage {
 	action: 'WORD_HIGHLIGHT_SET_SELECTION_SCOPE';
@@ -19,7 +15,7 @@ export interface WordHighlightInitMessage {
 	action: 'WORD_HIGHLIGHT_INIT';
 	sessionId: string;
 	contentScope: WordHighlightContentScope;
-	words: readonly WordHighlightWord[];
+	words: readonly ReadableSurfaceWord[];
 }
 
 export interface WordHighlightUpdateMessage {
@@ -31,16 +27,6 @@ export interface WordHighlightUpdateMessage {
 export interface WordHighlightClearMessage {
 	action: 'WORD_HIGHLIGHT_CLEAR';
 	sessionId: string;
-}
-
-export function buildWordHighlightWords(units: readonly { wordMap?: readonly { text: string }[] }[]): WordHighlightWord[] {
-	const words: WordHighlightWord[] = [];
-	for (const unit of units) {
-		for (const entry of unit.wordMap ?? []) {
-			words.push({ text: entry.text, globalIndex: words.length });
-		}
-	}
-	return words;
 }
 
 export function isWordHighlightInitMessage(value: unknown): value is WordHighlightInitMessage {

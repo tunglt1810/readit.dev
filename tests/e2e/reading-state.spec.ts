@@ -3,9 +3,12 @@ import type { BrowserContext, Page } from '@playwright/test';
 import type { ManualPlaybackSessionSnapshot, PlaybackStateResponse, TabPlaybackSessionSnapshot } from '../../src/shared/types';
 import { expect, installPopupRuntimeMock, test } from './fixtures';
 
+test.use({ freshExtensionWorker: true });
+
 const activeSession = {
 	sessionId: 'session-1',
 	contentScope: 'article' as const,
+	readableSurface: 'website-dom' as const,
 	source: {
 		kind: 'tab' as const,
 		tabId: 11,
@@ -228,6 +231,7 @@ test('manual session popup shows localized metadata without tab actions', async 
 		session: {
 			sessionId: 'manual-session',
 			contentScope: 'manual',
+			readableSurface: 'manual-reader',
 			source: { kind: 'manual', panelInstanceId: 'ad6f72b4-2b6a-42c4-9d11-c3d6f07333cd' },
 			lang: 'vi',
 			status: 'paused',
@@ -555,7 +559,7 @@ test.describe('Reading state lifecycle', () => {
 		expect(JSON.stringify(stored.local)).not.toContain(sentinel);
 	});
 
-	test('relays one manual word highlight from one internal offscreen timing event', async ({ context, extensionId }) => {
+	test('relays one manual word highlight from one canonical surface update', async ({ context, extensionId }) => {
 		const controlPage = await context.newPage();
 		await controlPage.goto(`chrome-extension://${extensionId}/src/popup/popup.html`);
 		await controlPage.evaluate(() => {
@@ -574,17 +578,25 @@ test.describe('Reading state lifecycle', () => {
 		).resolves.toEqual({ success: true });
 		const sessionId = (await getBackgroundState(controlPage)).session?.sessionId;
 		expect(sessionId).toEqual(expect.any(String));
+		await controlPage.evaluate(() => {
+			(window as any).manualWordHighlightEvents = [];
+		});
 
 		await sendBackgroundMessage(controlPage, {
-			action: 'OFFSCREEN_MANUAL_WORD_TIMING',
+			action: 'READABLE_SURFACE_UPDATE',
 			sessionId,
-			word: 'cat',
-			wordIndex: 1,
+			word: 'InjectedCanonicalWord',
+			wordIndex: 99,
 		});
 
 		await expect
 			.poll(() => controlPage.evaluate(() => (window as any).manualWordHighlightEvents))
-			.toEqual([{ action: 'MANUAL_WORD_HIGHLIGHT_UPDATE', sessionId, word: 'cat', wordIndex: 1 }]);
+			.toContainEqual({
+				action: 'MANUAL_WORD_HIGHLIGHT_UPDATE',
+				sessionId,
+				word: 'InjectedCanonicalWord',
+				wordIndex: 99,
+			});
 	});
 
 	test('a failed manual checkpoint leaves manual playback active and does not start web reading', async ({ context, extensionId }) => {
@@ -594,6 +606,7 @@ test.describe('Reading state lifecycle', () => {
 		const manualSession: ManualPlaybackSessionSnapshot = {
 			sessionId: 'manual-checkpoint-failure',
 			contentScope: 'manual',
+			readableSurface: 'manual-reader',
 			source: { kind: 'manual', panelInstanceId: manualPanelInstanceId },
 			lang: 'en',
 			status: 'playing',
@@ -652,6 +665,7 @@ test.describe('Reading state lifecycle', () => {
 		const manualSession: ManualPlaybackSessionSnapshot = {
 			sessionId: 'manual-checkpoint-session',
 			contentScope: 'manual',
+			readableSurface: 'manual-reader',
 			source: { kind: 'manual', panelInstanceId: manualPanelInstanceId },
 			lang: 'en',
 			status: 'playing',

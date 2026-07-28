@@ -25,14 +25,14 @@ test('injects the content script and retries once when the receiver is missing',
 			if (sendAttempts === 1) {
 				throw missingReceiverError();
 			}
-			return { success: true, article };
+			return { success: true, article, readableSurface: 'website-dom' };
 		},
 		executeScript: async (options) => {
 			injections.push(options);
 		},
 	});
 
-	assert.deepEqual(result, { success: true, article });
+	assert.deepEqual(result, { success: true, article, readableSurface: 'website-dom' });
 	assert.equal(sendAttempts, 2);
 	assert.deepEqual(injections, [{ target: { tabId: 42 }, files: ['content_script.js'] }]);
 });

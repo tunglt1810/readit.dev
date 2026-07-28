@@ -1,10 +1,11 @@
-import type { WordHighlightUpdateMessage } from '../shared/word_highlight';
-
 type Schedule = (operation: () => Promise<void>) => void;
-type Relay = (message: WordHighlightUpdateMessage) => Promise<void>;
+type CoalescedWordUpdate = { sessionId: string; wordIndex: number };
 
-export function createWordHighlightUpdateCoalescer(schedule: Schedule, relay: Relay) {
-	let latest: WordHighlightUpdateMessage | null = null;
+export function createWordHighlightUpdateCoalescer<T extends CoalescedWordUpdate>(
+	schedule: Schedule,
+	relay: (message: T) => Promise<void>,
+) {
+	let latest: T | null = null;
 	let scheduled = false;
 
 	function scheduleLatest(): void {
@@ -26,7 +27,7 @@ export function createWordHighlightUpdateCoalescer(schedule: Schedule, relay: Re
 	}
 
 	return {
-		submit(message: WordHighlightUpdateMessage): void {
+		submit(message: T): void {
 			latest = message;
 			if (!scheduled) {
 				scheduleLatest();

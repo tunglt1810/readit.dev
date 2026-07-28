@@ -13,6 +13,7 @@ const tabInput = {
 	sessionId: 'session-1',
 	contentScope: 'article' as const,
 	source: { kind: 'tab' as const, tabId: 42, title: 'An article', url: 'https://example.com/article' },
+	readableSurface: 'website-dom' as const,
 	lang: 'en',
 	voiceStyleId: 'M1',
 	speed: 1.05,
@@ -26,6 +27,7 @@ test('creates a tab-owned loading session', () => {
 		sessionId: 'session-1',
 		contentScope: 'article',
 		source: { kind: 'tab', tabId: 42, title: 'An article', url: 'https://example.com/article' },
+		readableSurface: 'website-dom',
 		lang: 'en',
 		status: 'loading',
 		currentParagraphIndex: 0,
@@ -42,6 +44,7 @@ test('creates a manual loading session without tab metadata', () => {
 		sessionId: 'manual-1',
 		contentScope: 'manual',
 		source: manualSource,
+		readableSurface: 'manual-reader',
 		lang: 'vi',
 		voiceStyleId: 'F1',
 		speed: 1.1,
@@ -58,6 +61,7 @@ test('rejects forbidden top-level fields on manual sessions', () => {
 		sessionId: 'manual-1',
 		contentScope: 'manual',
 		source: manualSource,
+		readableSurface: 'manual-reader',
 		lang: 'en',
 		voiceStyleId: 'M1',
 		speed: 1.05,
@@ -69,14 +73,35 @@ test('rejects forbidden top-level fields on manual sessions', () => {
 	}
 });
 
-test('validates only legal source and scope combinations', () => {
-	assert.equal(isPlaybackSessionSnapshot(createPlaybackSession(tabInput)), true);
+test('persists valid surfaces and rejects invalid source-surface combinations', () => {
+	const website = createPlaybackSession(tabInput);
+	assert.equal(website.readableSurface, 'website-dom');
+
+	const textOnly = createPlaybackSession({ ...tabInput, readableSurface: 'none' });
+	assert.equal(textOnly.readableSurface, 'none');
+
+	const manual = createPlaybackSession({
+		sessionId: 'manual-surface',
+		contentScope: 'manual',
+		source: manualSource,
+		readableSurface: 'manual-reader',
+		lang: 'en',
+		voiceStyleId: 'M1',
+		speed: 1.05,
+		now: 1000,
+	});
+	assert.equal(manual.readableSurface, 'manual-reader');
+
+	assert.equal(isPlaybackSessionSnapshot(website), true);
 	assert.equal(
 		isPlaybackSessionSnapshot(createPlaybackSession({ ...tabInput, sessionId: 'selection', contentScope: 'selection' })),
 		true,
 	);
-	assert.equal(isPlaybackSessionSnapshot({ ...createPlaybackSession(tabInput), contentScope: 'manual' }), false);
-	assert.equal(isPlaybackSessionSnapshot({ ...createPlaybackSession(tabInput), source: manualSource }), false);
+	assert.equal(isPlaybackSessionSnapshot({ ...website, readableSurface: 'manual-reader' }), false);
+	assert.equal(isPlaybackSessionSnapshot({ ...manual, readableSurface: 'website-dom' }), false);
+	assert.equal(isPlaybackSessionSnapshot({ ...website, readableSurface: undefined }), false);
+	assert.equal(isPlaybackSessionSnapshot({ ...website, contentScope: 'manual' }), false);
+	assert.equal(isPlaybackSessionSnapshot({ ...website, source: manualSource }), false);
 });
 
 test('creates a transient extraction error session from tab metadata only', () => {
@@ -93,6 +118,7 @@ test('creates a transient extraction error session from tab metadata only', () =
 			sessionId: 'session-2',
 			contentScope: 'article',
 			source: { kind: 'tab', tabId: 42, title: 'Unreadable page', url: 'https://example.com/unreadable' },
+			readableSurface: 'none',
 			lang: 'und',
 			status: 'error',
 			currentParagraphIndex: 0,
@@ -185,6 +211,7 @@ test('manual sessions never own browser tabs', () => {
 		sessionId: 'manual-1',
 		contentScope: 'manual',
 		source: manualSource,
+		readableSurface: 'manual-reader',
 		lang: 'en',
 		voiceStyleId: 'M1',
 		speed: 1.05,
@@ -198,6 +225,7 @@ test('rejects manual snapshots with invalid owners or extra source fields', () =
 		sessionId: 'manual-1',
 		contentScope: 'manual',
 		source: manualSource,
+		readableSurface: 'manual-reader',
 		lang: 'en',
 		voiceStyleId: 'M1',
 		speed: 1.05,

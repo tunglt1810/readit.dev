@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { computeWordTimings, findWordAtTime } from '../../src/offscreen/word_timing.ts';
+import { computeReadableSurfaceWordTimings, computeWordTimings, findWordAtTime } from '../../src/offscreen/word_timing.ts';
 
 test('allocates duration proportionally to each word length', () => {
 	const wordMap = [
@@ -50,6 +50,10 @@ test('falls back to spoken-span length when the original text is not what was ac
 test('returns an empty list when there is no spoken duration or no words', () => {
 	assert.deepEqual(computeWordTimings([], 5), []);
 	assert.deepEqual(computeWordTimings([{ text: 'x', start: 0, end: 1 }], 0), []);
+});
+
+test('skips timing-window computation when playback has no readable surface', () => {
+	assert.deepEqual(computeReadableSurfaceWordTimings('none', [{ text: 'unprojected', start: 0, end: 11 }], 5), []);
 });
 
 test('spreads a normalized expansion over the span it is actually spoken in', () => {

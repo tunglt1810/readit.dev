@@ -2,6 +2,7 @@ import type { BrowserContext, Page, Worker } from '@playwright/test';
 
 import { tokenizeVietnameseText } from '../../src/offscreen/vietnamese/tokenizer';
 import { STORAGE_KEYS } from '../../src/shared/constants';
+import { resolveExtensionId } from './extension_id';
 import { expect, test } from './fixtures';
 
 const highlightRegistryName = 'readit-dev-word-highlight';
@@ -17,8 +18,12 @@ type TestWordHighlightMessage =
 	| { action: 'WORD_HIGHLIGHT_UPDATE'; sessionId: string; wordIndex: number }
 	| { action: 'WORD_HIGHLIGHT_CLEAR'; sessionId: string };
 
-function findExtensionServiceWorker(context: BrowserContext): Worker {
-	const serviceWorker = context.serviceWorkers().find((worker) => worker.url().startsWith('chrome-extension://'));
+async function findExtensionServiceWorker(context: BrowserContext): Promise<Worker> {
+	let serviceWorker = context.serviceWorkers().find((worker) => worker.url().startsWith('chrome-extension://'));
+	if (!serviceWorker) {
+		await resolveExtensionId(context);
+		serviceWorker = context.serviceWorkers().find((worker) => worker.url().startsWith('chrome-extension://'));
+	}
 	if (!serviceWorker) {
 		throw new Error('Extension service worker was not found.');
 	}
@@ -122,7 +127,7 @@ test('highlights the current word as WORD_HIGHLIGHT_UPDATE messages arrive, and 
 	const page = await context.newPage();
 	await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
 
-	const serviceWorker = findExtensionServiceWorker(context);
+	const serviceWorker = await findExtensionServiceWorker(context);
 	const tabId = await getTabId(serviceWorker);
 
 	await initializeWordHighlight(serviceWorker, tabId, { sessionId: 'e2e-session', words: ['First', 'sentence'] });
@@ -151,7 +156,7 @@ test('maps consecutive duplicate indexes to distinct precomputed ranges', async 
 	const page = await context.newPage();
 	await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
 
-	const serviceWorker = findExtensionServiceWorker(context);
+	const serviceWorker = await findExtensionServiceWorker(context);
 	const tabId = await getTabId(serviceWorker);
 	await sendWordHighlightMessage(serviceWorker, tabId, {
 		action: 'WORD_HIGHLIGHT_INIT',
@@ -190,7 +195,7 @@ test('ignores an update that arrives before its session is initialized', async (
 	const page = await context.newPage();
 	await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
 
-	const serviceWorker = findExtensionServiceWorker(context);
+	const serviceWorker = await findExtensionServiceWorker(context);
 	const tabId = await getTabId(serviceWorker);
 	await sendWordHighlightMessage(serviceWorker, tabId, {
 		action: 'WORD_HIGHLIGHT_UPDATE',
@@ -212,7 +217,7 @@ test('keeps a newer highlight when a stale session clear arrives', async ({ cont
 	const page = await context.newPage();
 	await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
 
-	const serviceWorker = findExtensionServiceWorker(context);
+	const serviceWorker = await findExtensionServiceWorker(context);
 	const tabId = await getTabId(serviceWorker);
 	await initializeWordHighlight(serviceWorker, tabId, { sessionId: 'e2e-old-session', words: ['Old'] });
 	await initializeWordHighlight(serviceWorker, tabId, { sessionId: 'e2e-new-session', words: ['New'] });
@@ -234,7 +239,7 @@ test('fails closed for a selection init without a captured selection range', asy
 	const page = await context.newPage();
 	await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
 
-	const serviceWorker = findExtensionServiceWorker(context);
+	const serviceWorker = await findExtensionServiceWorker(context);
 	const tabId = await getTabId(serviceWorker);
 	await initializeWordHighlight(serviceWorker, tabId, {
 		sessionId: 'e2e-missing-selection-range',
@@ -261,7 +266,7 @@ test('clears an invalidated precomputed range instead of rematching a later dupl
 	const page = await context.newPage();
 	await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
 
-	const serviceWorker = findExtensionServiceWorker(context);
+	const serviceWorker = await findExtensionServiceWorker(context);
 	const tabId = await getTabId(serviceWorker);
 	await initializeWordHighlight(serviceWorker, tabId, { sessionId: 'e2e-invalidated-range', words: ['same', 'same'] });
 	await page.locator('#first').evaluate((element) => element.remove());
@@ -285,7 +290,7 @@ test('keeps painting while a visible article loses focus', async ({ context }) =
 	const page = await context.newPage();
 	await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
 
-	const serviceWorker = findExtensionServiceWorker(context);
+	const serviceWorker = await findExtensionServiceWorker(context);
 	const tabId = await getTabId(serviceWorker);
 	await initializeWordHighlight(serviceWorker, tabId, { sessionId: 'e2e-focus', words: ['First', 'Second'] });
 	await sendWordHighlightMessage(serviceWorker, tabId, { action: 'WORD_HIGHLIGHT_UPDATE', sessionId: 'e2e-focus', wordIndex: 0 });
@@ -313,7 +318,7 @@ test('scrolls only when the mapped range is outside the viewport', async ({ cont
 	);
 	const page = await context.newPage();
 	await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
-	const serviceWorker = findExtensionServiceWorker(context);
+	const serviceWorker = await findExtensionServiceWorker(context);
 	const tabId = await getTabId(serviceWorker);
 	await initializeWordHighlight(serviceWorker, tabId, { sessionId: 'e2e-scroll', words: ['Near', 'Far'] });
 	await sendWordHighlightMessage(serviceWorker, tabId, { action: 'WORD_HIGHLIGHT_UPDATE', sessionId: 'e2e-scroll', wordIndex: 0 });
@@ -336,7 +341,7 @@ test('scrolls a word above the viewport from within a tall paragraph into view',
 	);
 	const page = await context.newPage();
 	await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
-	const serviceWorker = findExtensionServiceWorker(context);
+	const serviceWorker = await findExtensionServiceWorker(context);
 	const tabId = await getTabId(serviceWorker);
 	await initializeWordHighlight(serviceWorker, tabId, { sessionId: 'e2e-tall-paragraph', words: ['Target'] });
 	await page.evaluate(() => window.scrollTo(0, 900));
@@ -374,7 +379,7 @@ test('reapplies the latest mapped range when highlighting is re-enabled', async 
 	const page = await context.newPage();
 	await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
 
-	const serviceWorker = findExtensionServiceWorker(context);
+	const serviceWorker = await findExtensionServiceWorker(context);
 	const tabId = await getTabId(serviceWorker);
 	await initializeWordHighlight(serviceWorker, tabId, { sessionId: 'e2e-setting', words: ['First'] });
 	await sendWordHighlightMessage(serviceWorker, tabId, { action: 'WORD_HIGHLIGHT_UPDATE', sessionId: 'e2e-setting', wordIndex: 0 });
@@ -399,7 +404,7 @@ test('resolves a WORD_HIGHLIGHT_INIT round-trip quickly instead of stalling the 
 	const page = await context.newPage();
 	await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
 
-	const serviceWorker = findExtensionServiceWorker(context);
+	const serviceWorker = await findExtensionServiceWorker(context);
 	const tabId = await getTabId(serviceWorker);
 
 	// The background treats this response as the initialization barrier. A missing response used
@@ -437,7 +442,7 @@ test('advances past a repeated word instead of matching the same earlier occurre
 	const page = await context.newPage();
 	await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
 
-	const serviceWorker = findExtensionServiceWorker(context);
+	const serviceWorker = await findExtensionServiceWorker(context);
 	const tabId = await getTabId(serviceWorker);
 
 	const words = ['The', 'cat', 'sat', 'on', 'the'];
@@ -479,7 +484,7 @@ test('anchors to the selected passage instead of an earlier occurrence of the sa
 	await selectSubstring(page, '#content', 'The dog ran away.');
 	await page.locator('#readit-dev-selection-button-host button').click();
 
-	const serviceWorker = findExtensionServiceWorker(context);
+	const serviceWorker = await findExtensionServiceWorker(context);
 	const tabId = await getTabId(serviceWorker);
 	await expect
 		.poll(() =>
@@ -530,7 +535,7 @@ test('keeps context-menu selected-text highlights inside the exact selected rang
 	await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
 	await selectElementContentsAndOpenContextMenu(page, '#selected');
 
-	const serviceWorker = findExtensionServiceWorker(context);
+	const serviceWorker = await findExtensionServiceWorker(context);
 	const tabId = await getTabId(serviceWorker);
 	const sessionId = 'e2e-context-selection';
 	await sendWordHighlightMessage(serviceWorker, tabId, {
@@ -572,7 +577,7 @@ test('clears instead of matching a word after the selected range', async ({ cont
 	await selectSubstring(page, '#content', 'Selected words.');
 	await page.locator('#content').dispatchEvent('contextmenu');
 
-	const serviceWorker = findExtensionServiceWorker(context);
+	const serviceWorker = await findExtensionServiceWorker(context);
 	const tabId = await getTabId(serviceWorker);
 	const sessionId = 'e2e-selection-end';
 	await sendWordHighlightMessage(serviceWorker, tabId, {
@@ -602,7 +607,7 @@ test('matches the target word against the DOM text regardless of NFC/NFD Unicode
 	const page = await context.newPage();
 	await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
 
-	const serviceWorker = findExtensionServiceWorker(context);
+	const serviceWorker = await findExtensionServiceWorker(context);
 	const tabId = await getTabId(serviceWorker);
 
 	// The TTS pipeline always sends NFC-normalized words (see vietnamese/tokenizer.ts), while this
@@ -651,7 +656,7 @@ test('finds words inside the article even when an outer layout wrapper coinciden
 	const page = await context.newPage();
 	await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
 
-	const serviceWorker = findExtensionServiceWorker(context);
+	const serviceWorker = await findExtensionServiceWorker(context);
 	const tabId = await getTabId(serviceWorker);
 
 	await initializeWordHighlight(serviceWorker, tabId, { sessionId: 'e2e-noise-false-positive', words: ['Tin'] });
@@ -679,7 +684,7 @@ test('does not match a short word inside a longer unrelated word (no word-bounda
 	const page = await context.newPage();
 	await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
 
-	const serviceWorker = findExtensionServiceWorker(context);
+	const serviceWorker = await findExtensionServiceWorker(context);
 	const tabId = await getTabId(serviceWorker);
 
 	await initializeWordHighlight(serviceWorker, tabId, { sessionId: 'e2e-substring-boundary', words: ['an'] });
@@ -725,7 +730,7 @@ test('a punctuation search target does not skip ahead past real words to reach a
 	const page = await context.newPage();
 	await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
 
-	const serviceWorker = findExtensionServiceWorker(context);
+	const serviceWorker = await findExtensionServiceWorker(context);
 	const tabId = await getTabId(serviceWorker);
 
 	const words = ['Canô', 'lật', 'úp', ',', 'số'];
@@ -756,7 +761,7 @@ test('recovers after a word split across inline markup instead of staying stuck 
 	const page = await context.newPage();
 	await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
 
-	const serviceWorker = findExtensionServiceWorker(context);
+	const serviceWorker = await findExtensionServiceWorker(context);
 	const tabId = await getTabId(serviceWorker);
 
 	// "học" is split across the <a> boundary ("họ" + "c phí nhanh") so it can never match as a
@@ -812,7 +817,7 @@ test('highlights every real word of a realistic multi-paragraph Vietnamese artic
 	const page = await context.newPage();
 	await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
 
-	const serviceWorker = findExtensionServiceWorker(context);
+	const serviceWorker = await findExtensionServiceWorker(context);
 	const tabId = await getTabId(serviceWorker);
 
 	await initializeWordHighlight(serviceWorker, tabId, { sessionId: 'e2e-full-article', words });

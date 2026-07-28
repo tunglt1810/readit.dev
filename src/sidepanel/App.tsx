@@ -120,6 +120,12 @@ export default function App() {
 				}
 				return;
 			}
+			if (value.action === 'MANUAL_WORD_HIGHLIGHT_CLEAR') {
+				if (value.sessionId === manualReaderSessionIdRef.current) {
+					setManualHighlight(null);
+				}
+				return;
+			}
 			if (value.action === 'MANUAL_WORD_HIGHLIGHT_UPDATE') {
 				if (
 					typeof value.sessionId !== 'string' ||
@@ -558,4 +564,3 @@ export default function App() {
 		</main>
 	);
 }
-

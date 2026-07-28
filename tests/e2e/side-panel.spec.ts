@@ -33,6 +33,7 @@ test('matches the popup support header with identity, version, and Coffee', asyn
 const manualSession: PlaybackSessionSnapshot = {
 	sessionId: 'manual-session',
 	contentScope: 'manual',
+	readableSurface: 'manual-reader',
 	source: { kind: 'manual', panelInstanceId: 'ad6f72b4-2b6a-42c4-9d11-c3d6f07333cd' },
 	lang: 'vi',
 	status: 'playing',
@@ -97,6 +98,21 @@ test('locks the reader and highlights manual words without the webpage highlight
 
 	const reader = page.getByRole('textbox', { name: 'Văn bản đang đọc' });
 	await expect(reader).toHaveAttribute('aria-readonly', 'true');
+	await expect(reader.locator('.manual-reader-active-word')).toHaveText('cat');
+
+	await page.evaluate((sessionId) => {
+		(window as any).mockReceiveMessage({ action: 'MANUAL_WORD_HIGHLIGHT_CLEAR', sessionId });
+	}, manualSession.sessionId);
+	await expect(reader.locator('mark')).toHaveCount(0);
+
+	await page.evaluate((session) => {
+		(window as any).mockReceiveMessage({
+			action: 'MANUAL_WORD_HIGHLIGHT_UPDATE',
+			sessionId: session.sessionId,
+			word: 'cat',
+			wordIndex: 1,
+		});
+	}, manualSession);
 	await expect(reader.locator('.manual-reader-active-word')).toHaveText('cat');
 });
 
@@ -600,7 +616,5 @@ test('shows session meta and playback controls in current-page-card during an ac
 	await expect(page.locator('.current-page-card .btn-read')).toBeVisible();
 	await expect(page.locator('.current-page-card .session-meta')).not.toBeVisible();
 });
-
-
 
 
