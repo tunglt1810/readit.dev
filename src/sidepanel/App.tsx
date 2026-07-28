@@ -304,6 +304,14 @@ export default function App() {
 		void sendPlaybackCommand({ action });
 	};
 
+	const handleOpenDocumentReader = async () => {
+		setCommandError('');
+		const response = await sendPlaybackCommand({ action: 'OPEN_DOCUMENT_READER' });
+		if (!response.success) {
+			setCommandError(t('documentReaderOpenFailed'));
+		}
+	};
+
 	const handleResumeManualCheckpoint = async () => {
 		setCommandError('');
 		const response = await sendPlaybackCommand({ action: 'RESUME_MANUAL_CHECKPOINT', panelInstanceId });
@@ -421,6 +429,11 @@ export default function App() {
 								buttonRef={session.status === 'playing' || session.status === 'paused' ? undefined : primaryButtonRef}
 							/>
 						</div>
+						{session.readableSurface === 'document-reader' && (
+							<button className="secondary-button document-reader-button" type="button" onClick={handleOpenDocumentReader}>
+								{t('openDocumentReader')}
+							</button>
+						)}
 					</>
 				) : (
 					<>

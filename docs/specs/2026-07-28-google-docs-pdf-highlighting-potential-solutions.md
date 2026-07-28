@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-28
 
-**Status:** Research note; no implementation commitment
+**Status:** Research note; extension-owned text surface selected for the first implementation
 
 **Purpose:** Preserve currently known options for adding Google Docs or PDF Readable Surface Adapters after the Readable Surface architecture refactor. This note intentionally separates platform exploration from approved implementation scope.
 
@@ -15,6 +15,8 @@ The current Google Docs and PDF reading specs remain authoritative for shipped b
 - Neither source has a Readable Surface Adapter today.
 
 This note reopens technical feasibility only. It does not silently expand those approved scopes or turn a potential solution into planned work.
+
+The approved first implementation is now defined by [Full Document Reader Design](./2026-07-28-document-reader-design.md): one extension-owned Clean Reader for Google Docs and PDF. The source-view projection options below remain research-only and out of that implementation scope.
 
 ## Architectural Constraint
 

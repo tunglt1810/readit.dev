@@ -289,6 +289,10 @@ button {
 	opacity: 0.45;
 }
 
+.document-reader-button {
+	width: 100%;
+}
+
 button:not(:disabled):hover {
 	border-color: var(--border-glass-focus);
 	filter: brightness(1.08);

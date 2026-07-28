@@ -12,7 +12,12 @@ type PlaybackSessionInputBase = {
 type CreatePlaybackSessionInput = PlaybackSessionInputBase &
 	(
 		| {
-				contentScope: 'article' | 'selection';
+				contentScope: 'article';
+				source: { kind: 'tab'; tabId: number; title: string; url: string };
+				readableSurface: 'website-dom' | 'document-reader' | 'none';
+		  }
+		| {
+				contentScope: 'selection';
 				source: { kind: 'tab'; tabId: number; title: string; url: string };
 				readableSurface: 'website-dom' | 'none';
 		  }
@@ -51,9 +56,13 @@ export function createPlaybackSession(input: CreatePlaybackSessionInput): Playba
 		speed: input.speed,
 		updatedAt: input.now,
 	};
-	return input.contentScope === 'manual'
-		? { ...base, contentScope: 'manual', source: input.source, readableSurface: input.readableSurface }
-		: { ...base, contentScope: input.contentScope, source: input.source, readableSurface: input.readableSurface };
+	if (input.contentScope === 'manual') {
+		return { ...base, contentScope: 'manual', source: input.source, readableSurface: input.readableSurface };
+	}
+	if (input.contentScope === 'article') {
+		return { ...base, contentScope: 'article', source: input.source, readableSurface: input.readableSurface };
+	}
+	return { ...base, contentScope: 'selection', source: input.source, readableSurface: input.readableSurface };
 }
 
 export function createPlaybackErrorSession(input: {
@@ -135,10 +144,13 @@ export function isPlaybackSessionSnapshot(value: unknown): value is PlaybackSess
 			Object.keys(session).every((key) => MANUAL_PLAYBACK_SESSION_KEYS.has(key))
 		);
 	}
+	const validTabSurface =
+		session.contentScope === 'article'
+			? session.readableSurface === 'website-dom' || session.readableSurface === 'document-reader' || session.readableSurface === 'none'
+			: session.contentScope === 'selection' && (session.readableSurface === 'website-dom' || session.readableSurface === 'none');
 	return (
 		source.kind === 'tab' &&
-		(session.contentScope === 'article' || session.contentScope === 'selection') &&
-		(session.readableSurface === 'website-dom' || session.readableSurface === 'none') &&
+		validTabSurface &&
 		Number.isInteger(source.tabId) &&
 		typeof source.title === 'string' &&
 		typeof source.url === 'string'

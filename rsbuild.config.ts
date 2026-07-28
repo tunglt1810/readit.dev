@@ -55,6 +55,7 @@ export default defineConfig({
 		entry: {
 			popup: './src/popup/index.tsx',
 			sidepanel: './src/sidepanel/index.tsx',
+			reader: './src/reader/index.tsx',
 			offscreen: vietnameseBenchmark ? './tests/performance/vietnamese_offscreen_benchmark.ts' : './src/offscreen/offscreen.ts',
 			background: {
 				import: './src/background/background.ts',
@@ -115,6 +116,9 @@ export default defineConfig({
 			if (entryName === 'sidepanel') {
 				return './src/sidepanel/sidepanel.html';
 			}
+			if (entryName === 'reader') {
+				return './src/reader/reader.html';
+			}
 			if (entryName === 'offscreen') {
 				return vietnameseBenchmark ? './tests/performance/vietnamese_offscreen_benchmark.html' : './src/offscreen/offscreen.html';
 			}
@@ -127,6 +131,8 @@ export default defineConfig({
 				config.filename = 'src/popup/popup.html';
 			} else if (entryName === 'sidepanel') {
 				config.filename = 'src/sidepanel/sidepanel.html';
+			} else if (entryName === 'reader') {
+				config.filename = 'src/reader/reader.html';
 			} else if (entryName === 'offscreen') {
 				config.filename = 'src/offscreen/offscreen.html';
 			}

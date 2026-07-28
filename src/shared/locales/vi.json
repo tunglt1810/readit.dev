@@ -66,6 +66,13 @@
 	"pdfPasswordProtected": "PDF này được bảo vệ bằng mật khẩu và chưa được hỗ trợ.",
 	"pdfTextUnavailable": "Không tìm thấy văn bản có thể đọc trong PDF này. PDF scan chưa được hỗ trợ.",
 	"pdfExtractionFailed": "Không thể đọc PDF này. Hãy thử lại hoặc dán văn bản để đọc.",
+	"openDocumentReader": "Mở trình đọc toàn màn hình",
+	"documentReaderOpenFailed": "Không thể mở trình đọc toàn màn hình. Âm thanh vẫn tiếp tục.",
+	"documentReaderTitle": "Trình đọc tài liệu",
+	"documentReaderControls": "Điều khiển Trình đọc tài liệu",
+	"documentReaderEmptyTitle": "Chưa có tài liệu đang đọc",
+	"documentReaderEmptyBody": "Bắt đầu đọc Google Docs hoặc PDF, rồi mở Trình đọc tài liệu để theo dõi.",
+	"backToSource": "Quay lại tài liệu",
 	"voiceStyles": {
 		"M1": "Nam 1 (Trầm)",
 		"M2": "Nam 2 (Ấm)",

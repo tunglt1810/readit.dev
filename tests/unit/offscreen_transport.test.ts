@@ -43,6 +43,34 @@ test('treats an unsuccessful checkpoint as a failed precondition', async () => {
 	assert.deepEqual(await sendOffscreenCommand({ action: 'CHECKPOINT_MANUAL' }, async () => ({ success: false })), { success: false });
 });
 
+test('accepts only strict document reader snapshots', async () => {
+	const snapshot = {
+		sessionId: 'document-session',
+		title: 'Document',
+		content: 'First second',
+		words: [
+			{ text: 'First', globalIndex: 0 },
+			{ text: 'second', globalIndex: 1 },
+		],
+		currentWordIndex: 1,
+	};
+
+	assert.deepEqual(
+		await sendOffscreenCommand(
+			{ action: 'GET_DOCUMENT_READER_SNAPSHOT', payload: { sessionId: snapshot.sessionId } },
+			async () => ({ success: true, snapshot }),
+		),
+		{ success: true, snapshot },
+	);
+	assert.deepEqual(
+		await sendOffscreenCommand(
+			{ action: 'GET_DOCUMENT_READER_SNAPSHOT', payload: { sessionId: snapshot.sessionId } },
+			async () => ({ success: true, snapshot: { ...snapshot, currentWordIndex: 1.5 } }),
+		),
+		{ success: false },
+	);
+});
+
 test('sends a failed command once instead of delaying every playback control with warm retries', async () => {
 	let attempts = 0;
 	const response = await sendOffscreenCommand({ action: 'PLAY' }, async () => {

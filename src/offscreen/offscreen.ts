@@ -1,4 +1,5 @@
 import { MODEL_FILES, VOICE_STYLES } from '../shared/constants';
+import type { DocumentReaderSnapshot } from '../shared/document_reader.ts';
 import { isPanelInstanceId } from '../shared/manual_playback';
 import { buildReadableSurfaceWords } from '../shared/readable_surface.ts';
 import type { PlaybackContent, PlaybackContentScope, PlaybackProgress, PlaybackStatus, ReadableSurfaceKind } from '../shared/types';
@@ -44,6 +45,7 @@ let currentVoiceStyleId = '';
 let currentWordIndex = -1;
 let currentReadableSurface: ReadableSurfaceKind = 'none';
 let currentReadableSurfaceContentScope: PlaybackContentScope = 'article';
+let currentDocumentReader: Omit<DocumentReaderSnapshot, 'currentWordIndex'> | null = null;
 
 type PendingManualPlayback = {
 	sessionId: string;
@@ -308,7 +310,7 @@ let lastReadableSurfaceWordIndex = -1;
 let surfaceReady = false;
 
 function isReadableSurfaceKind(value: unknown): value is ReadableSurfaceKind {
-	return value === 'website-dom' || value === 'manual-reader' || value === 'none';
+	return value === 'website-dom' || value === 'manual-reader' || value === 'document-reader' || value === 'none';
 }
 
 function resetHighlightTimer() {
@@ -333,6 +335,9 @@ function wordIndexBase(unitIndex: number): number {
 
 async function initializeReadableSurface(session: number): Promise<void> {
 	const words = currentReadableSurface === 'none' ? [] : buildReadableSurfaceWords(speechUnits);
+	if (currentReadableSurface === 'document-reader' && currentDocumentReader) {
+		currentDocumentReader = { ...currentDocumentReader, words };
+	}
 	surfaceReady = false;
 	if (!currentExtensionSessionId || currentReadableSurface === 'none' || words.length === 0) {
 		return;
@@ -372,11 +377,11 @@ function startWordHighlightTracking(windows: WordTimingWindow[], unitStartTime: 
 			return;
 		}
 		const wordIndex = base + wordTiming.wordIndex;
+		currentWordIndex = wordIndex;
 		if (!surfaceReady || !currentExtensionSessionId || wordIndex === lastReadableSurfaceWordIndex) {
 			return;
 		}
 		lastReadableSurfaceWordIndex = wordIndex;
-		currentWordIndex = wordIndex;
 		void chrome.runtime
 			.sendMessage({
 				action: 'READABLE_SURFACE_UPDATE',
@@ -407,6 +412,7 @@ function stopAudio() {
 	currentManualPanelInstanceId = null;
 	currentReadableSurface = 'none';
 	currentReadableSurfaceContentScope = 'article';
+	currentDocumentReader = null;
 	currentPlaybackLanguage = null;
 	currentPlaybackStyle = null;
 	currentVoiceStyleId = '';
@@ -763,6 +769,7 @@ chrome.runtime.onMessage.addListener(
 						panelInstanceId?: unknown;
 						contentScope?: unknown;
 						readableSurface?: unknown;
+						documentTitle?: unknown;
 					};
 					const { article, voiceStyleId, speed } = data;
 					if (!isReadableSurfaceKind(data.readableSurface)) {
@@ -773,6 +780,10 @@ chrome.runtime.onMessage.addListener(
 						sendResponse({ success: false, error: 'Invalid Side Panel owner ID' });
 						break;
 					}
+					if (data.readableSurface === 'document-reader' && typeof data.documentTitle !== 'string') {
+						sendResponse({ success: false, error: 'Missing document reader title' });
+						break;
+					}
 					const session = ++playbackSession;
 					stopAudio();
 					currentExtensionSessionId = sessionId;
@@ -780,6 +791,15 @@ chrome.runtime.onMessage.addListener(
 					currentReadableSurface = data.readableSurface;
 					currentReadableSurfaceContentScope =
 						data.readableSurface === 'manual-reader' ? 'manual' : data.contentScope === 'selection' ? 'selection' : 'article';
+					currentDocumentReader =
+						data.readableSurface === 'document-reader'
+							? {
+									sessionId,
+									title: data.documentTitle as string,
+									content: article.content,
+									words: [],
+								}
+							: null;
 					currentPlaybackLanguage = article.lang;
 					currentVoiceStyleId = voiceStyleId;
 					currentWordIndex = -1;
@@ -929,6 +949,33 @@ chrome.runtime.onMessage.addListener(
 			case 'GET_MANUAL_CHECKPOINT_METADATA':
 				sendResponse(manualCheckpoint ? { success: true, checkpoint: checkpointMetadata(manualCheckpoint) } : { success: false });
 				break;
+
+			case 'GET_DOCUMENT_READER_SNAPSHOT': {
+				const sessionId = (payload as { sessionId?: unknown } | undefined)?.sessionId;
+				if (
+					typeof sessionId !== 'string' ||
+					currentReadableSurface !== 'document-reader' ||
+					currentDocumentReader?.sessionId !== sessionId
+				) {
+					sendResponse({ success: false });
+					break;
+				}
+				surfaceReady = true;
+				sendResponse({
+					success: true,
+					snapshot: { ...currentDocumentReader, currentWordIndex },
+				});
+				break;
+			}
+
+			case 'DETACH_DOCUMENT_READER': {
+				const sessionId = (payload as { sessionId?: unknown } | undefined)?.sessionId;
+				if (sessionId === currentDocumentReader?.sessionId) {
+					surfaceReady = false;
+				}
+				sendResponse({ success: true });
+				break;
+			}
 
 			case 'CHANGE_SPEED': {
 				const speed = (payload as { speed?: unknown })?.speed;

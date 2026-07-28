@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createReadableSurfaceCoordinator } from '../../src/background/readable_surface.ts';
+import type { DocumentReaderPortMessage, DocumentReaderSnapshot } from '../../src/shared/document_reader.ts';
 import type { ReadableSurfaceInitMessage, ReadableSurfaceUpdateMessage, ReadableSurfaceWord } from '../../src/shared/readable_surface.ts';
 import type { PlaybackSessionSnapshot } from '../../src/shared/types.ts';
 
@@ -45,6 +46,20 @@ const noSurfaceSession: PlaybackSessionSnapshot = {
 	readableSurface: 'none',
 };
 
+const documentSession: PlaybackSessionSnapshot = {
+	...websiteSession,
+	sessionId: 'document-session',
+	readableSurface: 'document-reader',
+};
+
+const documentSnapshot: DocumentReaderSnapshot = {
+	sessionId: documentSession.sessionId,
+	title: 'Document',
+	content: 'First Second',
+	words,
+	currentWordIndex: 0,
+};
+
 function initMessage(
 	contentScope: ReadableSurfaceInitMessage['contentScope'],
 	sessionId = websiteSession.sessionId,
@@ -60,6 +75,7 @@ function createHarness(options: { rejectTab?: boolean; rejectRuntime?: boolean }
 	const sentToTab: { tabId: number; message: unknown }[] = [];
 	const sentToRuntime: unknown[] = [];
 	const queued: (() => Promise<void>)[] = [];
+	const detachedDocumentSessions: string[] = [];
 	const coordinator = createReadableSurfaceCoordinator({
 		sendTabMessage: async (tabId, message) => {
 			sentToTab.push({ tabId, message });
@@ -75,9 +91,13 @@ function createHarness(options: { rejectTab?: boolean; rejectRuntime?: boolean }
 			}
 			return undefined;
 		},
+		requestDocumentReaderSnapshot: async (sessionId) => (sessionId === documentSession.sessionId ? documentSnapshot : null),
+		detachDocumentReader: async (sessionId) => {
+			detachedDocumentSessions.push(sessionId);
+		},
 		enqueue: (operation) => queued.push(operation),
 	});
-	return { coordinator, queued, sentToRuntime, sentToTab };
+	return { coordinator, detachedDocumentSessions, queued, sentToRuntime, sentToTab };
 }
 
 test('initializes Website DOM before coalesced index updates', async () => {
@@ -149,6 +169,8 @@ test('does not make a replacement Website session ready when an older initializa
 			return { success: true };
 		},
 		sendRuntimeMessage: async () => undefined,
+		requestDocumentReaderSnapshot: async () => null,
+		detachDocumentReader: async () => undefined,
 		enqueue: (operation) => queued.push(operation),
 	});
 	const replacementSession: PlaybackSessionSnapshot = {
@@ -192,6 +214,51 @@ test('accepts Manual Reader initialization and broadcasts every update', async (
 			wordIndex: 1,
 		},
 	]);
+});
+
+test('attaches one Document Reader owner and routes snapshot, update, and clear', async () => {
+	const { coordinator } = createHarness();
+	const delivered: DocumentReaderPortMessage[] = [];
+	coordinator.activate(documentSession);
+
+	assert.deepEqual(await coordinator.initialize(initMessage('article', documentSession.sessionId)), { success: false });
+	assert.equal(
+		await coordinator.attachDocumentReader({
+			tabId: 77,
+			sessionId: documentSession.sessionId,
+			deliver: (message) => delivered.push(message),
+		}),
+		true,
+	);
+	assert.deepEqual(await coordinator.initialize(initMessage('article', documentSession.sessionId)), { success: true });
+	coordinator.advance(updateMessage(1, 'Second', documentSession.sessionId));
+	await coordinator.clear(documentSession.sessionId);
+
+	assert.deepEqual(delivered, [
+		{ action: 'DOCUMENT_READER_SNAPSHOT', snapshot: documentSnapshot },
+		{ action: 'DOCUMENT_READER_SNAPSHOT', snapshot: documentSnapshot },
+		{ action: 'DOCUMENT_READER_UPDATE', sessionId: documentSession.sessionId, wordIndex: 1 },
+		{ action: 'DOCUMENT_READER_CLEAR', sessionId: documentSession.sessionId },
+	]);
+	assert.equal(coordinator.documentReaderTabId(), 77);
+});
+
+test('detaches a Document Reader without affecting playback', async () => {
+	const { coordinator, detachedDocumentSessions } = createHarness();
+	const delivered: DocumentReaderPortMessage[] = [];
+	coordinator.activate(documentSession);
+	await coordinator.attachDocumentReader({
+		tabId: 77,
+		sessionId: documentSession.sessionId,
+		deliver: (message) => delivered.push(message),
+	});
+
+	await coordinator.detachDocumentReader(77);
+	coordinator.advance(updateMessage(1, 'Second', documentSession.sessionId));
+
+	assert.deepEqual(detachedDocumentSessions, [documentSession.sessionId]);
+	assert.deepEqual(delivered, [{ action: 'DOCUMENT_READER_SNAPSHOT', snapshot: documentSnapshot }]);
+	assert.equal(coordinator.documentReaderTabId(), null);
 });
 
 test('rejects initialization when the active session has no readable surface', async () => {

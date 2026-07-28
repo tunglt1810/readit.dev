@@ -80,6 +80,9 @@ test('persists valid surfaces and rejects invalid source-surface combinations', 
 	const textOnly = createPlaybackSession({ ...tabInput, readableSurface: 'none' });
 	assert.equal(textOnly.readableSurface, 'none');
 
+	const document = createPlaybackSession({ ...tabInput, readableSurface: 'document-reader' });
+	assert.equal(document.readableSurface, 'document-reader');
+
 	const manual = createPlaybackSession({
 		sessionId: 'manual-surface',
 		contentScope: 'manual',
@@ -93,11 +96,13 @@ test('persists valid surfaces and rejects invalid source-surface combinations', 
 	assert.equal(manual.readableSurface, 'manual-reader');
 
 	assert.equal(isPlaybackSessionSnapshot(website), true);
+	assert.equal(isPlaybackSessionSnapshot(document), true);
 	assert.equal(
 		isPlaybackSessionSnapshot(createPlaybackSession({ ...tabInput, sessionId: 'selection', contentScope: 'selection' })),
 		true,
 	);
 	assert.equal(isPlaybackSessionSnapshot({ ...website, readableSurface: 'manual-reader' }), false);
+	assert.equal(isPlaybackSessionSnapshot({ ...document, contentScope: 'selection' }), false);
 	assert.equal(isPlaybackSessionSnapshot({ ...manual, readableSurface: 'website-dom' }), false);
 	assert.equal(isPlaybackSessionSnapshot({ ...website, readableSurface: undefined }), false);
 	assert.equal(isPlaybackSessionSnapshot({ ...website, contentScope: 'manual' }), false);

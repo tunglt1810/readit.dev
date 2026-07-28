@@ -1,4 +1,5 @@
 import { DEFAULT_SPEED, GOOGLE_DOCS_EXPORT_UNAVAILABLE, MODEL_FILES, PDF_ERROR_CODES, STORAGE_KEYS, type PdfErrorCode } from '../shared/constants';
+import { DOCUMENT_READER_PORT_NAME } from '../shared/document_reader.ts';
 import { isManualPlaybackControlMessage } from '../shared/manual_playback';
 import { fetchWithCache, MODEL_CACHE_NAME } from '../shared/model_cache';
 import { isReadableSurfaceClearMessage, isReadableSurfaceInitMessage, isReadableSurfaceUpdateMessage } from '../shared/readable_surface';
@@ -60,7 +61,13 @@ function getExtractionError(error: string | undefined): string {
 
 type StartPlaybackInput =
 	| {
-			contentScope: 'article' | 'selection';
+			contentScope: 'article';
+			source: { kind: 'tab'; tabId: number; title: string; url: string };
+			content: PlaybackContent;
+			readableSurface: 'website-dom' | 'document-reader' | 'none';
+	  }
+	| {
+			contentScope: 'selection';
 			source: { kind: 'tab'; tabId: number; title: string; url: string };
 			content: PlaybackContent;
 			readableSurface: 'website-dom' | 'none';
@@ -90,6 +97,19 @@ function enqueue<T>(operation: () => Promise<T>): Promise<T> {
 const readableSurface = createReadableSurfaceCoordinator({
 	sendTabMessage: (tabId, message) => chrome.tabs.sendMessage(tabId, message),
 	sendRuntimeMessage: (message) => chrome.runtime.sendMessage(message),
+	requestDocumentReaderSnapshot: async (sessionId) => {
+		const response = await sendOffscreenCommand(
+			{ action: 'GET_DOCUMENT_READER_SNAPSHOT', payload: { sessionId } },
+			(message) => chrome.runtime.sendMessage(message),
+		);
+		return response.success ? (response.snapshot ?? null) : null;
+	},
+	detachDocumentReader: async (sessionId) => {
+		await sendOffscreenCommand(
+			{ action: 'DETACH_DOCUMENT_READER', payload: { sessionId } },
+			(message) => chrome.runtime.sendMessage(message),
+		);
+	},
 	enqueue: (operation) => {
 		void enqueue(operation);
 	},
@@ -134,8 +154,8 @@ function isArticle(value: unknown): value is Article {
 	);
 }
 
-function isArticleReadableSurface(value: unknown): value is 'website-dom' | 'none' {
-	return value === 'website-dom' || value === 'none';
+function isArticleReadableSurface(value: unknown): value is 'website-dom' | 'document-reader' | 'none' {
+	return value === 'website-dom' || value === 'document-reader' || value === 'none';
 }
 
 async function requestCurrentTabArticle(tabId: number, title: string | undefined, url: string): Promise<ArticleResponse> {
@@ -560,12 +580,19 @@ async function startPlayback(input: StartPlaybackInput): Promise<CommandResponse
 					source: input.source,
 					readableSurface: input.readableSurface,
 				})
-			: createPlaybackSession({
-					...sessionInput,
-					contentScope: input.contentScope,
-					source: input.source,
-					readableSurface: input.readableSurface,
-				});
+			: input.contentScope === 'article'
+				? createPlaybackSession({
+						...sessionInput,
+						contentScope: 'article',
+						source: input.source,
+						readableSurface: input.readableSurface,
+					})
+				: createPlaybackSession({
+						...sessionInput,
+						contentScope: 'selection',
+						source: input.source,
+						readableSurface: input.readableSurface,
+					});
 
 	activeSession = session;
 	readableSurface.activate(session);
@@ -597,6 +624,7 @@ async function startPlayback(input: StartPlaybackInput): Promise<CommandResponse
 			readableSurface: input.readableSurface,
 			...(input.source.kind === 'tab' ? { contentScope: input.contentScope } : {}),
 			...(input.contentScope === 'manual' ? { panelInstanceId: input.source.panelInstanceId } : {}),
+			...(input.readableSurface === 'document-reader' && input.source.kind === 'tab' ? { documentTitle: input.source.title } : {}),
 		};
 		observeOffscreenPlay(session.sessionId, {
 			action: 'PLAY',
@@ -747,6 +775,24 @@ async function routeSessionCommand(action: 'PAUSE' | 'PLAY'): Promise<CommandRes
 		await failSession(ERROR_MESSAGES.setup);
 		await closeOffscreenWhenIdle();
 		return { success: false, error: ERROR_MESSAGES.setup };
+	}
+}
+
+async function openDocumentReader(): Promise<CommandResponse> {
+	await ensureHydrated();
+	if (!activeSession || activeSession.readableSurface !== 'document-reader') {
+		return { success: false, error: 'documentReaderUnavailable' };
+	}
+	const existingTabId = readableSurface.documentReaderTabId();
+	try {
+		if (existingTabId !== null) {
+			await chrome.tabs.update(existingTabId, { active: true });
+		} else {
+			await chrome.tabs.create({ url: chrome.runtime.getURL('src/reader/reader.html') });
+		}
+		return { success: true };
+	} catch {
+		return { success: false, error: 'documentReaderOpenFailed' };
 	}
 }
 
@@ -1007,6 +1053,9 @@ chrome.runtime.onMessage.addListener(
 			case 'STOP_READING':
 				return respondFromQueue(stopReading, sendResponse);
 
+			case 'OPEN_DOCUMENT_READER':
+				return respondFromQueue(openDocumentReader, sendResponse);
+
 			case 'CHANGE_SPEED':
 				return respondFromQueue(() => changeSpeed(msg.payload), sendResponse);
 
@@ -1140,6 +1189,34 @@ async function updateOpenSidePanelWindowsStorage() {
 
 if (typeof chrome !== 'undefined' && chrome.runtime?.onConnect) {
 	chrome.runtime.onConnect.addListener((port) => {
+		if (port.name === DOCUMENT_READER_PORT_NAME) {
+			const tabId = port.sender?.tab?.id;
+			if (typeof tabId !== 'number') {
+				port.disconnect();
+				return;
+			}
+			port.onMessage.addListener((message: unknown) => {
+				const sessionId =
+					message && typeof message === 'object' && (message as { action?: unknown }).action === 'DOCUMENT_READER_ATTACH'
+						? (message as { sessionId?: unknown }).sessionId
+						: undefined;
+				if (typeof sessionId !== 'string') {
+					return;
+				}
+				void enqueue(async () => {
+					await ensureHydrated();
+					await readableSurface.attachDocumentReader({
+						tabId,
+						sessionId,
+						deliver: (nextMessage) => port.postMessage(nextMessage),
+					});
+				});
+			});
+			port.onDisconnect.addListener(() => {
+				void enqueue(() => readableSurface.detachDocumentReader(tabId));
+			});
+			return;
+		}
 		if (port.name === 'sidepanel-port') {
 			const registerPort = (wId: number) => {
 				openSidePanelPorts.set(wId, port);

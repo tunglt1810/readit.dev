@@ -38,7 +38,7 @@ test('accepts only HTTPS and file PDF sources', () => {
 test('creates an Article from page-ordered PDF text and metadata title', async () => {
 	assert.deepEqual(await extractPdfArticle(source, dependencies()), {
 		success: true,
-		readableSurface: 'none',
+		readableSurface: 'document-reader',
 		article: {
 			title: 'Quarterly report',
 			content: 'First page.\n\nSecond page.',
@@ -108,7 +108,7 @@ test('uses tab title and filename fallbacks, recognizes PDF signatures, and igno
 	});
 	assert.deepEqual(await extractPdfArticle({ ...source, title: 'Tab title' }, noMetadata), {
 		success: true,
-		readableSurface: 'none',
+		readableSurface: 'document-reader',
 		article: { title: 'Tab title', content: 'Body', url: source.url, lang: 'na' },
 	});
 	assert.equal(

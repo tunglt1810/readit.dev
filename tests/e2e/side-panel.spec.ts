@@ -45,6 +45,42 @@ const manualSession: PlaybackSessionSnapshot = {
 	updatedAt: 1000,
 };
 
+const documentSession: PlaybackSessionSnapshot = {
+	sessionId: 'document-session',
+	contentScope: 'article',
+	readableSurface: 'document-reader',
+	source: { kind: 'tab', tabId: 42, title: 'Tài liệu thử nghiệm', url: 'https://docs.google.com/document/d/test/edit' },
+	lang: 'vi',
+	status: 'playing',
+	currentParagraphIndex: 0,
+	totalParagraphs: 2,
+	progressPercentage: 25,
+	voiceStyleId: 'M1',
+	speed: 1.05,
+	updatedAt: 1000,
+};
+
+test('offers the full Document Reader for a document session', async ({ page, openSidePanel }) => {
+	await installExtensionUiRuntimeMock(page, { session: documentSession }, pageInfo);
+	await openSidePanel(page);
+
+	await page.getByRole('button', { name: 'Mở trình đọc toàn màn hình' }).click();
+	expect(await page.evaluate(() => (window as any).sentMessages.at(-1))).toEqual({ action: 'OPEN_DOCUMENT_READER' });
+});
+
+test('hides the full Reader outside document sessions and localizes open failures', async ({ page, openSidePanel }) => {
+	await installExtensionUiRuntimeMock(page, { session: null }, pageInfo);
+	await openSidePanel(page);
+	await expect(page.getByRole('button', { name: 'Mở trình đọc toàn màn hình' })).toHaveCount(0);
+
+	await page.evaluate((nextSession) => {
+		(window as any).commandResponses = { OPEN_DOCUMENT_READER: { success: false, error: 'documentReaderOpenFailed' } };
+		(window as any).mockReceiveMessage({ action: 'PLAYBACK_STATE_UPDATE', session: nextSession });
+	}, documentSession);
+	await page.getByRole('button', { name: 'Mở trình đọc toàn màn hình' }).click();
+	await expect(page.getByRole('alert')).toHaveText('Không thể mở trình đọc toàn màn hình. Âm thanh vẫn tiếp tục.');
+});
+
 test('orders current-page reading before a document-local manual draft', async ({ page, openSidePanel }) => {
 	await installExtensionUiRuntimeMock(page, { session: null }, pageInfo);
 	await openSidePanel(page);
@@ -616,5 +652,3 @@ test('shows session meta and playback controls in current-page-card during an ac
 	await expect(page.locator('.current-page-card .btn-read')).toBeVisible();
 	await expect(page.locator('.current-page-card .session-meta')).not.toBeVisible();
 });
-
-

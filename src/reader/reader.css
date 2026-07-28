@@ -1,0 +1,223 @@
+* {
+	box-sizing: border-box;
+}
+
+html {
+	color-scheme: dark;
+	background: var(--bg-app);
+}
+
+body {
+	margin: 0;
+	min-width: 720px;
+	color: var(--color-text-primary);
+	background: radial-gradient(circle at 15% -10%, rgba(9, 159, 181, 0.16), transparent 36rem), var(--bg-app);
+	font-family: var(--font-sans);
+}
+
+button,
+select,
+input {
+	font: inherit;
+}
+
+button,
+select {
+	border: 1px solid var(--border-glass);
+	border-radius: 10px;
+	color: var(--color-text-primary);
+	background: var(--bg-theme-dropdown);
+}
+
+button {
+	padding: 9px 14px;
+	cursor: pointer;
+}
+
+button:disabled {
+	cursor: default;
+	opacity: 0.45;
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible {
+	outline: 2px solid var(--border-glass-focus);
+	outline-offset: 2px;
+}
+
+.document-reader {
+	width: min(1100px, calc(100% - 48px));
+	margin: 0 auto;
+	padding: 28px 0 72px;
+}
+
+.document-reader-header {
+	position: sticky;
+	top: 0;
+	z-index: 2;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 24px;
+	padding: 18px 0;
+	background: color-mix(in srgb, var(--bg-app) 88%, transparent);
+	backdrop-filter: blur(18px);
+}
+
+.document-reader-brand {
+	color: var(--color-text-primary);
+	font-family: var(--font-display);
+	font-weight: 800;
+}
+
+.document-reader-brand span {
+	color: var(--color-logo-span);
+}
+
+.document-reader-header h1 {
+	max-width: 760px;
+	margin: 6px 0 0;
+	overflow: hidden;
+	font-size: clamp(20px, 3vw, 32px);
+	line-height: 1.2;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.document-reader-toolbar {
+	position: sticky;
+	top: 89px;
+	z-index: 2;
+	display: grid;
+	grid-template-columns: auto minmax(150px, 220px) minmax(220px, 1fr) minmax(110px, 160px);
+	align-items: end;
+	gap: 18px;
+	padding: 14px 16px;
+	border: 1px solid var(--border-glass);
+	border-radius: 16px;
+	background: var(--bg-glass);
+	backdrop-filter: blur(20px);
+	box-shadow: 0 16px 44px rgba(0, 0, 0, 0.22);
+}
+
+.document-reader-toolbar label {
+	position: relative;
+	display: grid;
+	gap: 6px;
+	color: var(--color-text-secondary);
+	font-size: 12px;
+}
+
+.document-reader-toolbar select {
+	width: 100%;
+	padding: 8px 10px;
+}
+
+.document-reader-toolbar input {
+	width: 100%;
+	accent-color: var(--color-logo-span);
+}
+
+.document-reader-toolbar output {
+	position: absolute;
+	margin: -24px 0 0 calc(100% - 48px);
+	color: var(--color-text-primary);
+	font-variant-numeric: tabular-nums;
+}
+
+.document-reader-playback {
+	display: flex;
+	gap: 8px;
+}
+
+.document-reader-playback .primary-button {
+	border-color: transparent;
+	background: var(--gradient-brand);
+}
+
+.document-reader-progress {
+	display: grid;
+	gap: 8px;
+	color: var(--color-text-secondary);
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+}
+
+.document-reader-progress > div {
+	height: 5px;
+	overflow: hidden;
+	border-radius: 999px;
+	background: rgba(255, 255, 255, 0.1);
+}
+
+.document-reader-progress i {
+	display: block;
+	height: 100%;
+	border-radius: inherit;
+	background: var(--gradient-brand);
+}
+
+.document-reader-content {
+	max-width: 800px;
+	margin: 28px auto 0;
+	padding: clamp(32px, 7vw, 88px);
+	border: 1px solid var(--border-glass);
+	border-radius: 18px;
+	color: #e4e4e7;
+	background: rgba(18, 18, 24, 0.72);
+	box-shadow: 0 24px 70px rgba(0, 0, 0, 0.25);
+	font-family: Georgia, "Times New Roman", serif;
+	font-size: clamp(18px, 2vw, 22px);
+	line-height: 1.85;
+	white-space: pre-wrap;
+}
+
+::highlight(readit-document-reader-word) {
+	color: #081412;
+	background: #55e6c1;
+}
+
+.document-reader-empty {
+	display: grid;
+	place-items: center;
+	min-height: 65vh;
+	text-align: center;
+}
+
+.document-reader-empty h2 {
+	margin: 0 0 8px;
+	font-size: 26px;
+}
+
+.document-reader-empty p {
+	max-width: 480px;
+	margin: 0;
+	color: var(--color-text-secondary);
+	line-height: 1.6;
+}
+
+@media (max-width: 860px) {
+	body {
+		min-width: 0;
+	}
+
+	.document-reader {
+		width: min(100% - 24px, 760px);
+	}
+
+	.document-reader-toolbar {
+		position: static;
+		grid-template-columns: 1fr 1fr;
+	}
+
+	.document-reader-content {
+		padding: 28px 22px;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	* {
+		scroll-behavior: auto !important;
+	}
+}

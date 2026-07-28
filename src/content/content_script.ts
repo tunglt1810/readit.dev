@@ -6,7 +6,7 @@ import { installSelectionButton } from './selection_button';
 import { installWordHighlight } from './word_highlight';
 
 type ArticleExtractionResponse =
-	| { success: true; article: Article; readableSurface: 'website-dom' | 'none' }
+	| { success: true; article: Article; readableSurface: 'website-dom' | 'document-reader' | 'none' }
 	| { success: false; error: string };
 
 function getDocumentLanguage(): string {

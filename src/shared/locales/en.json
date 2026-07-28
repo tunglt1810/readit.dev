@@ -66,6 +66,13 @@
 	"pdfPasswordProtected": "This password-protected PDF is not currently supported.",
 	"pdfTextUnavailable": "No readable text was found in this PDF. Scanned PDFs are not supported.",
 	"pdfExtractionFailed": "Unable to read this PDF. Try again or paste its text to read.",
+	"openDocumentReader": "Open full reader",
+	"documentReaderOpenFailed": "Unable to open the full reader. Audio will continue.",
+	"documentReaderTitle": "Document Reader",
+	"documentReaderControls": "Document Reader controls",
+	"documentReaderEmptyTitle": "No active document",
+	"documentReaderEmptyBody": "Start reading a Google Doc or PDF, then open the Document Reader to follow along.",
+	"backToSource": "Back to source",
 	"voiceStyles": {
 		"M1": "Male 1 (Deep)",
 		"M2": "Male 2 (Warm)",

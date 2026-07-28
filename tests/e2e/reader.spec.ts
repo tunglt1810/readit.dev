@@ -251,7 +251,7 @@ test.describe('Kịch bản 2: Trích xuất nội dung (Reader Mode)', () => {
 		const result = (await requestArticle(extPage)) as { success: boolean; article?: { content: string } };
 		expect(result).toEqual({
 			success: true,
-			readableSurface: 'none',
+			readableSurface: 'document-reader',
 			article: expect.objectContaining({ content: 'Đoạn export thứ nhất.\n\nĐoạn export thứ hai.' }),
 		});
 	});

@@ -10,11 +10,11 @@ export interface Article extends PlaybackContent {
 	url: string;
 }
 
-export type ReadableSurfaceKind = 'website-dom' | 'manual-reader' | 'none';
+export type ReadableSurfaceKind = 'website-dom' | 'manual-reader' | 'document-reader' | 'none';
 
 export interface ExtractedArticle {
 	article: Article;
-	readableSurface: Extract<ReadableSurfaceKind, 'website-dom' | 'none'>;
+	readableSurface: Extract<ReadableSurfaceKind, 'website-dom' | 'document-reader' | 'none'>;
 }
 
 export type ManualTextLanguage = 'auto' | 'en' | 'vi' | 'zh';
@@ -71,11 +71,19 @@ export interface PlaybackSessionBase {
 	updatedAt: number;
 }
 
-export interface TabPlaybackSessionSnapshot extends PlaybackSessionBase {
-	contentScope: 'article' | 'selection';
-	readableSurface: 'website-dom' | 'none';
+interface TabPlaybackSessionBase extends PlaybackSessionBase {
 	source: { kind: 'tab'; tabId: number; title: string; url: string };
 }
+
+export type TabPlaybackSessionSnapshot =
+	| (TabPlaybackSessionBase & {
+			contentScope: 'article';
+			readableSurface: 'website-dom' | 'document-reader' | 'none';
+	  })
+	| (TabPlaybackSessionBase & {
+			contentScope: 'selection';
+			readableSurface: 'website-dom' | 'none';
+	  });
 
 export interface ManualPlaybackSessionSnapshot extends PlaybackSessionBase {
 	contentScope: 'manual';

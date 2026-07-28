@@ -1,4 +1,5 @@
 import { isPanelInstanceId } from '../shared/manual_playback.ts';
+import { isDocumentReaderSnapshot, type DocumentReaderSnapshot } from '../shared/document_reader.ts';
 import type { CommandResponse, PlaybackContent, PlaybackContentScope, ReadableSurfaceKind } from '../shared/types.ts';
 
 export type OffscreenCommand = { action: string; payload?: unknown };
@@ -11,6 +12,7 @@ export type OffscreenPlayPayload = {
 	readableSurface: ReadableSurfaceKind;
 	contentScope?: PlaybackContentScope;
 	panelInstanceId?: string;
+	documentTitle?: string;
 };
 
 export type ManualCheckpointMetadata = {
@@ -20,7 +22,10 @@ export type ManualCheckpointMetadata = {
 	voiceStyleId: string;
 	speed: number;
 };
-export type OffscreenCommandResponse = CommandResponse & { checkpoint?: ManualCheckpointMetadata };
+export type OffscreenCommandResponse = CommandResponse & {
+	checkpoint?: ManualCheckpointMetadata;
+	snapshot?: DocumentReaderSnapshot;
+};
 
 export function isManualCheckpointMetadata(value: unknown): value is ManualCheckpointMetadata {
 	if (!value || typeof value !== 'object') {
@@ -45,7 +50,11 @@ export async function sendOffscreenCommand(
 	const response = await sendMessage(message);
 	if (response && typeof response === 'object' && typeof (response as { success?: unknown }).success === 'boolean') {
 		const checkpoint = (response as { checkpoint?: unknown }).checkpoint;
-		if (checkpoint === undefined || isManualCheckpointMetadata(checkpoint)) {
+		const snapshot = (response as { snapshot?: unknown }).snapshot;
+		if (
+			(checkpoint === undefined || isManualCheckpointMetadata(checkpoint)) &&
+			(snapshot === undefined || isDocumentReaderSnapshot(snapshot))
+		) {
 			return response as OffscreenCommandResponse;
 		}
 	}
