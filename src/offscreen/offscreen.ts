@@ -7,6 +7,7 @@ import {
 } from '../shared/word_highlight';
 import { createSpeechAudioBuffer, synthesizeSpeechUnitSamples } from './audio';
 import { captureManualCheckpoint, isCheckpointOwner, type ManualCheckpoint, resumeOffsetSeconds } from './manual_checkpoint';
+import { createPauseKeepalive } from './pause_keepalive';
 import { METRICS_STORAGE_KEY, PlaybackMetricsRecorder, summarizePlaybackMetrics } from './playback_metrics';
 import { isVietnameseLanguage, preparePlaybackUnits, VietnameseTextNormalizer } from './playback_preparation';
 import { createSingleFlight } from './single_flight';
@@ -35,6 +36,7 @@ let speedVersion = 0;
 let speechUnits: SpeechUnit[] = [];
 let currentUnitIndex = 0;
 let currentSourceNode: AudioBufferSourceNode | null = null;
+let currentSourceId = 0;
 let currentBuffer: AudioBuffer | null = null;
 let currentBufferStartedAt = 0;
 let currentBufferOffsetSec = 0;
@@ -66,6 +68,14 @@ type RuntimeManualCheckpoint = ManualCheckpoint & {
 };
 
 let manualCheckpoint: RuntimeManualCheckpoint | null = null;
+
+const pauseKeepalive = createPauseKeepalive(
+	() => new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)(),
+	{
+		setTimeout: (callback, delayMs) => window.setTimeout(callback, delayMs),
+		clearTimeout: (handle) => window.clearTimeout(handle),
+	},
+);
 
 // Initialize Storage Persistence
 async function initStorage() {
@@ -106,6 +116,14 @@ function flushPlaybackMetrics() {
 // Readable from the offscreen document's own devtools console while playback is running.
 (globalThis as unknown as { __readitPlaybackMetrics?: () => unknown }).__readitPlaybackMetrics = () =>
 	summarizePlaybackMetrics(playbackMetrics.snapshot());
+
+(globalThis as unknown as { __readitPlaybackDebug?: () => unknown }).__readitPlaybackDebug = () => ({
+	sessionId: currentExtensionSessionId,
+	sourceId: currentSourceId,
+	bufferOffsetSec: currentBufferOffsetSec,
+	audioContextTime: audioCtx?.currentTime ?? null,
+	pauseKeepalive: pauseKeepalive.getDebugState(),
+});
 
 /**
  * Report playback progress to background/popup
@@ -363,6 +381,7 @@ function startWordHighlightTracking(windows: WordTimingWindow[], unitStartTime: 
  * Stop active audio and clear state
  */
 function stopAudio() {
+	void pauseKeepalive.stop();
 	stopCurrentSource();
 	clearWordHighlightTracking();
 	flushPlaybackMetrics();
@@ -419,6 +438,7 @@ function playAudioBuffer(
 	source.buffer = buffer;
 	source.connect(audioCtx.destination);
 	currentSourceNode = source;
+	currentSourceId++;
 	currentBuffer = buffer;
 	currentBufferOffsetSec = sourceOffsetSec;
 	currentBufferStartedAt = audioCtx.currentTime;
@@ -501,6 +521,7 @@ async function playNextUnit(lang: string, style: Style, session: number) {
 		}
 		playbackMetrics.recordSynthError(unitIndex, (error as Error).message);
 		if (isCurrentSynthesisKey(key)) {
+			void pauseKeepalive.stop();
 			clearWordHighlightTracking();
 			reportProgress('error', { error: (error as Error).message });
 		}
@@ -604,6 +625,7 @@ function checkpointManual(payload: unknown): { success: boolean; checkpoint?: Re
 		pendingArticle: pendingManualPlayback?.article ?? null,
 	};
 
+	void pauseKeepalive.stop();
 	stopCurrentSource();
 	clearWordHighlightTracking();
 	playbackMetrics.discardPendingTransition();
@@ -845,6 +867,7 @@ chrome.runtime.onMessage.addListener(
 
 				(async () => {
 					try {
+						await pauseKeepalive.stop();
 						await audioCtx?.resume();
 						isPaused = false;
 						reportProgress('playing');
@@ -859,14 +882,19 @@ chrome.runtime.onMessage.addListener(
 
 			case 'PAUSE':
 				(async () => {
-					if (audioCtx && audioCtx.state === 'running') {
+					if (!audioCtx || audioCtx.state !== 'running') {
+						sendResponse({ success: false, error: 'Audio is not running' });
+						return;
+					}
+					try {
 						await audioCtx.suspend();
 						playbackMetrics.discardPendingTransition();
 						isPaused = true;
+						await pauseKeepalive.start().catch(() => undefined);
 						reportProgress('paused');
 						sendResponse({ success: true });
-					} else {
-						sendResponse({ success: false, error: 'Audio is not running' });
+					} catch (error) {
+						sendResponse({ success: false, error: (error as Error).message });
 					}
 				})();
 				return true;

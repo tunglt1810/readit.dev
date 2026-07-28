@@ -151,6 +151,78 @@ async function getBadgeText(page: Page): Promise<string> {
 	return page.evaluate(() => chrome.action.getBadgeText({}));
 }
 
+async function getOffscreenContextCount(page: Page): Promise<number> {
+	return page.evaluate(async () => {
+		const contexts = await chrome.runtime.getContexts({
+			contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
+		});
+		return contexts.length;
+	});
+}
+
+type OffscreenPlaybackDebug = {
+	sessionId: string | null;
+	sourceId: number;
+	bufferOffsetSec: number;
+	audioContextTime: number | null;
+	pauseKeepalive: {
+		running: boolean;
+		timerScheduled: boolean;
+		pulseActive: boolean;
+	};
+};
+
+async function getOffscreenPlaybackDebug(context: BrowserContext, page: Page): Promise<OffscreenPlaybackDebug> {
+	const cdp = await context.newCDPSession(page);
+	const { targetInfos } = await cdp.send('Target.getTargets');
+	const offscreenTarget = targetInfos.find((targetInfo) => targetInfo.url.includes('/src/offscreen/offscreen.html'));
+	if (!offscreenTarget) {
+		throw new Error('Could not resolve the offscreen playback target');
+	}
+	const { sessionId } = await cdp.send('Target.attachToTarget', { targetId: offscreenTarget.targetId, flatten: false });
+	const messageId = 1;
+	const result = new Promise<OffscreenPlaybackDebug>((resolve, reject) => {
+		const listener = (event: { sessionId: string; message: string }) => {
+			if (event.sessionId !== sessionId) {
+				return;
+			}
+			const message = JSON.parse(event.message) as {
+				id?: number;
+				result?: { result?: { value?: OffscreenPlaybackDebug } };
+				error?: { message?: string };
+			};
+			if (message.id !== messageId) {
+				return;
+			}
+			cdp.off('Target.receivedMessageFromTarget', listener);
+			if (message.error?.message) {
+				reject(new Error(message.error.message));
+				return;
+			}
+			if (!message.result?.result?.value) {
+				reject(new Error('Offscreen playback debug state was unavailable'));
+				return;
+			}
+			resolve(message.result.result.value);
+		};
+		cdp.on('Target.receivedMessageFromTarget', listener);
+	});
+
+	try {
+		await cdp.send('Target.sendMessageToTarget', {
+			sessionId,
+			message: JSON.stringify({
+				id: messageId,
+				method: 'Runtime.evaluate',
+				params: { expression: 'globalThis.__readitPlaybackDebug?.()', returnByValue: true },
+			}),
+		});
+		return await result;
+	} finally {
+		await cdp.send('Target.detachFromTarget', { sessionId }).catch(() => undefined);
+	}
+}
+
 test('manual session popup shows localized metadata without tab actions', async ({ page, openPopup }) => {
 	await installPopupRuntimeMock(page, {
 		session: {
@@ -238,6 +310,95 @@ test.describe('Reading state lifecycle', () => {
 
 		expect(await responseWithin(sendCoordinatorCommand(controlPage, { action: 'STOP_READING' }))).toEqual({ success: true });
 		await expect.poll(async () => (await getBackgroundState(controlPage)).session).toBeNull();
+	});
+
+	test('resumes the same session after Chrome audio idle cutoff and clears a lost paused session', async ({
+		context,
+		extensionId,
+		headless,
+		page,
+		openPopup,
+	}) => {
+		test.setTimeout(300_000);
+		const targetPage = await createTargetPage(context);
+		const controlPage = await context.newPage();
+		await controlPage.goto(`chrome-extension://${extensionId}/src/popup/popup.html`);
+		await targetPage.bringToFront();
+
+		const start = sendCoordinatorCommand(controlPage, { action: 'START_CURRENT_PAGE' });
+		expect(await responseWithin(start)).toEqual({ success: true });
+		await expect
+			.poll(async () => (await getBackgroundState(controlPage)).session, { timeout: 240_000 })
+			.toMatchObject({ status: 'playing' });
+		const playingSession = (await getBackgroundState(controlPage)).session;
+		expect(playingSession?.sessionId).toEqual(expect.any(String));
+		const beforePause = await getOffscreenPlaybackDebug(context, controlPage);
+		expect(beforePause).toMatchObject({ sessionId: playingSession?.sessionId, sourceId: expect.any(Number) });
+
+		await expect(sendCoordinatorCommand(controlPage, { action: 'PAUSE_READING' })).resolves.toEqual({ success: true });
+		await expect
+			.poll(async () => (await getBackgroundState(controlPage)).session)
+			.toMatchObject({
+				sessionId: playingSession?.sessionId,
+				status: 'paused',
+			});
+		const paused = await getOffscreenPlaybackDebug(context, controlPage);
+		expect(paused.sourceId).toBe(beforePause.sourceId);
+		expect(paused.bufferOffsetSec).toBe(beforePause.bufferOffsetSec);
+		expect(paused.audioContextTime).toEqual(expect.any(Number));
+		expect(paused.pauseKeepalive).toEqual({
+			running: true,
+			timerScheduled: true,
+			pulseActive: false,
+		});
+
+		if (headless) {
+			test.info().annotations.push({
+				type: 'audio-output',
+				description:
+					'Headless Chromium has no audible output, so only headed mode can exercise the 30-second AUDIO_PLAYBACK lifetime.',
+			});
+		} else {
+			// Chrome documents that AUDIO_PLAYBACK offscreen documents close after 30 seconds without audio.
+			await controlPage.waitForTimeout(35_000);
+			await expect.poll(() => getOffscreenContextCount(controlPage)).toBe(1);
+			const held = await getOffscreenPlaybackDebug(context, controlPage);
+			expect(held.sourceId).toBe(paused.sourceId);
+			expect(held.bufferOffsetSec).toBe(paused.bufferOffsetSec);
+			expect(held.audioContextTime).toBeCloseTo(paused.audioContextTime as number, 3);
+			expect(held.pauseKeepalive).toEqual({
+				running: true,
+				timerScheduled: true,
+				pulseActive: false,
+			});
+		}
+
+		await expect(sendCoordinatorCommand(controlPage, { action: 'RESUME_READING' })).resolves.toEqual({ success: true });
+		await expect
+			.poll(async () => (await getBackgroundState(controlPage)).session)
+			.toMatchObject({
+				sessionId: playingSession?.sessionId,
+				status: 'playing',
+			});
+		const resumed = await getOffscreenPlaybackDebug(context, controlPage);
+		expect(resumed.sourceId).toBe(paused.sourceId);
+		expect(resumed.bufferOffsetSec).toBe(paused.bufferOffsetSec);
+		expect(resumed.audioContextTime).toBeGreaterThanOrEqual(paused.audioContextTime as number);
+		expect(resumed.pauseKeepalive).toEqual({
+			running: false,
+			timerScheduled: false,
+			pulseActive: false,
+		});
+
+		await expect(sendCoordinatorCommand(controlPage, { action: 'PAUSE_READING' })).resolves.toEqual({ success: true });
+		await openPopup(page);
+		await expect(page.locator('.status-display')).toHaveAttribute('data-status', 'paused');
+		await controlPage.evaluate(async () => chrome.offscreen.closeDocument());
+
+		await expect(sendCoordinatorCommand(controlPage, { action: 'RESUME_READING' })).resolves.toMatchObject({ success: false });
+		await expect(page.locator('.status-display')).toHaveAttribute('data-status', 'error');
+		await expect(page.getByRole('button', { name: 'Đọc trang hiện tại' })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Dừng đọc' })).toHaveCount(0);
 	});
 
 	test('speed change during pending model loading keeps the same loading session', async ({ context, extensionId }) => {
