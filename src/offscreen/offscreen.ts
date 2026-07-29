@@ -232,10 +232,15 @@ async function synthesizeUnit(unit: SpeechUnit, lang: string, style: Style, spee
 		audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
 	}
 	const inferStartedAtMs = performance.now();
-	const wav = await synthesizeSpeechUnitSamples(unit, lang, speed, async (text, requestedLang, steps, requestedSpeed, silenceDuration) => {
-		const result = await engine.call(text, requestedLang, style, steps, requestedSpeed, silenceDuration);
-		return result.wav;
-	});
+	const wav = await synthesizeSpeechUnitSamples(
+		unit,
+		lang,
+		speed,
+		async (text, requestedLang, steps, requestedSpeed, silenceDuration) => {
+			const result = await engine.call(text, requestedLang, style, steps, requestedSpeed, silenceDuration);
+			return result.wav;
+		},
+	);
 	playbackMetrics.recordInferDuration(performance.now() - inferStartedAtMs);
 
 	const buffer = createSpeechAudioBuffer(audioCtx, wav, engine.sampleRate, unit.pauseAfterMs ?? 0);
@@ -424,14 +429,7 @@ function stopAudio() {
 /**
  * Play a synthesized AudioBuffer
  */
-function playAudioBuffer(
-	buffer: AudioBuffer,
-	lang: string,
-	style: Style,
-	session: number,
-	unitIndex: number,
-	offsetSec = 0,
-) {
+function playAudioBuffer(buffer: AudioBuffer, lang: string, style: Style, session: number, unitIndex: number, offsetSec = 0) {
 	// Split from one combined guard so a refusal names its cause: each of these silently drops
 	// a whole unit, which is heard as missing text.
 	if (!audioCtx) {
@@ -597,10 +595,7 @@ async function resumePendingManualPlayback(checkpoint: RuntimeManualCheckpoint, 
 	}
 	currentPlaybackStyle = style;
 	if (!audioCtx) {
-		audioCtx = new (
-			window.AudioContext ||
-			(window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
-		)();
+		audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
 	}
 	if (audioCtx.state === 'suspended') {
 		await audioCtx.resume();
@@ -676,10 +671,7 @@ async function resumeManualCheckpoint(payload: unknown): Promise<{ success: bool
 		return { success: false };
 	}
 	if (!audioCtx) {
-		audioCtx = new (
-			window.AudioContext ||
-			(window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
-		)();
+		audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
 	}
 	if (audioCtx.state === 'suspended') {
 		await audioCtx.resume();
@@ -705,14 +697,7 @@ async function resumeManualCheckpoint(payload: unknown): Promise<{ success: bool
 	}
 
 	if (checkpoint.buffer && checkpoint.style && checkpoint.sourceOffsetSec < checkpoint.buffer.duration) {
-		playAudioBuffer(
-			checkpoint.buffer,
-			checkpoint.lang,
-			checkpoint.style,
-			session,
-			checkpoint.unitIndex,
-			checkpoint.sourceOffsetSec,
-		);
+		playAudioBuffer(checkpoint.buffer, checkpoint.lang, checkpoint.style, session, checkpoint.unitIndex, checkpoint.sourceOffsetSec);
 	} else if (checkpoint.style && checkpoint.speechUnits.length > 0) {
 		if (checkpoint.buffer) {
 			currentUnitIndex++;

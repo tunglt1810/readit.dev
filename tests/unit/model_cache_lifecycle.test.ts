@@ -21,12 +21,9 @@ test('registers listeners on onInstalled and onStartup to trigger warm', async (
 	const onStartup = createFakeEvent();
 	let warmCalls = 0;
 
-	registerModelCacheWarmLifecycle(
-		{ onInstalled, onStartup },
-		() => {
-			warmCalls++;
-		},
-	);
+	registerModelCacheWarmLifecycle({ onInstalled, onStartup }, () => {
+		warmCalls++;
+	});
 
 	onInstalled.emit();
 	assert.equal(warmCalls, 1);
@@ -55,12 +52,9 @@ test('verifies chrome.runtime onInstalled and onStartup bind model cache warm li
 	};
 
 	let warmTriggered = 0;
-	registerModelCacheWarmLifecycle(
-		fakeChrome.runtime,
-		() => {
-			warmTriggered++;
-		},
-	);
+	registerModelCacheWarmLifecycle(fakeChrome.runtime, () => {
+		warmTriggered++;
+	});
 
 	assert.equal(installedListeners.length, 1);
 	assert.equal(startupListeners.length, 1);

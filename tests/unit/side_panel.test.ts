@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildSidePanelRegisterMessage, computeOpenSidePanelWindowIds, handleOpenSidePanelCommand, openSidePanelForCurrentWindow, shouldFallbackToOpen } from '../../src/popup/side_panel.ts';
+import {
+	buildSidePanelRegisterMessage,
+	computeOpenSidePanelWindowIds,
+	handleOpenSidePanelCommand,
+	openSidePanelForCurrentWindow,
+	shouldFallbackToOpen,
+} from '../../src/popup/side_panel.ts';
 
 test('opens the Side Panel immediately with the pre-resolved window ID', async () => {
 	const calls: unknown[] = [];
@@ -89,7 +95,3 @@ test('multi-window isolation: determines sidepanel state accurately per windowId
 	assert.equal(openWindowIds.includes(20), false);
 	assert.equal(openWindowIds.includes(30), true);
 });
-
-
-
-

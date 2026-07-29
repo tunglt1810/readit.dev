@@ -1,4 +1,4 @@
-name: Release Chrome extension
+name: Release Chrome and Firefox extension
 
 on:
   push:
@@ -9,14 +9,12 @@ permissions:
   contents: write
 
 concurrency:
-  group: chrome-extension-release
+  group: extension-release
   cancel-in-progress: false
 
 jobs:
-  release:
+  build-and-release:
     runs-on: ubuntu-latest
-    environment:
-      name: chrome-web-store
     steps:
       - name: Checkout tagged commit
         uses: actions/checkout@v4
@@ -60,11 +58,14 @@ jobs:
       - name: Install Playwright Chromium
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: Build extension
+      - name: Build extensions (Chrome & Firefox)
         run: pnpm build
 
-      - name: Validate Free extension manifest
-        run: pnpm validate:manifest
+      - name: Validate extension manifests and Firefox bundle
+        run: |
+          pnpm validate:manifest:chrome
+          pnpm validate:manifest:firefox
+          pnpm validate:firefox
 
       - name: Validate Vietnamese normalizer assets and ONNX Runtime packaging
         run: pnpm validate:vi-assets:release
@@ -72,9 +73,9 @@ jobs:
       - name: Validate third-party notices
         run: |
           set -euo pipefail
-          test -s dist/THIRD_PARTY_NOTICES.txt
-          grep -Fq 'OpenRAIL-M License' dist/THIRD_PARTY_NOTICES.txt
-          grep -Fq 'https://huggingface.co/Supertone/supertonic-3/blob/main/LICENSE' dist/THIRD_PARTY_NOTICES.txt
+          test -s dist/chrome/THIRD_PARTY_NOTICES.txt
+          grep -Fq 'OpenRAIL-M License' dist/chrome/THIRD_PARTY_NOTICES.txt
+          grep -Fq 'https://huggingface.co/Supertone/supertonic-3/blob/main/LICENSE' dist/chrome/THIRD_PARTY_NOTICES.txt
 
       - name: Run unit tests
         run: pnpm test:unit
@@ -85,27 +86,54 @@ jobs:
       - name: Run extension E2E tests
         run: xvfb-run --auto-servernum pnpm test:e2e
 
-      - name: Package extension
+      - name: Package extensions
+        id: package
         env:
           RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          archive="readit.dev-${RELEASE_VERSION}.zip"
-          (cd dist && zip -qr "../$archive" . -x '*.DS_Store')
-          pnpm validate:release-zip "$archive"
-          echo "archive=$archive" >> "$GITHUB_ENV"
+          chrome_archive="readit.dev-chrome-${RELEASE_VERSION}.zip"
+          firefox_archive="readit.dev-firefox-${RELEASE_VERSION}.zip"
+          (cd dist/chrome && zip -qr "../../$chrome_archive" . -x '*.DS_Store')
+          (cd dist/firefox && zip -qr "../../$firefox_archive" . -x '*.DS_Store')
+          pnpm validate:release-zip "$chrome_archive"
+          echo "chrome_archive=$chrome_archive" >> "$GITHUB_OUTPUT"
+          echo "firefox_archive=$firefox_archive" >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifacts for publishing
+        uses: actions/upload-artifact@v4
+        with:
+          name: extension-dist
+          path: |
+            dist/chrome
+            dist/firefox
+            readit.dev-chrome-*.zip
+            readit.dev-firefox-*.zip
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          CHROME_ARCHIVE: ${{ steps.package.outputs.chrome_archive }}
+          FIREFOX_ARCHIVE: ${{ steps.package.outputs.firefox_archive }}
         run: |
           if gh release view "${{ github.ref_name }}" >/dev/null 2>&1; then
-            gh release upload "${{ github.ref_name }}" "$archive" --clobber
+            gh release upload "${{ github.ref_name }}" "$CHROME_ARCHIVE" "$FIREFOX_ARCHIVE" --clobber
           else
-            gh release create "${{ github.ref_name }}" "$archive" \
+            gh release create "${{ github.ref_name }}" "$CHROME_ARCHIVE" "$FIREFOX_ARCHIVE" \
               --title "${{ github.ref_name }}" \
               --generate-notes
           fi
+
+  publish-chrome:
+    needs: build-and-release
+    runs-on: ubuntu-latest
+    environment:
+      name: chrome-web-store
+    steps:
+      - name: Download extension dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: extension-dist
 
       - name: Refresh Chrome Web Store access token
         id: cws-token
@@ -115,6 +143,10 @@ jobs:
           CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
         run: |
           set -euo pipefail
+          if [ -z "$CWS_CLIENT_ID" ]; then
+            echo "CWS_CLIENT_ID secret not configured in chrome-web-store environment, skipping Chrome Web Store upload."
+            exit 0
+          fi
           response="$(curl --fail-with-body --silent --show-error \
             -X POST https://oauth2.googleapis.com/token \
             -d "client_id=$CWS_CLIENT_ID" \
@@ -126,105 +158,53 @@ jobs:
           echo "access_token=$access_token" >> "$GITHUB_OUTPUT"
 
       - name: Upload package to Chrome Web Store
+        if: steps.cws-token.outputs.access_token != ''
         env:
           CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
           CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
           CWS_ACCESS_TOKEN: ${{ steps.cws-token.outputs.access_token }}
         run: |
           set -euo pipefail
+          chrome_archive=$(ls readit.dev-chrome-*.zip | head -n 1)
           base="https://chromewebstore.googleapis.com"
           name="publishers/$CWS_PUBLISHER_ID/items/$CWS_EXTENSION_ID"
-          echo "Uploading $archive to Chrome Web Store..."
+          echo "Uploading $chrome_archive to Chrome Web Store..."
           upload_response="$(curl --fail-with-body --silent --show-error -X POST \
             -H "Authorization: Bearer $CWS_ACCESS_TOKEN" \
-            --data-binary "@$archive" \
+            --data-binary "@$chrome_archive" \
             "$base/upload/v2/$name:upload")"
           echo "Upload response:"
           echo "$upload_response" | jq .
 
-      - name: Wait for Chrome Web Store upload
+  publish-firefox:
+    needs: build-and-release
+    runs-on: ubuntu-latest
+    environment:
+      name: addons-mozilla-org
+    steps:
+      - name: Download extension dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: extension-dist
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Submit package to Firefox AMO Store
         env:
-          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
-          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
-          CWS_ACCESS_TOKEN: ${{ steps.cws-token.outputs.access_token }}
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
         run: |
           set -euo pipefail
-          base="https://chromewebstore.googleapis.com"
-          name="publishers/$CWS_PUBLISHER_ID/items/$CWS_EXTENSION_ID"
-          max_attempts=60
-          for attempt in $(seq 1 $max_attempts); do
-            status="$(curl --fail-with-body --silent --show-error \
-              -H "Authorization: Bearer $CWS_ACCESS_TOKEN" \
-              "$base/v2/$name:fetchStatus")"
-            state="$(jq -r '.lastAsyncUploadState // "UNKNOWN"' <<< "$status")"
-            echo "Attempt $attempt/$max_attempts — state: $state"
-            case "$state" in
-              SUCCEEDED)
-                echo "Upload succeeded."
-                exit 0
-                ;;
-              FAILED)
-                echo "Upload failed:" >&2
-                echo "$status" | jq . >&2
-                exit 1
-                ;;
-              NOT_FOUND)
-                echo "Item not found:" >&2
-                echo "$status" | jq . >&2
-                exit 1
-                ;;
-              IN_PROGRESS)
-                sleep 10
-                ;;
-              *)
-                echo "Unknown state '$state', treating as in-progress. Response:" >&2
-                echo "$status" | jq . >&2
-                sleep 10
-                ;;
-            esac
-          done
-          echo "Timed out after $((max_attempts * 10))s waiting for Chrome Web Store upload." >&2
-          echo "Last state: $state" >&2
-          echo "$status" | jq . >&2
-          exit 1
-
-      - name: Submit package for publication
-        env:
-          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
-          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
-          CWS_ACCESS_TOKEN: ${{ steps.cws-token.outputs.access_token }}
-        run: |
-          set -euo pipefail
-          base="https://chromewebstore.googleapis.com"
-          name="publishers/$CWS_PUBLISHER_ID/items/$CWS_EXTENSION_ID"
-          publish_response="$(curl --fail-with-body --silent --show-error -X POST \
-            -H "Authorization: Bearer $CWS_ACCESS_TOKEN" \
-            -H 'Content-Type: application/json' \
-            -d '{"publishType":"DEFAULT_PUBLISH","blockOnWarnings":true}' \
-            "$base/v2/$name:publish")"
-
-          echo "Publish response:"
-          echo "$publish_response" | jq .
-
-          # Extract status codes from response
-          statuses="$(jq -r '.status // [] | .[]' <<< "$publish_response" 2>/dev/null || echo "")"
-
-          if echo "$statuses" | grep -q 'OK'; then
-            echo "✅ Published successfully."
-          elif echo "$statuses" | grep -q 'ITEM_PENDING_REVIEW'; then
-            echo "⏳ Published but pending Chrome Web Store review (e.g. permission changes)."
-            echo "The extension will go live automatically once the review is approved."
-          elif echo "$statuses" | grep -q 'PUBLISHED_WITH_FRICTION_WARNING'; then
-            echo "⚠️ Published with friction warnings. Check the Developer Dashboard for details."
-          else
-            echo "Publish status: $statuses"
-            # If no explicit error status, check for error fields
-            has_error="$(jq -r '.error // empty' <<< "$publish_response" 2>/dev/null || echo "")"
-            if [ -n "$has_error" ]; then
-              echo "❌ Publish failed:" >&2
-              echo "$publish_response" | jq . >&2
-              exit 1
-            fi
-            echo "✅ Publish request accepted."
+          if [ -z "$AMO_JWT_ISSUER" ] || [ -z "$AMO_JWT_SECRET" ]; then
+            echo "AMO credentials not configured in addons-mozilla-org environment, skipping Firefox AMO release."
+            exit 0
           fi
-
+          echo "Submitting dist/firefox to Mozilla Add-ons Store..."
+          npx web-ext sign \
+            --source-dir dist/firefox \
+            --api-key "$AMO_JWT_ISSUER" \
+            --api-secret "$AMO_JWT_SECRET" \
+            --channel listed

@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+
 import { VOICE_STYLES } from '../constants';
 import { t, uiLang, VOICE_STYLE_TRANSLATIONS } from '../i18n';
 import type { PlaybackStatus, ThemeName } from '../types';
@@ -41,8 +42,7 @@ export function SettingsCard({
 	const activeColor = theme === 'wmp12' ? '#0f74bf' : theme === 'winamp' ? '#8fdf53' : '#008771';
 	const inactiveColor = theme === 'wmp12' ? '#101517' : theme === 'winamp' ? '#141414' : 'rgba(255, 255, 255, 0.1)';
 
-	const activeThemeName =
-		theme === 'winamp' ? t('themeWinampName') : theme === 'wmp12' ? t('themeWmp12Name') : t('themeDefaultName');
+	const activeThemeName = theme === 'winamp' ? t('themeWinampName') : theme === 'wmp12' ? t('themeWmp12Name') : t('themeDefaultName');
 
 	const isVoiceDisabled = playbackStatus === 'playing' || playbackStatus === 'loading';
 

@@ -44,6 +44,3 @@ export function shouldFallbackToOpen(response: unknown): boolean {
 	}
 	return false;
 }
-
-
-

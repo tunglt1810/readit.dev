@@ -55,7 +55,9 @@ export default async function globalSetup(): Promise<void> {
 	fs.rmSync(MODEL_CACHE_SEED_DIR, { recursive: true, force: true });
 	fs.mkdirSync(MODEL_CACHE_SEED_DIR, { recursive: true });
 
-	const pathToExtension = path.join(process.cwd(), 'dist');
+	const pathToExtension = fs.existsSync(path.join(process.cwd(), 'dist', 'chrome'))
+		? path.join(process.cwd(), 'dist', 'chrome')
+		: path.join(process.cwd(), 'dist');
 	const context = await chromium.launchPersistentContext(MODEL_CACHE_SEED_DIR, {
 		channel: 'chromium',
 		headless: true,

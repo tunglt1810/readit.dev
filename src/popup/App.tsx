@@ -1,18 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 
+import { PlaybackControlButton } from '../shared/components/PlaybackControlButton';
+import { PlaybackIcon } from '../shared/components/PlaybackIcon';
+import { SettingsCard } from '../shared/components/SettingsCard';
 import { BUY_ME_A_COFFEE_URL, DEFAULT_SPEED, PRIVACY_POLICY_URL, STORAGE_KEYS } from '../shared/constants';
 import { getLocalizedPlaybackError, t } from '../shared/i18n';
 import { requestPlaybackState, sendPlaybackCommand, subscribePlaybackState } from '../shared/playback_client';
 import { isSelectionButtonEnabled } from '../shared/selection_button';
 import type { PlaybackSessionSnapshot, PlaybackStatus, ThemeName } from '../shared/types';
 import { isWordHighlightEnabled } from '../shared/word_highlight';
-import { PlaybackIcon } from '../shared/components/PlaybackIcon';
-import { PlaybackControlButton } from '../shared/components/PlaybackControlButton';
-import { SettingsCard } from '../shared/components/SettingsCard';
 import { buildFeedbackUrl } from './feedback';
 import { openSidePanelForCurrentWindow, shouldFallbackToOpen } from './side_panel';
-
-
 
 export default function App() {
 	// Playback state is owned by the background coordinator.
@@ -43,7 +41,6 @@ export default function App() {
 	const manifest = chrome.runtime.getManifest();
 	const displayVersion = manifest.version_name ?? manifest.version;
 	const feedbackUrl = buildFeedbackUrl(displayVersion);
-
 
 	// Fetch initial states on mount
 	useEffect(() => {
@@ -160,7 +157,6 @@ export default function App() {
 		};
 	}, []);
 
-
 	// Handler: Start/Stop Reading Page
 	const handleStartCurrentPage = () => {
 		setCommandError('');
@@ -219,17 +215,14 @@ export default function App() {
 		setCommandError('');
 		if (isSidePanelOpen) {
 			if (sidePanelWindowId && typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
-				chrome.runtime.sendMessage(
-					{ action: 'CLOSE_SIDEPANEL', payload: { windowId: sidePanelWindowId } },
-					(response) => {
-						if (shouldFallbackToOpen(response)) {
-							void openSidePanelForCurrentWindow({
-								windowId: sidePanelWindowId,
-								open: (options) => chrome.sidePanel.open(options),
-							}).catch(() => setCommandError(t('openSidePanelFailed')));
-						}
-					},
-				);
+				chrome.runtime.sendMessage({ action: 'CLOSE_SIDEPANEL', payload: { windowId: sidePanelWindowId } }, (response) => {
+					if (shouldFallbackToOpen(response)) {
+						void openSidePanelForCurrentWindow({
+							windowId: sidePanelWindowId,
+							open: (options) => chrome.sidePanel.open(options),
+						}).catch(() => setCommandError(t('openSidePanelFailed')));
+					}
+				});
 			}
 		} else {
 			void openSidePanelForCurrentWindow({
@@ -303,12 +296,12 @@ export default function App() {
 					<h1 className="logo-text">
 						readit<span>.dev</span>
 					</h1>
-					</div>
-					<span className="extension-version">v{displayVersion}</span>
-					<a className="support-link header-support-link" href={BUY_ME_A_COFFEE_URL} target="_blank" rel="noreferrer">
-						<span aria-hidden="true">☕</span> {t('buyMeCoffee')}
-					</a>
-				</header>
+				</div>
+				<span className="extension-version">v{displayVersion}</span>
+				<a className="support-link header-support-link" href={BUY_ME_A_COFFEE_URL} target="_blank" rel="noreferrer">
+					<span aria-hidden="true">☕</span> {t('buyMeCoffee')}
+				</a>
+			</header>
 
 			{/* Main Playback Area */}
 			<main className="app-main">
@@ -446,7 +439,7 @@ export default function App() {
 						</span>
 					</div>
 				</div>
-				</main>
+			</main>
 
 			<SettingsCard
 				collapsible={false}
@@ -463,10 +456,10 @@ export default function App() {
 				onThemeChange={handleThemeChange}
 			/>
 
-				{/* Footer */}
-				<footer className="app-footer">
-					<div className="footer-links">
-						<a className="support-link feedback-link" href={feedbackUrl} target="_blank" rel="noreferrer">
+			{/* Footer */}
+			<footer className="app-footer">
+				<div className="footer-links">
+					<a className="support-link feedback-link" href={feedbackUrl} target="_blank" rel="noreferrer">
 						{t('feedback')}
 					</a>
 					<a className="privacy-link" href={PRIVACY_POLICY_URL} target="_blank" rel="noreferrer">

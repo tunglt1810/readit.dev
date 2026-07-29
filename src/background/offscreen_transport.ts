@@ -1,5 +1,5 @@
+import { type DocumentReaderSnapshot, isDocumentReaderSnapshot } from '../shared/document_reader.ts';
 import { isPanelInstanceId } from '../shared/manual_playback.ts';
-import { isDocumentReaderSnapshot, type DocumentReaderSnapshot } from '../shared/document_reader.ts';
 import type { CommandResponse, PlaybackContent, PlaybackContentScope, ReadableSurfaceKind } from '../shared/types.ts';
 
 export type OffscreenCommand = { action: string; payload?: unknown };

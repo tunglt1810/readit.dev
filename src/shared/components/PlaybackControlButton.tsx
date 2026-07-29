@@ -1,4 +1,5 @@
 import type { RefObject } from 'react';
+
 import { t } from '../i18n';
 import type { PlaybackStatus } from '../types';
 import { PlaybackIcon } from './PlaybackIcon';

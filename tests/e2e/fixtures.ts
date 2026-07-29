@@ -93,7 +93,9 @@ export const test = base.extend<{
 	browserLocale: ['vi-VN', { option: true }],
 	freshExtensionWorker: [true, { option: true }],
 	context: async ({ browserLocale, headless, freshExtensionWorker }, use) => {
-		const pathToExtension = path.join(process.cwd(), 'dist');
+		const pathToExtension = fs.existsSync(path.join(process.cwd(), 'dist', 'chrome'))
+			? path.join(process.cwd(), 'dist', 'chrome')
+			: path.join(process.cwd(), 'dist');
 		const tempDir = path.join(process.cwd(), '.tmp');
 		fs.mkdirSync(tempDir, { recursive: true });
 		const userDataDir = fs.mkdtempSync(path.join(tempDir, 'playwright-chrome-profile-'));

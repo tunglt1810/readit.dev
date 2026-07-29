@@ -50,5 +50,3 @@ export const PRIVACY_POLICY_URL = 'https://tunglt1810.github.io/readit.dev/priva
 export const BUY_ME_A_COFFEE_URL = 'https://buymeacoffee.com/bbeeezzzzz';
 
 export const DEFAULT_SPEED = 1.05;
-
-

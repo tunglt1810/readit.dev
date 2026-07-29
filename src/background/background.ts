@@ -1,11 +1,16 @@
-import { DEFAULT_SPEED, GOOGLE_DOCS_EXPORT_UNAVAILABLE, MODEL_FILES, PDF_ERROR_CODES, STORAGE_KEYS, type PdfErrorCode } from '../shared/constants';
+import { computeOpenSidePanelWindowIds, handleOpenSidePanelCommand } from '../popup/side_panel';
+import {
+	DEFAULT_SPEED,
+	GOOGLE_DOCS_EXPORT_UNAVAILABLE,
+	MODEL_FILES,
+	PDF_ERROR_CODES,
+	type PdfErrorCode,
+	STORAGE_KEYS,
+} from '../shared/constants';
 import { DOCUMENT_READER_PORT_NAME } from '../shared/document_reader.ts';
 import { isManualPlaybackControlMessage } from '../shared/manual_playback';
 import { fetchWithCache, MODEL_CACHE_NAME } from '../shared/model_cache';
 import { isReadableSurfaceClearMessage, isReadableSurfaceInitMessage, isReadableSurfaceUpdateMessage } from '../shared/readable_surface';
-import { warmCache } from '../shared/warm_cache';
-import { createModelCacheWarmer } from './model_cache_warmer';
-import { registerModelCacheWarmLifecycle } from './model_cache_lifecycle';
 import type {
 	Article,
 	CommandResponse,
@@ -16,10 +21,13 @@ import type {
 	PlaybackSessionSnapshot,
 	PlaybackStatus,
 } from '../shared/types';
+import { warmCache } from '../shared/warm_cache';
 import { requestActionPopup } from './action_popup';
-import { isMissingReceiverError, requestArticleFromTab, type ArticleResponse } from './article_request';
+import { type ArticleResponse, isMissingReceiverError, requestArticleFromTab } from './article_request';
 import { syncPlaybackBadge } from './badge';
 import { prepareManualStart } from './manual_text';
+import { registerModelCacheWarmLifecycle } from './model_cache_lifecycle';
+import { createModelCacheWarmer } from './model_cache_warmer';
 import {
 	type ManualCheckpointMetadata,
 	type OffscreenCommand,
@@ -37,10 +45,9 @@ import {
 	isSameDocumentUrl,
 	ownsTab,
 } from './playback_state';
+import { createReadableSurfaceCoordinator } from './readable_surface';
 import { createSelectedTextArticle } from './selected_text';
 import { prepareSelectedTextRequest } from './selected_text_request';
-import { createReadableSurfaceCoordinator } from './readable_surface';
-import { computeOpenSidePanelWindowIds, handleOpenSidePanelCommand } from '../popup/side_panel';
 
 const DEFAULT_VOICE_STYLE_ID = 'M1';
 
@@ -98,16 +105,14 @@ const readableSurface = createReadableSurfaceCoordinator({
 	sendTabMessage: (tabId, message) => chrome.tabs.sendMessage(tabId, message),
 	sendRuntimeMessage: (message) => chrome.runtime.sendMessage(message),
 	requestDocumentReaderSnapshot: async (sessionId) => {
-		const response = await sendOffscreenCommand(
-			{ action: 'GET_DOCUMENT_READER_SNAPSHOT', payload: { sessionId } },
-			(message) => chrome.runtime.sendMessage(message),
+		const response = await sendOffscreenCommand({ action: 'GET_DOCUMENT_READER_SNAPSHOT', payload: { sessionId } }, (message) =>
+			chrome.runtime.sendMessage(message),
 		);
 		return response.success ? (response.snapshot ?? null) : null;
 	},
 	detachDocumentReader: async (sessionId) => {
-		await sendOffscreenCommand(
-			{ action: 'DETACH_DOCUMENT_READER', payload: { sessionId } },
-			(message) => chrome.runtime.sendMessage(message),
+		await sendOffscreenCommand({ action: 'DETACH_DOCUMENT_READER', payload: { sessionId } }, (message) =>
+			chrome.runtime.sendMessage(message),
 		);
 	},
 	enqueue: (operation) => {
@@ -174,11 +179,7 @@ async function requestCurrentTabArticle(tabId: number, title: string | undefined
 			sendMessage: (targetTabId, message) => chrome.tabs.sendMessage(targetTabId, message),
 			executeScript: (options) => chrome.scripting.executeScript(options),
 		});
-		if (
-			articleResponse.success &&
-			isArticle(articleResponse.article) &&
-			isArticleReadableSurface(articleResponse.readableSurface)
-		) {
+		if (articleResponse.success && isArticle(articleResponse.article) && isArticleReadableSurface(articleResponse.readableSurface)) {
 			return articleResponse;
 		}
 		return (await requestPdfFallback()) ?? articleResponse;
@@ -306,7 +307,10 @@ async function publishExtractionFailure(
 
 // Helper to check if offscreen document is already created
 async function hasOffscreenDocument(): Promise<boolean> {
-	if ('getContexts' in chrome.runtime) {
+	if (typeof chrome.offscreen === 'undefined') {
+		return false;
+	}
+	if ('getContexts' in chrome.runtime && typeof chrome.runtime.getContexts === 'function') {
 		const contexts = await chrome.runtime.getContexts({
 			contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
 		});
@@ -324,7 +328,7 @@ async function hasOffscreenDocument(): Promise<boolean> {
 
 // Create offscreen document if needed
 async function setupOffscreen(): Promise<void> {
-	if (await hasOffscreenDocument()) {
+	if (typeof chrome.offscreen === 'undefined' || (await hasOffscreenDocument())) {
 		return;
 	}
 
@@ -343,7 +347,7 @@ async function setupOffscreen(): Promise<void> {
 
 // Close offscreen document
 async function closeOffscreen(): Promise<void> {
-	if (!(await hasOffscreenDocument())) {
+	if (typeof chrome.offscreen === 'undefined' || !(await hasOffscreenDocument())) {
 		return;
 	}
 
@@ -531,9 +535,8 @@ async function discardManualCheckpoint(panelInstanceId: string): Promise<boolean
 		return false;
 	}
 	try {
-		await sendOffscreenCommand(
-			{ action: 'DISCARD_MANUAL_CHECKPOINT', payload: { panelInstanceId } },
-			(message) => chrome.runtime.sendMessage(message),
+		await sendOffscreenCommand({ action: 'DISCARD_MANUAL_CHECKPOINT', payload: { panelInstanceId } }, (message) =>
+			chrome.runtime.sendMessage(message),
 		);
 	} catch (_error) {
 		// Closing the Side Panel still needs to discard the background-only owner state.
@@ -666,11 +669,7 @@ async function startCurrentPage(): Promise<CommandResponse> {
 		return { success: false, error: ERROR_MESSAGES.extraction };
 	}
 
-	if (
-		!articleResponse.success ||
-		!isArticle(articleResponse.article) ||
-		!isArticleReadableSurface(articleResponse.readableSurface)
-	) {
+	if (!articleResponse.success || !isArticle(articleResponse.article) || !isArticleReadableSurface(articleResponse.readableSurface)) {
 		const extractionError = getExtractionError(articleResponse.success ? undefined : articleResponse.error);
 		if (activeSession?.contentScope === 'manual') {
 			return { success: false, error: extractionError };
@@ -764,7 +763,9 @@ async function routeSessionCommand(action: 'PAUSE' | 'PLAY'): Promise<CommandRes
 
 	const payload = action === 'PLAY' ? { sessionId: activeSession.sessionId } : undefined;
 	try {
-		const response = await sendOffscreenCommand({ action, ...(payload ? { payload } : {}) }, (message) => chrome.runtime.sendMessage(message));
+		const response = await sendOffscreenCommand({ action, ...(payload ? { payload } : {}) }, (message) =>
+			chrome.runtime.sendMessage(message),
+		);
 		if (!response.success) {
 			await failSession(ERROR_MESSAGES.setup);
 			await closeOffscreenWhenIdle();
@@ -859,9 +860,8 @@ async function resumeManualCheckpoint(panelInstanceId: string): Promise<CommandR
 	readableSurface.activate(activeSession);
 	await publishSession(activeSession);
 	try {
-		const response = await sendOffscreenCommand(
-			{ action: 'RESUME_MANUAL_CHECKPOINT', payload: { panelInstanceId } },
-			(message) => chrome.runtime.sendMessage(message),
+		const response = await sendOffscreenCommand({ action: 'RESUME_MANUAL_CHECKPOINT', payload: { panelInstanceId } }, (message) =>
+			chrome.runtime.sendMessage(message),
 		);
 		if (!response.success) {
 			throw new Error('Manual checkpoint is unavailable');

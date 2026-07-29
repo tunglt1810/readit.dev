@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
+import { buildSidePanelRegisterMessage } from '../popup/side_panel.ts';
 import { PlaybackControlButton } from '../shared/components/PlaybackControlButton.tsx';
 import { PlaybackIcon } from '../shared/components/PlaybackIcon.tsx';
 import { SettingsCard } from '../shared/components/SettingsCard.tsx';
@@ -10,7 +11,6 @@ import { requestPlaybackState, sendPlaybackCommand, sendRuntimeRequest, subscrib
 import { isSelectionButtonEnabled } from '../shared/selection_button.ts';
 import type { ManualTextLanguage, PageInfoResponse, PlaybackSessionSnapshot, ThemeName } from '../shared/types.ts';
 import { isWordHighlightEnabled } from '../shared/word_highlight.ts';
-import { buildSidePanelRegisterMessage } from '../popup/side_panel.ts';
 import { advanceManualHighlight, createManualHighlightCursor, type ManualWordRange } from './manual_word_highlight.ts';
 
 const EMPTY_PAGE_INFO: PageInfoResponse = { available: false };
@@ -113,10 +113,7 @@ export default function App() {
 			const value = message as Record<string, unknown>;
 			if (value.action === 'PLAYBACK_STATE_UPDATE') {
 				const nextSession = value.session as PlaybackSessionSnapshot | null;
-				if (
-					nextSession?.contentScope === 'manual' &&
-					nextSession.source.panelInstanceId === panelInstanceId
-				) {
+				if (nextSession?.contentScope === 'manual' && nextSession.source.panelInstanceId === panelInstanceId) {
 					manualReaderSessionIdRef.current = nextSession.sessionId;
 				}
 				return;
@@ -490,7 +487,10 @@ export default function App() {
 				<h2 id="manual-text-title">{t('orPasteText')}</h2>
 				{manualReaderLocked ? (
 					<div ref={readerRef} className="manual-reader" role="textbox" aria-label={t('manualReaderLabel')} aria-readonly="true">
-						{manualHighlight && readerBeforeHighlight !== null && readerActiveHighlight !== null && readerAfterHighlight !== null ? (
+						{manualHighlight &&
+						readerBeforeHighlight !== null &&
+						readerActiveHighlight !== null &&
+						readerAfterHighlight !== null ? (
 							<>
 								{readerBeforeHighlight}
 								<mark className="manual-reader-active-word">{readerActiveHighlight}</mark>
@@ -516,7 +516,11 @@ export default function App() {
 				</div>
 				<label className="field-label">
 					<span>{t('manualLanguage')}</span>
-					<select disabled={manualReaderLocked} value={language} onChange={(event) => setLanguage(event.target.value as ManualTextLanguage)}>
+					<select
+						disabled={manualReaderLocked}
+						value={language}
+						onChange={(event) => setLanguage(event.target.value as ManualTextLanguage)}
+					>
 						<option value="auto">{t('languageAuto')}</option>
 						<option value="en">{t('languageEnglish')}</option>
 						<option value="vi">{t('languageVietnamese')}</option>
@@ -527,7 +531,12 @@ export default function App() {
 					<button className="secondary-button" type="button" disabled={manualReaderLocked} onClick={() => setDraft('')}>
 						{t('clearText')}
 					</button>
-					<button className="primary-button" type="button" disabled={manualReaderLocked || !draft.trim()} onClick={handleReadManualText}>
+					<button
+						className="primary-button"
+						type="button"
+						disabled={manualReaderLocked || !draft.trim()}
+						onClick={handleReadManualText}
+					>
 						{t('readPastedText')}
 					</button>
 				</div>

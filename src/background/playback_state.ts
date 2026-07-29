@@ -146,7 +146,9 @@ export function isPlaybackSessionSnapshot(value: unknown): value is PlaybackSess
 	}
 	const validTabSurface =
 		session.contentScope === 'article'
-			? session.readableSurface === 'website-dom' || session.readableSurface === 'document-reader' || session.readableSurface === 'none'
+			? session.readableSurface === 'website-dom' ||
+				session.readableSurface === 'document-reader' ||
+				session.readableSurface === 'none'
 			: session.contentScope === 'selection' && (session.readableSurface === 'website-dom' || session.readableSurface === 'none');
 	return (
 		source.kind === 'tab' &&

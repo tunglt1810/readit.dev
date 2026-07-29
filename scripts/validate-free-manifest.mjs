@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const REQUIRED_PERMISSIONS = ['activeTab', 'contextMenus', 'offscreen', 'scripting', 'sidePanel', 'storage'];
+const CHROME_PERMISSIONS = ['activeTab', 'contextMenus', 'offscreen', 'scripting', 'sidePanel', 'storage'];
+const FIREFOX_PERMISSIONS = ['activeTab', 'contextMenus', 'offscreen', 'scripting', 'storage'];
 const REQUIRED_HOST_PERMISSIONS = ['https://huggingface.co/*'];
 const REQUIRED_MINIMUM_CHROME_VERSION = '127';
 const REQUIRED_SIDE_PANEL_PATH = 'src/sidepanel/sidepanel.html';
@@ -45,30 +46,50 @@ function compareResourceEntries(actual, expected) {
 	compareExact(canonicalizeResourceEntries(actual), canonicalizeResourceEntries(expected), 'web_accessible_resources');
 }
 
-export function validateFreeManifest(manifest) {
+export function validateFreeManifest(manifest, target = 'chrome') {
 	if (!manifest || typeof manifest !== 'object') {
 		throw new Error('Manifest must be an object');
 	}
 	if (manifest.manifest_version !== 3) {
 		throw new Error(`Expected manifest_version 3, got ${String(manifest.manifest_version)}`);
 	}
-	if (manifest.minimum_chrome_version !== REQUIRED_MINIMUM_CHROME_VERSION) {
-		throw new Error(`Expected minimum_chrome_version 127, got ${String(manifest.minimum_chrome_version)}`);
+
+	if (target === 'firefox') {
+		if (manifest.minimum_chrome_version) {
+			throw new Error('Firefox manifest should not include minimum_chrome_version');
+		}
+		if (manifest.side_panel) {
+			throw new Error('Firefox manifest should not include side_panel key');
+		}
+		if (!manifest.sidebar_action?.default_panel) {
+			throw new Error('Expected sidebar_action.default_panel in Firefox manifest');
+		}
+		if (!manifest.browser_specific_settings?.gecko?.id) {
+			throw new Error('Expected browser_specific_settings.gecko.id in Firefox manifest');
+		}
+		compareExact(manifest.permissions, FIREFOX_PERMISSIONS, 'permissions');
+	} else {
+		if (manifest.minimum_chrome_version !== REQUIRED_MINIMUM_CHROME_VERSION) {
+			throw new Error(`Expected minimum_chrome_version 127, got ${String(manifest.minimum_chrome_version)}`);
+		}
+		if (manifest.side_panel?.default_path !== REQUIRED_SIDE_PANEL_PATH) {
+			throw new Error(`Expected side_panel.default_path ${REQUIRED_SIDE_PANEL_PATH}`);
+		}
+		compareExact(manifest.permissions, CHROME_PERMISSIONS, 'permissions');
 	}
+
 	compareResourceEntries(manifest.web_accessible_resources, REQUIRED_WEB_ACCESSIBLE_RESOURCES);
-	compareExact(manifest.permissions, REQUIRED_PERMISSIONS, 'permissions');
 	compareExact(manifest.host_permissions, REQUIRED_HOST_PERMISSIONS, 'host_permissions');
-	if (manifest.side_panel?.default_path !== REQUIRED_SIDE_PANEL_PATH) {
-		throw new Error(`Expected side_panel.default_path ${REQUIRED_SIDE_PANEL_PATH}`);
-	}
 }
 
 const scriptPath = process.argv[1] ? path.resolve(process.argv[1]) : '';
 if (scriptPath && fileURLToPath(import.meta.url) === scriptPath) {
 	const manifestPath = process.argv[2];
 	if (!manifestPath) {
-		throw new Error('Usage: node scripts/validate-free-manifest.mjs <manifest-path>');
+		throw new Error('Usage: node scripts/validate-free-manifest.mjs <manifest-path> [--target chrome|firefox]');
 	}
+	const targetIndex = process.argv.indexOf('--target');
+	const target = targetIndex !== -1 && process.argv[targetIndex + 1] ? process.argv[targetIndex + 1] : 'chrome';
 	const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-	validateFreeManifest(manifest);
+	validateFreeManifest(manifest, target);
 }

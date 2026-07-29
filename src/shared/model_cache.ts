@@ -2,10 +2,7 @@ export const MODEL_CACHE_NAME = 'supertonic-models';
 
 const inFlightCacheFetches = new Map<string, Promise<ArrayBuffer>>();
 
-export function fetchWithCache(
-	url: string,
-	progressCallback?: (loadedBytes: number, totalBytes: number) => void,
-): Promise<ArrayBuffer> {
+export function fetchWithCache(url: string, progressCallback?: (loadedBytes: number, totalBytes: number) => void): Promise<ArrayBuffer> {
 	const inFlight = inFlightCacheFetches.get(url);
 	if (inFlight) {
 		return inFlight;
@@ -22,10 +19,7 @@ export function fetchWithCache(
 	return operation;
 }
 
-async function fetchAndCache(
-	url: string,
-	progressCallback?: (loadedBytes: number, totalBytes: number) => void,
-): Promise<ArrayBuffer> {
+async function fetchAndCache(url: string, progressCallback?: (loadedBytes: number, totalBytes: number) => void): Promise<ArrayBuffer> {
 	const cache = await caches.open(MODEL_CACHE_NAME);
 	const cachedResponse = await cache.match(url);
 

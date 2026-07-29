@@ -48,10 +48,7 @@ function findBoundedMatch(text: string, target: string, fromOffset: number): Doc
 	return null;
 }
 
-export function mapDocumentReaderWords(
-	content: string,
-	words: readonly ReadableSurfaceWord[],
-): Array<DocumentReaderRange | null> {
+export function mapDocumentReaderWords(content: string, words: readonly ReadableSurfaceWord[]): Array<DocumentReaderRange | null> {
 	const ranges: Array<DocumentReaderRange | null> = [];
 	let nextOffset = 0;
 	for (const word of words) {
