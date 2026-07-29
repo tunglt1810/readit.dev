@@ -652,3 +652,81 @@ test('shows session meta and playback controls in current-page-card during an ac
 	await expect(page.locator('.current-page-card .btn-read')).toBeVisible();
 	await expect(page.locator('.current-page-card .session-meta')).not.toBeVisible();
 });
+
+test('popup toggle button syncs active state and self-heals by opening side panel when close fails', async ({ page, openPopup }) => {
+	await installExtensionUiRuntimeMock(page, { session: null }, pageInfo);
+	await openPopup(page);
+	await page.evaluate(async () => {
+		await chrome.storage.local.set({ readit_open_sidepanel_windows: [7] });
+		(window as any).commandResponses = { CLOSE_SIDEPANEL: { success: false, reason: 'NOT_FOUND' } };
+	});
+
+	const sidePanelButton = page.locator('.btn-icon-sidepanel');
+	await expect(sidePanelButton).toHaveClass(/active/);
+	await expect(sidePanelButton).toHaveAttribute('aria-pressed', 'true');
+
+	// Click toggle button: CLOSE_SIDEPANEL returns success: false -> fallback opens side panel directly
+	await sidePanelButton.click();
+	expect(await page.evaluate(() => (window as any).sidePanelOpenCalls)).toEqual([{ windowId: 7 }]);
+});
+
+test('registers sidepanel window ID when sidepanel mounts and syncs active status to popup toggle button', async ({ context, openPopup, openSidePanel, page }) => {
+	await installExtensionUiRuntimeMock(page, { session: null }, pageInfo);
+	await openSidePanel(page);
+
+	const popup = await context.newPage();
+	try {
+		await installExtensionUiRuntimeMock(popup, { session: null, currentTabId: 7 });
+		await openPopup(popup);
+
+		// Evaluate storage update as executed by background when sidepanel is open for window 7
+		await popup.evaluate(async () => {
+			await chrome.storage.local.set({ readit_open_sidepanel_windows: [7] });
+		});
+
+		const popupSidePanelBtn = popup.locator('.btn-icon-sidepanel');
+		await expect(popupSidePanelBtn).toHaveClass(/active/);
+		await expect(popupSidePanelBtn).toHaveAttribute('aria-pressed', 'true');
+	} finally {
+		await popup.close();
+	}
+});
+
+test('multi-window isolation: popup shows active sidepanel button in window A (open) and inactive in window B (closed)', async ({ context, openPopup }) => {
+	// Window A (windowId: 7) where Side Panel IS open
+	const popupWinA = await context.newPage();
+	await installExtensionUiRuntimeMock(popupWinA, { session: null, currentTabId: 7 });
+	await openPopup(popupWinA);
+	await popupWinA.evaluate(async () => {
+		await chrome.storage.local.set({ readit_open_sidepanel_windows: [7] });
+	});
+
+	const btnWinA = popupWinA.locator('.btn-icon-sidepanel');
+	await expect(btnWinA).toHaveClass(/active/);
+	await expect(btnWinA).toHaveAttribute('aria-pressed', 'true');
+
+	// Window B (windowId: 20) where Side Panel is NOT open (only window 7 has open sidepanel)
+	const popupWinB = await context.newPage();
+	await popupWinB.addInitScript(() => {
+		(window as any).mockWindowId = 20;
+	});
+	await installExtensionUiRuntimeMock(popupWinB, { session: null, currentTabId: 20 });
+	await openPopup(popupWinB);
+	await popupWinB.evaluate(async () => {
+		await chrome.storage.local.set({ readit_open_sidepanel_windows: [7] });
+	});
+
+	const btnWinB = popupWinB.locator('.btn-icon-sidepanel');
+	await expect(btnWinB).not.toHaveClass(/active/);
+	await expect(btnWinB).toHaveAttribute('aria-pressed', 'false');
+
+	await popupWinA.close();
+	await popupWinB.close();
+});
+
+
+
+
+
+
+

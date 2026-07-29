@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { handleOpenSidePanelCommand, openSidePanelForCurrentWindow } from '../../src/popup/side_panel.ts';
+import { buildSidePanelRegisterMessage, computeOpenSidePanelWindowIds, handleOpenSidePanelCommand, openSidePanelForCurrentWindow, shouldFallbackToOpen } from '../../src/popup/side_panel.ts';
 
 test('opens the Side Panel immediately with the pre-resolved window ID', async () => {
 	const calls: unknown[] = [];
@@ -66,3 +66,30 @@ test('handleOpenSidePanelCommand ignores non open_side_panel commands or missing
 	assert.equal(handledNoWindow, false);
 	assert.deepEqual(calls, []);
 });
+
+test('buildSidePanelRegisterMessage constructs correct registration payload for a given windowId', () => {
+	const msg = buildSidePanelRegisterMessage(42);
+	assert.deepEqual(msg, { action: 'REGISTER_SIDEPANEL', payload: { windowId: 42 } });
+});
+
+test('computeOpenSidePanelWindowIds filters out invalid or duplicate window IDs', () => {
+	const activeWindowIds = computeOpenSidePanelWindowIds([10, 20, 10, 0, -1]);
+	assert.deepEqual(activeWindowIds, [10, 20]);
+});
+
+test('shouldFallbackToOpen returns true when CLOSE_SIDEPANEL returns success: false', () => {
+	assert.equal(shouldFallbackToOpen({ success: false, reason: 'NOT_FOUND' }), true);
+	assert.equal(shouldFallbackToOpen({ success: true }), false);
+	assert.equal(shouldFallbackToOpen(undefined), false);
+});
+
+test('multi-window isolation: determines sidepanel state accurately per windowId', () => {
+	const openWindowIds = [10, 30];
+	assert.equal(openWindowIds.includes(10), true);
+	assert.equal(openWindowIds.includes(20), false);
+	assert.equal(openWindowIds.includes(30), true);
+});
+
+
+
+

@@ -46,7 +46,7 @@ export async function installExtensionUiRuntimeMock(
 			(window as any).tabsQueryCalls = 0;
 			chrome.tabs.query = async () => {
 				(window as any).tabsQueryCalls += 1;
-				return [{ windowId: 7 } as chrome.tabs.Tab];
+				return [{ windowId: (window as any).mockWindowId ?? 7 } as chrome.tabs.Tab];
 			};
 			chrome.sidePanel.open = async (options) => {
 				(window as any).sidePanelOpenCalls.push(options);

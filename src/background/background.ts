@@ -40,7 +40,7 @@ import {
 import { createSelectedTextArticle } from './selected_text';
 import { prepareSelectedTextRequest } from './selected_text_request';
 import { createReadableSurfaceCoordinator } from './readable_surface';
-import { handleOpenSidePanelCommand } from '../popup/side_panel';
+import { computeOpenSidePanelWindowIds, handleOpenSidePanelCommand } from '../popup/side_panel';
 
 const DEFAULT_VOICE_STYLE_ID = 'M1';
 
@@ -975,14 +975,16 @@ chrome.runtime.onMessage.addListener(
 						} catch (_e) {
 							// ignore
 						}
+						openSidePanelPorts.delete(targetWindowId);
+						void updateOpenSidePanelWindowsStorage();
+						sendResponse?.({ success: true });
+					} else {
+						void updateOpenSidePanelWindowsStorage();
+						sendResponse?.({ success: false, reason: 'NOT_FOUND' });
 					}
-					if (typeof chrome !== 'undefined' && chrome.sidePanel?.setOptions) {
-						void chrome.sidePanel.setOptions({ windowId: targetWindowId, enabled: false } as any).then(() => {
-							void chrome.sidePanel.setOptions({ windowId: targetWindowId, enabled: true } as any);
-						});
-					}
+				} else {
+					sendResponse?.({ success: false, reason: 'INVALID_WINDOW_ID' });
 				}
-				sendResponse?.({ success: true });
 				return true;
 			}
 
@@ -1181,7 +1183,7 @@ chrome.commands.onCommand.addListener((command, tab) => {
 const openSidePanelPorts = new Map<number, chrome.runtime.Port>();
 
 async function updateOpenSidePanelWindowsStorage() {
-	const openWindowIds = Array.from(openSidePanelPorts.keys());
+	const openWindowIds = computeOpenSidePanelWindowIds(openSidePanelPorts.keys());
 	if (typeof chrome !== 'undefined' && chrome.storage?.local) {
 		await chrome.storage.local.set({ readit_open_sidepanel_windows: openWindowIds });
 	}
@@ -1222,10 +1224,19 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onConnect) {
 				openSidePanelPorts.set(wId, port);
 				void updateOpenSidePanelWindowsStorage();
 				port.onDisconnect.addListener(() => {
-					openSidePanelPorts.delete(wId);
-					void updateOpenSidePanelWindowsStorage();
+					if (openSidePanelPorts.get(wId) === port) {
+						openSidePanelPorts.delete(wId);
+						void updateOpenSidePanelWindowsStorage();
+					}
 				});
 			};
+
+			port.onMessage.addListener((msg: unknown) => {
+				const message = msg as { action?: string; payload?: { windowId?: number } };
+				if (message?.action === 'REGISTER_SIDEPANEL' && typeof message.payload?.windowId === 'number') {
+					registerPort(message.payload.windowId);
+				}
+			});
 
 			const tabWindowId = port.sender?.tab?.windowId;
 			if (tabWindowId !== undefined && tabWindowId !== null && tabWindowId > 0) {

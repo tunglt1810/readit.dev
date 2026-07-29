@@ -10,6 +10,7 @@ import { requestPlaybackState, sendPlaybackCommand, sendRuntimeRequest, subscrib
 import { isSelectionButtonEnabled } from '../shared/selection_button.ts';
 import type { ManualTextLanguage, PageInfoResponse, PlaybackSessionSnapshot, ThemeName } from '../shared/types.ts';
 import { isWordHighlightEnabled } from '../shared/word_highlight.ts';
+import { buildSidePanelRegisterMessage } from '../popup/side_panel.ts';
 import { advanceManualHighlight, createManualHighlightCursor, type ManualWordRange } from './manual_word_highlight.ts';
 
 const EMPTY_PAGE_INFO: PageInfoResponse = { available: false };
@@ -229,18 +230,42 @@ export default function App() {
 
 	useEffect(() => {
 		let port: chrome.runtime.Port | null = null;
-		try {
-			if (typeof chrome !== 'undefined' && chrome.runtime?.connect) {
-				port = chrome.runtime.connect({ name: 'sidepanel-port' });
-				port.onMessage?.addListener((msg) => {
-					if (msg?.action === 'CLOSE_SIDEPANEL') {
-						window.close();
+		let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+		const connectPort = () => {
+			try {
+				if (typeof chrome !== 'undefined' && chrome.runtime?.connect) {
+					port = chrome.runtime.connect({ name: 'sidepanel-port' });
+
+					if (typeof chrome !== 'undefined' && chrome.windows?.getCurrent) {
+						chrome.windows.getCurrent((win) => {
+							if (win?.id && port) {
+								try {
+									port.postMessage(buildSidePanelRegisterMessage(win.id));
+								} catch (_e) {
+									// ignore
+								}
+							}
+						});
 					}
-				});
+
+					port.onMessage?.addListener((msg) => {
+						if (msg?.action === 'CLOSE_SIDEPANEL') {
+							window.close();
+						}
+					});
+
+					port.onDisconnect?.addListener(() => {
+						port = null;
+						reconnectTimer = setTimeout(connectPort, 1000);
+					});
+				}
+			} catch (_e) {
+				// ignore in environments without full chrome runtime port support
 			}
-		} catch (_e) {
-			// ignore in environments without full chrome runtime port support
-		}
+		};
+
+		connectPort();
 
 		const handleMessage = (msg: any) => {
 			if (msg?.action === 'CLOSE_SIDEPANEL') {
@@ -253,6 +278,9 @@ export default function App() {
 		}
 
 		return () => {
+			if (reconnectTimer) {
+				clearTimeout(reconnectTimer);
+			}
 			port?.disconnect();
 			if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
 				chrome.runtime.onMessage.removeListener(handleMessage);

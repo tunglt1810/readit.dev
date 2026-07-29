@@ -10,7 +10,7 @@ import { PlaybackIcon } from '../shared/components/PlaybackIcon';
 import { PlaybackControlButton } from '../shared/components/PlaybackControlButton';
 import { SettingsCard } from '../shared/components/SettingsCard';
 import { buildFeedbackUrl } from './feedback';
-import { openSidePanelForCurrentWindow } from './side_panel';
+import { openSidePanelForCurrentWindow, shouldFallbackToOpen } from './side_panel';
 
 
 
@@ -219,7 +219,17 @@ export default function App() {
 		setCommandError('');
 		if (isSidePanelOpen) {
 			if (sidePanelWindowId && typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
-				void chrome.runtime.sendMessage({ action: 'CLOSE_SIDEPANEL', payload: { windowId: sidePanelWindowId } });
+				chrome.runtime.sendMessage(
+					{ action: 'CLOSE_SIDEPANEL', payload: { windowId: sidePanelWindowId } },
+					(response) => {
+						if (shouldFallbackToOpen(response)) {
+							void openSidePanelForCurrentWindow({
+								windowId: sidePanelWindowId,
+								open: (options) => chrome.sidePanel.open(options),
+							}).catch(() => setCommandError(t('openSidePanelFailed')));
+						}
+					},
+				);
 			}
 		} else {
 			void openSidePanelForCurrentWindow({
