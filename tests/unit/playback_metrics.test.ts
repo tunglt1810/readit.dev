@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+
 import { analyzeUnitSequence, median, PlaybackMetricsRecorder, summarizePlaybackMetrics } from '../../src/offscreen/playback_metrics.ts';
 
 function closeTo(actual: number, expected: number, tolerance = 1e-6): void {

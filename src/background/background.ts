@@ -1,16 +1,15 @@
-import { computeOpenSidePanelWindowIds, handleOpenSidePanelCommand } from '../popup/side_panel';
-import {
-	DEFAULT_SPEED,
-	GOOGLE_DOCS_EXPORT_UNAVAILABLE,
-	MODEL_FILES,
-	PDF_ERROR_CODES,
-	type PdfErrorCode,
-	STORAGE_KEYS,
-} from '../shared/constants';
+import { DEFAULT_SPEED, GOOGLE_DOCS_EXPORT_UNAVAILABLE, MODEL_FILES, PDF_ERROR_CODES, STORAGE_KEYS, type PdfErrorCode } from '../shared/constants';
+import { isInternalAudioExportOffscreenCommand } from '../shared/audio_export.ts';
+import { deleteAudioExportHandle } from '../shared/audio_export_handle_store.ts';
 import { DOCUMENT_READER_PORT_NAME } from '../shared/document_reader.ts';
 import { isManualPlaybackControlMessage } from '../shared/manual_playback';
 import { fetchWithCache, MODEL_CACHE_NAME } from '../shared/model_cache';
 import { isReadableSurfaceClearMessage, isReadableSurfaceInitMessage, isReadableSurfaceUpdateMessage } from '../shared/readable_surface';
+import { warmCache } from '../shared/warm_cache';
+import { createModelCacheWarmer } from './model_cache_warmer';
+import { registerModelCacheWarmLifecycle } from './model_cache_lifecycle';
+import { createAudioExportCoordinator, isAudioExportPrepareRequest } from './audio_export.ts';
+import { isAudioExportProgressUpdate } from './audio_export_state.ts';
 import type {
 	Article,
 	CommandResponse,
@@ -21,13 +20,10 @@ import type {
 	PlaybackSessionSnapshot,
 	PlaybackStatus,
 } from '../shared/types';
-import { warmCache } from '../shared/warm_cache';
 import { requestActionPopup } from './action_popup';
-import { type ArticleResponse, isMissingReceiverError, requestArticleFromTab } from './article_request';
+import { isMissingReceiverError, requestArticleFromTab, type ArticleResponse } from './article_request';
 import { syncPlaybackBadge } from './badge';
 import { prepareManualStart } from './manual_text';
-import { registerModelCacheWarmLifecycle } from './model_cache_lifecycle';
-import { createModelCacheWarmer } from './model_cache_warmer';
 import {
 	type ManualCheckpointMetadata,
 	type OffscreenCommand,
@@ -39,15 +35,17 @@ import { extractPdfArticle } from './pdf_extractor';
 import { loadPdfJsDocument } from './pdfjs_loader';
 import {
 	applyPlaybackProgress,
+	applyAudioExportEstimate,
 	createPlaybackErrorSession,
 	createPlaybackSession,
 	isPlaybackSessionSnapshot,
 	isSameDocumentUrl,
 	ownsTab,
 } from './playback_state';
-import { createReadableSurfaceCoordinator } from './readable_surface';
 import { createSelectedTextArticle } from './selected_text';
 import { prepareSelectedTextRequest } from './selected_text_request';
+import { createReadableSurfaceCoordinator } from './readable_surface';
+import { computeOpenSidePanelWindowIds, handleOpenSidePanelCommand } from '../popup/side_panel';
 
 const DEFAULT_VOICE_STYLE_ID = 'M1';
 
@@ -105,14 +103,16 @@ const readableSurface = createReadableSurfaceCoordinator({
 	sendTabMessage: (tabId, message) => chrome.tabs.sendMessage(tabId, message),
 	sendRuntimeMessage: (message) => chrome.runtime.sendMessage(message),
 	requestDocumentReaderSnapshot: async (sessionId) => {
-		const response = await sendOffscreenCommand({ action: 'GET_DOCUMENT_READER_SNAPSHOT', payload: { sessionId } }, (message) =>
-			chrome.runtime.sendMessage(message),
+		const response = await sendOffscreenCommand(
+			{ action: 'GET_DOCUMENT_READER_SNAPSHOT', payload: { sessionId } },
+			(message) => chrome.runtime.sendMessage(message),
 		);
 		return response.success ? (response.snapshot ?? null) : null;
 	},
 	detachDocumentReader: async (sessionId) => {
-		await sendOffscreenCommand({ action: 'DETACH_DOCUMENT_READER', payload: { sessionId } }, (message) =>
-			chrome.runtime.sendMessage(message),
+		await sendOffscreenCommand(
+			{ action: 'DETACH_DOCUMENT_READER', payload: { sessionId } },
+			(message) => chrome.runtime.sendMessage(message),
 		);
 	},
 	enqueue: (operation) => {
@@ -179,7 +179,11 @@ async function requestCurrentTabArticle(tabId: number, title: string | undefined
 			sendMessage: (targetTabId, message) => chrome.tabs.sendMessage(targetTabId, message),
 			executeScript: (options) => chrome.scripting.executeScript(options),
 		});
-		if (articleResponse.success && isArticle(articleResponse.article) && isArticleReadableSurface(articleResponse.readableSurface)) {
+		if (
+			articleResponse.success &&
+			isArticle(articleResponse.article) &&
+			isArticleReadableSurface(articleResponse.readableSurface)
+		) {
 			return articleResponse;
 		}
 		return (await requestPdfFallback()) ?? articleResponse;
@@ -208,6 +212,7 @@ async function ensureHydrated(): Promise<void> {
 		await chrome.storage.session.remove(STORAGE_KEYS.PLAYBACK_SESSION);
 	}
 
+	await audioExportCoordinator.hydrate();
 	await updateBadge(activeSession);
 }
 
@@ -307,10 +312,7 @@ async function publishExtractionFailure(
 
 // Helper to check if offscreen document is already created
 async function hasOffscreenDocument(): Promise<boolean> {
-	if (typeof chrome.offscreen === 'undefined') {
-		return false;
-	}
-	if ('getContexts' in chrome.runtime && typeof chrome.runtime.getContexts === 'function') {
+	if ('getContexts' in chrome.runtime) {
 		const contexts = await chrome.runtime.getContexts({
 			contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
 		});
@@ -328,15 +330,15 @@ async function hasOffscreenDocument(): Promise<boolean> {
 
 // Create offscreen document if needed
 async function setupOffscreen(): Promise<void> {
-	if (typeof chrome.offscreen === 'undefined' || (await hasOffscreenDocument())) {
+	if (await hasOffscreenDocument()) {
 		return;
 	}
 
 	try {
 		await chrome.offscreen.createDocument({
 			url: 'src/offscreen/offscreen.html',
-			reasons: [chrome.offscreen.Reason.AUDIO_PLAYBACK],
-			justification: 'Local ONNX TTS model speech generation and playback.',
+			reasons: [chrome.offscreen.Reason.AUDIO_PLAYBACK, chrome.offscreen.Reason.WORKERS, chrome.offscreen.Reason.BLOBS],
+			justification: 'Local ONNX TTS speech playback and local MP3 worker/WASM encoding.',
 		});
 	} catch (error) {
 		if (!(await hasOffscreenDocument())) {
@@ -347,7 +349,7 @@ async function setupOffscreen(): Promise<void> {
 
 // Close offscreen document
 async function closeOffscreen(): Promise<void> {
-	if (typeof chrome.offscreen === 'undefined' || !(await hasOffscreenDocument())) {
+	if (!(await hasOffscreenDocument())) {
 		return;
 	}
 
@@ -357,6 +359,38 @@ async function closeOffscreen(): Promise<void> {
 		// The document may already be closed.
 	}
 }
+
+const audioExportCoordinator = createAudioExportCoordinator({
+	storage: {
+		async get() {
+			const result = await chrome.storage.session.get(STORAGE_KEYS.AUDIO_EXPORT_JOB);
+			return result[STORAGE_KEYS.AUDIO_EXPORT_JOB];
+		},
+		set: async (job) => {
+			await chrome.storage.session.set({ [STORAGE_KEYS.AUDIO_EXPORT_JOB]: job });
+		},
+		remove: async () => {
+			await chrome.storage.session.remove(STORAGE_KEYS.AUDIO_EXPORT_JOB);
+		},
+	},
+	getPlaybackSession: () => activeSession,
+	ensureOffscreen: setupOffscreen,
+	sendOffscreen: (command) => sendOffscreenCommand(command, (message) => chrome.runtime.sendMessage(message)),
+	deleteHandle: deleteAudioExportHandle,
+	broadcast: async (job) => {
+		try {
+			await chrome.runtime.sendMessage({ action: 'AUDIO_EXPORT_STATE_UPDATE', job });
+		} catch (_error) {
+			// The Popup or Side Panel may not be open while export state changes.
+		}
+	},
+	now: () => Date.now(),
+	setTimeout: (callback, delayMs) =>
+		setTimeout(() => {
+			void enqueue(callback);
+		}, delayMs),
+	clearTimeout: (handle) => clearTimeout(handle),
+});
 
 function snapshotFromCheckpoint(checkpoint: ManualCheckpointMetadata): ManualPlaybackSessionSnapshot {
 	return createPlaybackSession({
@@ -394,7 +428,7 @@ async function getSuspendedManualCheckpoint(): Promise<ManualCheckpointMetadata 
 }
 
 async function closeOffscreenWhenIdle(): Promise<void> {
-	if (activeSession === null && !(await getSuspendedManualCheckpoint())) {
+	if (activeSession === null && !audioExportCoordinator.hasWork() && !(await getSuspendedManualCheckpoint())) {
 		await closeOffscreen();
 	}
 }
@@ -535,8 +569,9 @@ async function discardManualCheckpoint(panelInstanceId: string): Promise<boolean
 		return false;
 	}
 	try {
-		await sendOffscreenCommand({ action: 'DISCARD_MANUAL_CHECKPOINT', payload: { panelInstanceId } }, (message) =>
-			chrome.runtime.sendMessage(message),
+		await sendOffscreenCommand(
+			{ action: 'DISCARD_MANUAL_CHECKPOINT', payload: { panelInstanceId } },
+			(message) => chrome.runtime.sendMessage(message),
 		);
 	} catch (_error) {
 		// Closing the Side Panel still needs to discard the background-only owner state.
@@ -669,7 +704,11 @@ async function startCurrentPage(): Promise<CommandResponse> {
 		return { success: false, error: ERROR_MESSAGES.extraction };
 	}
 
-	if (!articleResponse.success || !isArticle(articleResponse.article) || !isArticleReadableSurface(articleResponse.readableSurface)) {
+	if (
+		!articleResponse.success ||
+		!isArticle(articleResponse.article) ||
+		!isArticleReadableSurface(articleResponse.readableSurface)
+	) {
 		const extractionError = getExtractionError(articleResponse.success ? undefined : articleResponse.error);
 		if (activeSession?.contentScope === 'manual') {
 			return { success: false, error: extractionError };
@@ -727,6 +766,19 @@ function observeOffscreenPlay(sessionId: string, command: OffscreenCommand): voi
 		(response) => {
 			if (!response.success) {
 				void failPendingStart(sessionId);
+				return;
+			}
+			const audioExportEstimate = response.audioExportEstimate;
+			if (audioExportEstimate) {
+				void enqueue(async () => {
+					await ensureHydrated();
+					const updatedSession = applyAudioExportEstimate(activeSession, sessionId, audioExportEstimate, Date.now());
+					if (!updatedSession) {
+						return;
+					}
+					activeSession = updatedSession;
+					await publishSession(updatedSession);
+				});
 			}
 		},
 		() => {
@@ -763,9 +815,7 @@ async function routeSessionCommand(action: 'PAUSE' | 'PLAY'): Promise<CommandRes
 
 	const payload = action === 'PLAY' ? { sessionId: activeSession.sessionId } : undefined;
 	try {
-		const response = await sendOffscreenCommand({ action, ...(payload ? { payload } : {}) }, (message) =>
-			chrome.runtime.sendMessage(message),
-		);
+		const response = await sendOffscreenCommand({ action, ...(payload ? { payload } : {}) }, (message) => chrome.runtime.sendMessage(message));
 		if (!response.success) {
 			await failSession(ERROR_MESSAGES.setup);
 			await closeOffscreenWhenIdle();
@@ -812,9 +862,15 @@ async function changeSpeed(payload: unknown): Promise<CommandResponse> {
 		const response = await sendOffscreenCommand({ action: 'CHANGE_SPEED', payload: { speed } }, (message) =>
 			chrome.runtime.sendMessage(message),
 		);
-		if (response.success && activeSession) {
-			activeSession = { ...activeSession, speed, updatedAt: Date.now() };
-			await publishSession(activeSession);
+		const session = activeSession;
+		if (response.success && session) {
+			const speedChangedSession = { ...session, speed, updatedAt: Date.now() };
+			const audioExportEstimate = response.audioExportEstimate;
+			const updatedSession = audioExportEstimate
+				? (applyAudioExportEstimate(speedChangedSession, speedChangedSession.sessionId, audioExportEstimate, Date.now()) ?? speedChangedSession)
+				: speedChangedSession;
+			activeSession = updatedSession;
+			await publishSession(updatedSession);
 			return response;
 		}
 		await failSession(ERROR_MESSAGES.setup);
@@ -860,8 +916,9 @@ async function resumeManualCheckpoint(panelInstanceId: string): Promise<CommandR
 	readableSurface.activate(activeSession);
 	await publishSession(activeSession);
 	try {
-		const response = await sendOffscreenCommand({ action: 'RESUME_MANUAL_CHECKPOINT', payload: { panelInstanceId } }, (message) =>
-			chrome.runtime.sendMessage(message),
+		const response = await sendOffscreenCommand(
+			{ action: 'RESUME_MANUAL_CHECKPOINT', payload: { panelInstanceId } },
+			(message) => chrome.runtime.sendMessage(message),
 		);
 		if (!response.success) {
 			throw new Error('Manual checkpoint is unavailable');
@@ -953,9 +1010,55 @@ chrome.runtime.onMessage.addListener(
 		}
 
 		const msg = message as Record<string, unknown>;
+		if (isInternalAudioExportOffscreenCommand(msg)) {
+			return undefined;
+		}
 		const action = msg.action;
 
 		switch (action) {
+			case 'GET_AUDIO_EXPORT_STATE':
+				return respondFromQueue(async () => {
+					await ensureHydrated();
+					return { job: audioExportCoordinator.snapshot() };
+				}, sendResponse);
+
+			case 'PREPARE_AUDIO_EXPORT': {
+				if (!isAudioExportPrepareRequest(msg.payload)) {
+					sendResponse({ success: false, error: 'snapshot-unavailable' });
+					return undefined;
+				}
+				const prepareRequest = msg.payload;
+				return respondFromQueue(async () => {
+					await ensureHydrated();
+					return audioExportCoordinator.prepare(prepareRequest);
+				}, sendResponse);
+			}
+
+			case 'START_AUDIO_EXPORT':
+				return respondFromQueue(async () => {
+					await ensureHydrated();
+					const jobId = (msg.payload as { jobId?: unknown } | undefined)?.jobId;
+					return typeof jobId === 'string' ? audioExportCoordinator.start(jobId) : { success: false, error: 'snapshot-unavailable' };
+				}, sendResponse);
+
+			case 'CANCEL_AUDIO_EXPORT':
+				return respondFromQueue(async () => {
+					await ensureHydrated();
+					const jobId = (msg.payload as { jobId?: unknown } | undefined)?.jobId;
+					const response = typeof jobId === 'string' ? await audioExportCoordinator.cancel(jobId) : { success: false, error: 'snapshot-unavailable' };
+					await closeOffscreenWhenIdle();
+					return response;
+				}, sendResponse);
+
+			case 'DISCARD_AUDIO_EXPORT':
+				return respondFromQueue(async () => {
+					await ensureHydrated();
+					const jobId = (msg.payload as { jobId?: unknown } | undefined)?.jobId;
+					const response = typeof jobId === 'string' ? await audioExportCoordinator.discard(jobId) : { success: false, error: 'snapshot-unavailable' };
+					await closeOffscreenWhenIdle();
+					return response;
+				}, sendResponse);
+
 			case 'GET_PLAYBACK_STATE':
 				return respondFromQueue(getPlaybackState, sendResponse);
 
@@ -1063,6 +1166,17 @@ chrome.runtime.onMessage.addListener(
 
 			case 'PLAYBACK_PROGRESS_UPDATE':
 				void enqueue(() => applyProgressMessage(msg));
+				break;
+
+			case 'AUDIO_EXPORT_PROGRESS':
+				if (isAudioExportProgressUpdate(msg.progress)) {
+					const progress = msg.progress;
+					void enqueue(async () => {
+						await ensureHydrated();
+						await audioExportCoordinator.handleProgress(progress);
+						await closeOffscreenWhenIdle();
+					});
+				}
 				break;
 
 			case 'READABLE_SURFACE_INIT':

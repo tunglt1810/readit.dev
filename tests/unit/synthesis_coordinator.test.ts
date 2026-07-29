@@ -198,3 +198,34 @@ test('caches completion out of order while callers consume in requested unit ord
 	consumed.push(await coordinator.get(key(1), 1));
 	assert.deepEqual(consumed, ['audio-0', 'audio-1']);
 });
+
+test('peeks only a retained completed value for the exact session and speed key', async () => {
+	const coordinator = new IndexedSynthesisCoordinator<string, string>(async (input) => `audio:${input}`);
+	const current = key(1, 2, 3);
+	coordinator.prefetch(current, 'unit-1');
+	assert.equal(coordinator.peekResolved(current), undefined);
+	await Promise.resolve();
+	assert.equal(coordinator.peekResolved(current), 'audio:unit-1');
+	assert.equal(coordinator.peekResolved(key(1, 3, 3)), undefined);
+	assert.equal(coordinator.peekResolved(key(1, 2, 4)), undefined);
+	coordinator.retain([key(2, 2, 3)]);
+	assert.equal(coordinator.peekResolved(current), undefined);
+});
+
+test('notifies after caching the resolved value for the exact synthesis key', async () => {
+	const pending = deferred<string>();
+	const synthesisKey = key(1, 2, 3);
+	let coordinator!: IndexedSynthesisCoordinator<string, string>;
+	const notified: SynthesisKey[] = [];
+	coordinator = new IndexedSynthesisCoordinator<string, string>(() => pending.promise, {
+		onResolved: (resolvedKey, value) => {
+			notified.push(resolvedKey);
+			assert.equal(coordinator.peekResolved(resolvedKey), value);
+		},
+	});
+
+	coordinator.prefetch(synthesisKey, 'unit-1');
+	pending.resolve('audio-1');
+	await new Promise<void>((resolve) => setImmediate(resolve));
+	assert.deepEqual(notified, [synthesisKey]);
+});

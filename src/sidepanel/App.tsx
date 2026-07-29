@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { buildSidePanelRegisterMessage } from '../popup/side_panel.ts';
 import { PlaybackControlButton } from '../shared/components/PlaybackControlButton.tsx';
+import { AudioExportButton } from '../shared/components/AudioExportButton.tsx';
 import { PlaybackIcon } from '../shared/components/PlaybackIcon.tsx';
 import { SettingsCard } from '../shared/components/SettingsCard.tsx';
 import { BUY_ME_A_COFFEE_URL, DEFAULT_SPEED, STORAGE_KEYS } from '../shared/constants.ts';
@@ -9,9 +9,11 @@ import { getLocalizedPlaybackError, t } from '../shared/i18n.ts';
 import { normalizeManualText } from '../shared/manual_text.ts';
 import { requestPlaybackState, sendPlaybackCommand, sendRuntimeRequest, subscribePlaybackState } from '../shared/playback_client.ts';
 import { isSelectionButtonEnabled } from '../shared/selection_button.ts';
-import type { ManualTextLanguage, PageInfoResponse, PlaybackSessionSnapshot, ThemeName } from '../shared/types.ts';
+import type { ManualTextLanguage, PageInfoResponse, PlaybackSessionSnapshot, PlaybackStatus, ThemeName } from '../shared/types.ts';
 import { isWordHighlightEnabled } from '../shared/word_highlight.ts';
+import { buildSidePanelRegisterMessage } from '../popup/side_panel.ts';
 import { advanceManualHighlight, createManualHighlightCursor, type ManualWordRange } from './manual_word_highlight.ts';
+import { getDisplayVersion } from '../shared/version.ts';
 
 const EMPTY_PAGE_INFO: PageInfoResponse = { available: false };
 
@@ -113,7 +115,10 @@ export default function App() {
 			const value = message as Record<string, unknown>;
 			if (value.action === 'PLAYBACK_STATE_UPDATE') {
 				const nextSession = value.session as PlaybackSessionSnapshot | null;
-				if (nextSession?.contentScope === 'manual' && nextSession.source.panelInstanceId === panelInstanceId) {
+				if (
+					nextSession?.contentScope === 'manual' &&
+					nextSession.source.panelInstanceId === panelInstanceId
+				) {
 					manualReaderSessionIdRef.current = nextSession.sessionId;
 				}
 				return;
@@ -390,13 +395,18 @@ export default function App() {
 	const readerActiveHighlight = manualHighlight ? manualReaderText?.slice(manualHighlight.start, manualHighlight.end) : null;
 	const readerAfterHighlight = manualHighlight ? manualReaderText?.slice(manualHighlight.end) : null;
 
+	const rawStatus: PlaybackStatus = session?.status ?? 'stopped';
+	const status: PlaybackStatus =
+		rawStatus === 'loading' && session !== null && session.currentParagraphIndex > 0 ? 'playing' : rawStatus;
+	const displayVersion = getDisplayVersion();
+
 	return (
 		<main className="side-panel" data-theme={theme} aria-label="readit.dev Side Panel">
 			<header className="side-panel-header">
 				<h1>
 					readit<span>.dev</span>
 				</h1>
-				<span className="extension-version">v{chrome.runtime.getManifest().version}</span>
+				<span className="extension-version">v{displayVersion}</span>
 				<a className="header-support-link" href={BUY_ME_A_COFFEE_URL} target="_blank" rel="noreferrer">
 					<span aria-hidden="true">☕</span> {t('buyMeCoffee')}
 				</a>
@@ -409,8 +419,8 @@ export default function App() {
 			)}
 
 			<section className="current-page-card" aria-labelledby="current-page-title">
-				<div className="status-display" data-status={session?.status ?? 'stopped'} role="status">
-					<div className="status-dot-pulse" data-status={session?.status ?? 'stopped'} />
+				<div className="status-display" data-status={status} role="status">
+					<div className="status-dot-pulse" data-status={status} />
 					<span className="status-text">{getStatusText(session)}</span>
 				</div>
 				<h2 id="current-page-title">{t('currentPage')}</h2>
@@ -424,35 +434,37 @@ export default function App() {
 							<div className="session-context">
 								<span>
 									{session.totalParagraphs > 0
-										? `${t('paragraphLabel')} ${session.currentParagraphIndex + 1}/${session.totalParagraphs} • ${Math.round(session.progressPercentage)}%`
+										? `${t('paragraphLabel')} ${session.currentParagraphIndex + 1}/${session.totalParagraphs} • ${Math.round(session.progressPercentage)}% `
 										: t('preparingContent')}
 								</span>
 								<span>{t('readingThisTab')}</span>
 							</div>
 						</div>
-						{session.status !== 'stopped' && session.status !== 'error' && (
+						{status !== 'stopped' && status !== 'error' && (
 							<div className="progress-bar-container">
 								<div className="progress-bar" style={{ width: `${session.progressPercentage}%` }} />
 							</div>
 						)}
 						<div className="playback-controls">
-							{(session.status === 'playing' || session.status === 'paused') && (
+							{(status === 'playing' || status === 'paused') && (
 								<button
 									ref={primaryButtonRef}
 									className="btn btn-secondary btn-icon-only btn-playpause"
 									type="button"
-									aria-label={session.status === 'playing' ? t('pauseState') : t('resumeStatus')}
-									title={session.status === 'playing' ? t('pauseState') : t('resumeStatus')}
-									onClick={() => handlePlaybackCommand(session.status === 'playing' ? 'PAUSE_READING' : 'RESUME_READING')}
+									aria-label={status === 'playing' ? t('pauseState') : t('resumeStatus')}
+									title={status === 'playing' ? t('pauseState') : t('resumeStatus')}
+									data-tooltip={status === 'playing' ? t('pauseState') : t('resumeStatus')}
+									onClick={() => handlePlaybackCommand(status === 'playing' ? 'PAUSE_READING' : 'RESUME_READING')}
 								>
-									<PlaybackIcon name={session.status === 'playing' ? 'pause' : 'resume'} />
+									<PlaybackIcon name={status === 'playing' ? 'pause' : 'resume'} />
 								</button>
 							)}
 							<PlaybackControlButton
-								status={session.status}
+								status={status}
 								onClick={() => handlePlaybackCommand('STOP_READING')}
-								buttonRef={session.status === 'playing' || session.status === 'paused' ? undefined : primaryButtonRef}
+								buttonRef={status === 'playing' || status === 'paused' ? undefined : primaryButtonRef}
 							/>
+							<AudioExportButton session={session} />
 						</div>
 						{session.readableSurface === 'document-reader' && (
 							<button className="secondary-button document-reader-button" type="button" onClick={handleOpenDocumentReader}>
@@ -472,11 +484,14 @@ export default function App() {
 						) : (
 							<p>{t('currentPageUnavailable')}</p>
 						)}
-						<PlaybackControlButton
-							status="stopped"
-							onClick={handleReadCurrentPage}
-							buttonRef={session?.status === 'playing' || session?.status === 'paused' ? undefined : primaryButtonRef}
-						/>
+						<div className="playback-controls">
+							<PlaybackControlButton
+								status="stopped"
+								onClick={handleReadCurrentPage}
+								buttonRef={status === 'playing' || status === 'paused' ? undefined : primaryButtonRef}
+							/>
+							{!session && <AudioExportButton session={null} />}
+						</div>
 					</>
 				)}
 			</section>
@@ -487,10 +502,7 @@ export default function App() {
 				<h2 id="manual-text-title">{t('orPasteText')}</h2>
 				{manualReaderLocked ? (
 					<div ref={readerRef} className="manual-reader" role="textbox" aria-label={t('manualReaderLabel')} aria-readonly="true">
-						{manualHighlight &&
-						readerBeforeHighlight !== null &&
-						readerActiveHighlight !== null &&
-						readerAfterHighlight !== null ? (
+						{manualHighlight && readerBeforeHighlight !== null && readerActiveHighlight !== null && readerAfterHighlight !== null ? (
 							<>
 								{readerBeforeHighlight}
 								<mark className="manual-reader-active-word">{readerActiveHighlight}</mark>
@@ -516,11 +528,7 @@ export default function App() {
 				</div>
 				<label className="field-label">
 					<span>{t('manualLanguage')}</span>
-					<select
-						disabled={manualReaderLocked}
-						value={language}
-						onChange={(event) => setLanguage(event.target.value as ManualTextLanguage)}
-					>
+					<select disabled={manualReaderLocked} value={language} onChange={(event) => setLanguage(event.target.value as ManualTextLanguage)}>
 						<option value="auto">{t('languageAuto')}</option>
 						<option value="en">{t('languageEnglish')}</option>
 						<option value="vi">{t('languageVietnamese')}</option>
@@ -531,12 +539,7 @@ export default function App() {
 					<button className="secondary-button" type="button" disabled={manualReaderLocked} onClick={() => setDraft('')}>
 						{t('clearText')}
 					</button>
-					<button
-						className="primary-button"
-						type="button"
-						disabled={manualReaderLocked || !draft.trim()}
-						onClick={handleReadManualText}
-					>
+					<button className="primary-button" type="button" disabled={manualReaderLocked || !draft.trim()} onClick={handleReadManualText}>
 						{t('readPastedText')}
 					</button>
 				</div>
@@ -591,6 +594,7 @@ export default function App() {
 								onClick={() => handlePlaybackCommand('STOP_READING')}
 								buttonRef={session.status === 'playing' || session.status === 'paused' ? undefined : primaryButtonRef}
 							/>
+							<AudioExportButton session={session} />
 						</div>
 					</>
 				)}

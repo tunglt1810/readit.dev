@@ -11,7 +11,8 @@ test('renders a word highlight during real article playback', async ({ context, 
 	await context.route(targetUrl, (route) =>
 		route.fulfill({
 			contentType: 'text/html; charset=utf-8',
-			body: '<!doctype html><html lang="en"><head><title>Highlight playback</title></head><body><article><h1>Highlight playback</h1><p>This article contains enough readable prose for extraction and must visibly highlight each spoken word while the reader progresses through the sentence without losing its ordered mapping to the live document.</p></article></body></html>',
+			body:
+				'<!doctype html><html lang="en"><head><title>Highlight playback</title></head><body><article><h1>Highlight playback</h1><p>This article contains enough readable prose for extraction and must visibly highlight each spoken word while the reader progresses through the sentence without losing its ordered mapping to the live document.</p></article></body></html>',
 		}),
 	);
 
@@ -81,7 +82,7 @@ test('does not initialize a projection for Google Docs text-only playback', asyn
 	await sender.evaluate(() => {
 		(window as any).surfaceLifecycleMessages = [];
 		chrome.runtime.onMessage.addListener((message) => {
-			if (message?.action === 'WORD_HIGHLIGHT_INIT') {
+			if (message?.action === 'READABLE_SURFACE_INIT' || message?.action === 'WORD_HIGHLIGHT_INIT') {
 				(window as any).surfaceLifecycleMessages.push(message);
 			}
 		});

@@ -284,50 +284,48 @@ export function installWordHighlight(): void {
 		true,
 	);
 
-	chrome.runtime.onMessage.addListener(
-		(message: unknown, _sender: chrome.runtime.MessageSender, sendResponse: (response?: unknown) => void) => {
-			const msg = message as { action?: string; sessionId?: string; selectionText?: string };
-			if (
-				msg.action === 'WORD_HIGHLIGHT_SET_SELECTION_SCOPE' &&
-				typeof msg.sessionId === 'string' &&
-				typeof msg.selectionText === 'string'
-			) {
-				if (currentSessionId && currentSessionId !== msg.sessionId) {
-					disposeCurrentHighlightSession();
-				}
-				currentSessionId = msg.sessionId;
+	chrome.runtime.onMessage.addListener((message: unknown, _sender: chrome.runtime.MessageSender, sendResponse: (response?: unknown) => void) => {
+		const msg = message as { action?: string; sessionId?: string; selectionText?: string };
+		if (
+			msg.action === 'WORD_HIGHLIGHT_SET_SELECTION_SCOPE' &&
+			typeof msg.sessionId === 'string' &&
+			typeof msg.selectionText === 'string'
+		) {
+			if (currentSessionId && currentSessionId !== msg.sessionId) {
+				disposeCurrentHighlightSession();
+			}
+			currentSessionId = msg.sessionId;
+			wordRanges = null;
+			currentWordIndex = -1;
+			activatePendingSelectionScope(msg.sessionId, msg.selectionText);
+			clearHighlight();
+		} else if (isWordHighlightInitMessage(message)) {
+			if (currentSessionId !== message.sessionId) {
+				disposeCurrentHighlightSession();
+				currentSessionId = message.sessionId;
+			} else {
 				wordRanges = null;
 				currentWordIndex = -1;
-				activatePendingSelectionScope(msg.sessionId, msg.selectionText);
 				clearHighlight();
-			} else if (isWordHighlightInitMessage(message)) {
-				if (currentSessionId !== message.sessionId) {
-					disposeCurrentHighlightSession();
-					currentSessionId = message.sessionId;
-				} else {
-					wordRanges = null;
-					currentWordIndex = -1;
-					clearHighlight();
-				}
-				const selectionRange = message.contentScope === 'selection' ? getActiveSelectionRange(message.sessionId) : null;
-				wordRanges =
-					message.contentScope === 'selection' && !selectionRange
-						? new Map()
-						: precomputeWordRanges(message.words, selectionRange ?? null);
-				sendResponse({ success: true });
-			} else if (isWordHighlightUpdateMessage(message)) {
-				if (message.sessionId !== currentSessionId || !wordRanges) {
-					return;
-				}
-				handleHighlightUpdate(message.wordIndex);
-			} else if (msg.action === 'WORD_HIGHLIGHT_CLEAR' && typeof msg.sessionId === 'string') {
-				clearActiveSelectionScope(msg.sessionId);
-				if (msg.sessionId === currentSessionId) {
-					disposeCurrentHighlightSession();
-				}
 			}
-		},
-	);
+			const selectionRange = message.contentScope === 'selection' ? getActiveSelectionRange(message.sessionId) : null;
+			wordRanges =
+				message.contentScope === 'selection' && !selectionRange
+					? new Map()
+					: precomputeWordRanges(message.words, selectionRange ?? null);
+			sendResponse({ success: true });
+		} else if (isWordHighlightUpdateMessage(message)) {
+			if (message.sessionId !== currentSessionId || !wordRanges) {
+				return;
+			}
+			handleHighlightUpdate(message.wordIndex);
+		} else if (msg.action === 'WORD_HIGHLIGHT_CLEAR' && typeof msg.sessionId === 'string') {
+			clearActiveSelectionScope(msg.sessionId);
+			if (msg.sessionId === currentSessionId) {
+				disposeCurrentHighlightSession();
+			}
+		}
+	});
 
 	document.addEventListener('visibilitychange', updateVisualUpdatePermission);
 

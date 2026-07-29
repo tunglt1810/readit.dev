@@ -248,12 +248,9 @@ test('localizes Google Docs export errors from command and session state', async
 		'Không thể đọc Google Docs này. Hãy kiểm tra quyền xem hoặc tải xuống, hoặc đọc văn bản đã chọn/dán.',
 	);
 
-	await page.evaluate(
-		(session) => {
-			(window as any).mockReceiveMessage({ action: 'PLAYBACK_STATE_UPDATE', session });
-		},
-		{ ...playingSession, status: 'error', error: 'googleDocsExportUnavailable' },
-	);
+	await page.evaluate((session) => {
+		(window as any).mockReceiveMessage({ action: 'PLAYBACK_STATE_UPDATE', session });
+	}, { ...playingSession, status: 'error', error: 'googleDocsExportUnavailable' });
 	await expect(page.locator('.alert-danger')).toHaveText(
 		'Không thể đọc Google Docs này. Hãy kiểm tra quyền xem hoặc tải xuống, hoặc đọc văn bản đã chọn/dán.',
 	);
@@ -297,10 +294,7 @@ test.describe('English popup locale', () => {
 	});
 });
 
-test('synchronizes title logo span (.dev) color with --color-logo-span CSS variable in Popup across themes', async ({
-	page,
-	openPopup,
-}) => {
+test('synchronizes title logo span (.dev) color with --color-logo-span CSS variable in Popup across themes', async ({ page, openPopup }) => {
 	await installPopupRuntimeMock(page, { session: null, currentTabId: 7 });
 	await openPopup(page);
 

@@ -1,6 +1,11 @@
 import type { BrowserContext, Page } from '@playwright/test';
 
-import type { ManualPlaybackSessionSnapshot, PlaybackStateResponse, TabPlaybackSessionSnapshot } from '../../src/shared/types';
+import type {
+	AudioExportJobSnapshot,
+	ManualPlaybackSessionSnapshot,
+	PlaybackStateResponse,
+	TabPlaybackSessionSnapshot,
+} from '../../src/shared/types';
 import { expect, installPopupRuntimeMock, test } from './fixtures';
 
 test.use({ freshExtensionWorker: true });
@@ -60,7 +65,7 @@ async function getCoordinatorCommands(page: Page): Promise<string[]> {
 	return page.evaluate(() =>
 		(window as any).sentMessages
 			.map((message: { action: string }) => message.action)
-			.filter((action: string) => action !== 'GET_PLAYBACK_STATE'),
+			.filter((action: string) => action !== 'GET_PLAYBACK_STATE' && action !== 'GET_AUDIO_EXPORT_STATE'),
 	);
 }
 
@@ -429,7 +434,10 @@ test.describe('Reading state lifecycle', () => {
 
 		await test.step('change speed without completing the loading session', async () => {
 			const response = await responseWithin(sendCoordinatorCommand(controlPage, { action: 'CHANGE_SPEED', payload: { speed: 1.3 } }));
-			expect(response).toEqual({ success: true });
+			expect(response).toMatchObject({
+				success: true,
+				audioExportEstimate: { durationSeconds: expect.any(Number), estimatedBytes: expect.any(Number) },
+			});
 			await expect
 				.poll(async () => (await getBackgroundState(controlPage)).session)
 				.toMatchObject({ sessionId: loadingSession?.sessionId, status: 'loading', speed: 1.3 });
@@ -450,6 +458,69 @@ test.describe('Reading state lifecycle', () => {
 		await expect(page.locator('.session-title')).toHaveText(session.source.title);
 		await expect(page.locator('.status-text')).toHaveText('Đang đọc đoạn 3/8');
 		await expect(page.locator('.progress-bar')).toHaveAttribute('style', 'width: 37.5%;');
+	});
+
+	test('background hydration preserves a numeric audio export estimate', async ({ context, extensionId }) => {
+		const targetPage = await createTargetPage(context);
+		const { controlPage, session } = await seedCoordinatorSession(context, extensionId, targetPage, {
+			audioExportEstimate: { durationSeconds: 90, estimatedBytes: 1_084_096 },
+		});
+
+		expect((await getBackgroundState(controlPage)).session).toMatchObject({
+			sessionId: session.sessionId,
+			audioExportEstimate: { durationSeconds: 90, estimatedBytes: 1_084_096 },
+		});
+	});
+
+	test('worker restart interrupts a persisted MP3 export without resuming it', async ({ context, extensionId }) => {
+		const targetPage = await createTargetPage(context);
+		const { controlPage, session } = await seedCoordinatorSession(context, extensionId, targetPage, {
+			audioExportEstimate: { durationSeconds: 90, estimatedBytes: 1_084_096 },
+		});
+		const activeJob: AudioExportJobSnapshot = {
+			jobId: 'e99e8996-8372-4e0e-8224-6e3cf5d206f8',
+			playbackSessionId: session.sessionId,
+			title: session.source.title,
+			outputFilename: 'restart.mp3',
+			state: 'exporting',
+			estimate: { durationSeconds: 90, estimatedBytes: 1_084_096 },
+			processedDurationSeconds: 10,
+			progressPercentage: 11,
+			bytesWritten: 1_024,
+			startedAt: 1_000,
+			updatedAt: 2_000,
+		};
+		await controlPage.evaluate(async (job) => {
+			await chrome.storage.session.set({ readit_audio_export_job: job });
+		}, activeJob);
+		await controlPage.evaluate(() => {
+			(window as any).offscreenExportCommands = [];
+			chrome.runtime.onMessage.addListener((message) => {
+				if (message?.target === 'readit-offscreen-audio-export') {
+					(window as any).offscreenExportCommands.push(message.action);
+				}
+			});
+		});
+
+		const cdp = await context.newCDPSession(controlPage);
+		const { targetInfos } = await cdp.send('Target.getTargets');
+		const workerTarget = targetInfos.find(
+			(targetInfo) => targetInfo.type === 'service_worker' && targetInfo.url.startsWith(`chrome-extension://${extensionId}/`),
+		);
+		expect(workerTarget).toBeDefined();
+		await cdp.send('Target.closeTarget', { targetId: workerTarget?.targetId as string });
+
+		await expect
+			.poll(() =>
+				controlPage.evaluate(
+					() =>
+						chrome.runtime.sendMessage({ action: 'GET_AUDIO_EXPORT_STATE' }) as Promise<{ job: AudioExportJobSnapshot | null }>,
+				),
+			)
+			.toMatchObject({ job: { jobId: activeJob.jobId, state: 'interrupted', errorCode: 'interrupted' } });
+		const commands = await controlPage.evaluate(() => (window as any).offscreenExportCommands);
+		expect(commands).toContain('CANCEL_AUDIO_EXPORT');
+		expect(commands).not.toContain('START_AUDIO_EXPORT');
 	});
 
 	test('owner-tab close clears the active session', async ({ context, extensionId, page, openPopup }) => {

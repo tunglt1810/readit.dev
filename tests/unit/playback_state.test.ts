@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+	applyAudioExportEstimate,
 	applyPlaybackProgress,
 	createPlaybackErrorSession,
 	createPlaybackSession,
@@ -8,6 +9,7 @@ import {
 	isSameDocumentUrl,
 	ownsTab,
 } from '../../src/background/playback_state.ts';
+import { createAudioExportEstimate } from '../../src/shared/audio_export.ts';
 
 const tabInput = {
 	sessionId: 'session-1',
@@ -238,7 +240,10 @@ test('rejects manual snapshots with invalid owners or extra source fields', () =
 	});
 
 	assert.equal(isPlaybackSessionSnapshot({ ...manual, source: { kind: 'manual', panelInstanceId: '' } }), false);
-	assert.equal(isPlaybackSessionSnapshot({ ...manual, source: { ...manualSource, text: 'forbidden' } }), false);
+	assert.equal(
+		isPlaybackSessionSnapshot({ ...manual, source: { ...manualSource, text: 'forbidden' } }),
+		false,
+	);
 });
 
 test('does not apply stale progress after the active session has been cleared', () => {
@@ -274,4 +279,39 @@ test('does not mutate input snapshots', () => {
 
 	assert.deepEqual(session, original);
 	assert.notEqual(updated, session);
+});
+
+test('hydrates a valid audio export estimate and preserves session metadata', () => {
+	const session = createPlaybackSession(tabInput);
+	const estimate = createAudioExportEstimate(120);
+
+	assert.deepEqual(applyAudioExportEstimate(session, session.sessionId, estimate, 2_000), {
+		...session,
+		audioExportEstimate: estimate,
+		updatedAt: 2_000,
+	});
+});
+
+test('ignores stale or malformed audio export estimates during hydration', () => {
+	const session = createPlaybackSession(tabInput);
+	const estimate = createAudioExportEstimate(120);
+
+	assert.equal(applyAudioExportEstimate(session, 'stale-session', estimate, 2_000), null);
+	assert.equal(isPlaybackSessionSnapshot({ ...session, audioExportEstimate: estimate }), true);
+	assert.equal(isPlaybackSessionSnapshot({ ...session, audioExportEstimate: { durationSeconds: 1, estimatedBytes: -1 } }), false);
+	assert.equal(isPlaybackSessionSnapshot({ ...session, audioExportEstimate: { durationSeconds: Number.NaN, estimatedBytes: 1 } }), false);
+});
+
+test('does not attach a late PLAY estimate to a replacement session', () => {
+	const replacement = createPlaybackSession({ ...tabInput, sessionId: 'replacement-session' });
+	assert.equal(applyAudioExportEstimate(replacement, tabInput.sessionId, createAudioExportEstimate(120), 2_000), null);
+	assert.equal(replacement.audioExportEstimate, undefined);
+});
+
+test('replaces the current snapshot estimate after a speed change', () => {
+	const session = createPlaybackSession(tabInput);
+	const original = applyAudioExportEstimate(session, session.sessionId, createAudioExportEstimate(120), 1_000);
+	assert.ok(original);
+	const recalculated = applyAudioExportEstimate(original, original.sessionId, createAudioExportEstimate(60), 2_000);
+	assert.deepEqual(recalculated?.audioExportEstimate, createAudioExportEstimate(60));
 });

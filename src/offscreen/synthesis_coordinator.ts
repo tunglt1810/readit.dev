@@ -17,15 +17,22 @@ interface SynthesisEntry<Output> {
 	lease: SynthesisLease;
 	promise: Promise<Output>;
 	prefetched: boolean;
+	resolved?: Output;
+}
+
+export interface IndexedSynthesisCoordinatorOptions<Output> {
+	onResolved?(key: SynthesisKey, value: Output): void;
 }
 
 export class IndexedSynthesisCoordinator<Input, Output> {
 	private readonly entries = new Map<string, SynthesisEntry<Output>>();
 	private readonly leases = new Map<string, SynthesisLease>();
 	private readonly synthesize: (input: Input) => Promise<Output>;
+	private readonly onResolved: ((key: SynthesisKey, value: Output) => void) | undefined;
 
-	constructor(synthesize: (input: Input) => Promise<Output>) {
+	constructor(synthesize: (input: Input) => Promise<Output>, options: IndexedSynthesisCoordinatorOptions<Output> = {}) {
 		this.synthesize = synthesize;
+		this.onResolved = options.onResolved;
 	}
 
 	prefetch(key: SynthesisKey, input: Input): void {
@@ -64,6 +71,10 @@ export class IndexedSynthesisCoordinator<Input, Output> {
 		return this.entries.has(identity(key));
 	}
 
+	peekResolved(key: SynthesisKey): Output | undefined {
+		return this.entries.get(identity(key))?.resolved;
+	}
+
 	retain(keys: readonly SynthesisKey[]): void {
 		const retained = new Set(keys.map(identity));
 		for (const [id, lease] of this.leases) {
@@ -97,11 +108,19 @@ export class IndexedSynthesisCoordinator<Input, Output> {
 			prefetched,
 		};
 		this.entries.set(id, entry);
-		void entry.promise.catch(() => {
-			if (this.entries.get(id) === entry) {
-				this.entries.delete(id);
-			}
-		});
+		void entry.promise.then(
+			(value) => {
+				if (this.entries.get(id) === entry && lease.active) {
+					entry.resolved = value;
+					this.onResolved?.(key, value);
+				}
+			},
+			() => {
+				if (this.entries.get(id) === entry) {
+					this.entries.delete(id);
+				}
+			},
+		);
 		return entry;
 	}
 }

@@ -1,6 +1,6 @@
-import type { ManualPlaybackStartPayload } from '../shared/manual_playback.ts';
 import { isPanelInstanceId } from '../shared/manual_playback.ts';
 import { normalizeManualText } from '../shared/manual_text.ts';
+import type { ManualPlaybackStartPayload } from '../shared/manual_playback.ts';
 import type { ManualTextLanguage, PlaybackContent, ResolvedManualTextLanguage } from '../shared/types.ts';
 
 const MANUAL_LANGUAGES = new Set<ManualTextLanguage>(['auto', 'en', 'vi', 'zh']);

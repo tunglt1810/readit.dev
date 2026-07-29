@@ -1,5 +1,4 @@
 import type { RefObject } from 'react';
-
 import { t } from '../i18n';
 import type { PlaybackStatus } from '../types';
 import { PlaybackIcon } from './PlaybackIcon';
@@ -24,6 +23,7 @@ export function PlaybackControlButton({ status, onClick, buttonRef }: PlaybackCo
 			onClick={onClick}
 			aria-label={label}
 			title={label}
+			data-tooltip={label}
 		>
 			<PlaybackIcon name={iconName} />
 		</button>

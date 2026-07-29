@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { PlaybackIcon } from '../shared/components/PlaybackIcon.tsx';
 import { DEFAULT_SPEED, STORAGE_KEYS, VOICE_STYLES } from '../shared/constants.ts';
 import {
 	DOCUMENT_READER_PORT_NAME,
@@ -11,6 +10,7 @@ import {
 import { t } from '../shared/i18n.ts';
 import { requestPlaybackState, sendPlaybackCommand, subscribePlaybackState } from '../shared/playback_client.ts';
 import type { PlaybackSessionSnapshot, TabPlaybackSessionSnapshot } from '../shared/types.ts';
+import { getDisplayVersion } from '../shared/version.ts';
 
 type HighlightRegistry = {
 	set(name: string, highlight: unknown): void;
@@ -123,22 +123,18 @@ export default function App() {
 
 	const status = documentSession?.status ?? 'stopped';
 
-	const sanitizedContent = useMemo(() => {
-		if (!snapshot?.content) return '';
-		return snapshot.content.replace(/\n{3,}/g, '\n\n');
-	}, [snapshot?.content]);
+	const displayVersion = getDisplayVersion();
 
 	return (
 		<main className="document-reader" aria-label="readit.dev Document Reader">
 			<header className="document-reader-header">
-				<div className="document-reader-header-title">
+				<div>
 					<span className="document-reader-brand">
-						readit<span>.dev</span>
+						readit<span>.dev</span> <span className="extension-version">v{displayVersion}</span>
 					</span>
 					<h1>{snapshot?.title || t('documentReaderTitle')}</h1>
 				</div>
 				<button
-					className="btn btn-secondary btn-back-source"
 					type="button"
 					disabled={sourceTabId === null}
 					onClick={() => sourceTabId !== null && void chrome.tabs.update(sourceTabId, { active: true })}
@@ -150,55 +146,39 @@ export default function App() {
 			{snapshot ? (
 				<>
 					<section className="document-reader-toolbar" aria-label={t('documentReaderControls')}>
-						<div className="playback-controls">
+						<div className="document-reader-playback">
 							{(status === 'playing' || status === 'paused') && (
 								<button
-									className="btn btn-primary btn-icon-only btn-playpause"
+									className="primary-button"
 									type="button"
-									aria-label={status === 'playing' ? t('pauseState') : t('resumeStatus')}
-									title={status === 'playing' ? t('pauseState') : t('resumeStatus')}
 									onClick={() =>
 										void sendPlaybackCommand({ action: status === 'playing' ? 'PAUSE_READING' : 'RESUME_READING' })
 									}
 								>
-									<PlaybackIcon name={status === 'playing' ? 'pause' : 'resume'} />
+									{status === 'playing' ? t('pauseState') : t('resumeStatus')}
 								</button>
 							)}
 							<button
-								className="btn btn-secondary btn-icon-only"
 								type="button"
 								disabled={status === 'stopped'}
-								aria-label={t('stopReading')}
-								title={t('stopReading')}
 								onClick={() => void sendPlaybackCommand({ action: 'STOP_READING' })}
 							>
-								<PlaybackIcon name="stop" />
+								{t('stopReading')}
 							</button>
 						</div>
-						<div className="form-group">
-							<label className="form-label" htmlFor="reader-voice-select">
-								{t('selectVoice')}
-							</label>
-							<select
-								id="reader-voice-select"
-								className="form-select"
-								value={activeVoice}
-								onChange={(event) => handleVoiceChange(event.target.value)}
-							>
+						<label>
+							<span>{t('selectVoice')}</span>
+							<select value={activeVoice} onChange={(event) => handleVoiceChange(event.target.value)}>
 								{VOICE_STYLES.map((voice) => (
 									<option key={voice.id} value={voice.id}>
 										{voice.name}
 									</option>
 								))}
 							</select>
-						</div>
-						<div className="form-group">
-							<div className="slider-label-group">
-								<span className="form-label">{t('readingSpeed')}</span>
-								<span className="slider-value">{speed.toFixed(2)}×</span>
-							</div>
+						</label>
+						<label>
+							<span>{t('readingSpeed')}</span>
 							<input
-								className="form-slider"
 								type="range"
 								min="0.7"
 								max="1.8"
@@ -206,19 +186,17 @@ export default function App() {
 								value={speed}
 								onChange={(event) => handleSpeedChange(Number(event.target.value))}
 							/>
-						</div>
-						<div className="form-group document-reader-progress" role="status">
-							<div className="slider-label-group">
-								<span className="form-label">PROGRESS</span>
-								<span className="slider-value">{Math.round(documentSession?.progressPercentage ?? 0)}%</span>
-							</div>
-							<div className="progress-bar-container">
-								<div className="progress-bar" style={{ width: `${documentSession?.progressPercentage ?? 0}%` }} />
+							<output>{speed.toFixed(2)}×</output>
+						</label>
+						<div className="document-reader-progress" role="status">
+							<span>{Math.round(documentSession?.progressPercentage ?? 0)}%</span>
+							<div>
+								<i style={{ width: `${documentSession?.progressPercentage ?? 0}%` }} />
 							</div>
 						</div>
 					</section>
 					<article ref={contentRef} className="document-reader-content">
-						{sanitizedContent}
+						{snapshot.content}
 					</article>
 				</>
 			) : (

@@ -14,6 +14,26 @@ const session = {
 	updatedAt: 1000,
 };
 
+const exportSession = {
+	...session,
+	status: 'playing' as const,
+	audioExportEstimate: { durationSeconds: 120, estimatedBytes: 1_444_096 },
+};
+
+const exportJob = {
+	jobId: 'job-1',
+	playbackSessionId: exportSession.sessionId,
+	title: exportSession.source.title,
+	outputFilename: 'an-article.mp3',
+	state: 'exporting' as const,
+	estimate: exportSession.audioExportEstimate,
+	processedDurationSeconds: 30,
+	progressPercentage: 25,
+	bytesWritten: 1_000,
+	startedAt: 1_000,
+	updatedAt: 2_000,
+};
+
 test.describe('Kịch bản 3: Điều khiển TTS (TTS Controls)', () => {
 	test.beforeEach(async ({ page, openPopup }) => {
 		await installPopupRuntimeMock(page, { session: null, currentTabId: 7 });
@@ -138,6 +158,104 @@ test.describe('Kịch bản 3: Điều khiển TTS (TTS Controls)', () => {
 		await expect(page.locator('.alert-danger')).toHaveText('Không thể mở Side Panel. Vui lòng thử lại.');
 	});
 
+	test('renders the accessible shared MP3 picker handshake without an exportable session', async ({ page }) => {
+		const exportButton = page.getByRole('button', { name: 'Xuất MP3' });
+		await expect(exportButton).toBeDisabled();
+
+		await page.evaluate((nextSession) => {
+			(window as any).mockReceiveMessage({ action: 'PLAYBACK_STATE_UPDATE', session: nextSession });
+			(window as any).showSaveFilePicker = (options: unknown) => {
+				(window as any).pickerOptions = options;
+				(window as any).actionsAtPicker = (window as any).sentMessages.map((message: any) => message.action);
+				return new Promise(() => {});
+			};
+		}, exportSession);
+
+		await expect(exportButton).toBeEnabled();
+		await expect(exportButton).toHaveAttribute('title', 'Xuất MP3');
+		await exportButton.focus();
+		await page.keyboard.press('Enter');
+		await expect.poll(() => page.evaluate(() => (window as any).pickerOptions)).toEqual({
+			id: 'readit-mp3-export',
+			startIn: 'music',
+			suggestedName: 'An article.mp3',
+			types: [{ description: 'MP3 audio', accept: { 'audio/mpeg': ['.mp3'] } }],
+		});
+		expect(await page.evaluate(() => (window as any).actionsAtPicker)).toContain('PREPARE_AUDIO_EXPORT');
+		await expect(page.locator('.audio-export-status[role="status"]')).toBeVisible();
+	});
+
+	test('hydrates progress states and requires confirmation before cancellation', async ({ page }) => {
+		await page.evaluate((job) => {
+			(window as any).mockReceiveMessage({ action: 'AUDIO_EXPORT_STATE_UPDATE', job });
+		}, exportJob);
+		const exportButton = page.getByRole('button', { name: 'Hủy xuất MP3' });
+		await expect(exportButton).toHaveAttribute('data-state', 'exporting');
+		await exportButton.click();
+		await expect(page.getByRole('alertdialog', { name: 'Hủy xuất MP3?' })).toBeVisible();
+		await page.getByRole('button', { name: 'Giữ xuất MP3' }).click();
+
+		for (const state of ['waiting-for-playback', 'cancelling', 'completed', 'failed', 'interrupted']) {
+			await page.evaluate(({ job, state }) => {
+				(window as any).mockReceiveMessage({ action: 'AUDIO_EXPORT_STATE_UPDATE', job: { ...job, state } });
+			}, { job: exportJob, state });
+			await expect(page.locator('.audio-export-button')).toHaveAttribute('data-state', state);
+		}
+	});
+
+	test('activates MP3 export with Space', async ({ page }) => {
+		await page.evaluate((nextSession) => {
+			(window as any).mockReceiveMessage({ action: 'PLAYBACK_STATE_UPDATE', session: nextSession });
+			(window as any).showSaveFilePicker = () => new Promise(() => {});
+		}, exportSession);
+		const exportButton = page.getByRole('button', { name: 'Xuất MP3' });
+		await exportButton.focus();
+		await page.keyboard.press('Space');
+		await expect.poll(() => page.evaluate(() => (window as any).sentMessages.map((message: any) => message.action))).toContain(
+			'PREPARE_AUDIO_EXPORT',
+		);
+	});
+
+	test('requires a long-export confirmation and silently cleans up picker cancellation', async ({ page }) => {
+		await page.evaluate((nextSession) => {
+			(window as any).mockReceiveMessage({
+				action: 'PLAYBACK_STATE_UPDATE',
+				session: { ...nextSession, audioExportEstimate: { durationSeconds: 3600, estimatedBytes: 43_204_096 } },
+			});
+			(window as any).showSaveFilePicker = () => Promise.reject(new DOMException('Cancelled', 'AbortError'));
+		}, exportSession);
+		await page.getByRole('button', { name: 'Xuất MP3' }).click();
+		await expect(page.getByRole('alertdialog', { name: 'Xuất MP3 dài' })).toBeVisible();
+		await page.getByRole('button', { name: 'Tiếp tục' }).click();
+		await expect.poll(() => page.evaluate(() => (window as any).sentMessages.map((message: any) => message.action))).toContain(
+			'PREPARE_AUDIO_EXPORT',
+		);
+		await expect(page.getByRole('alert')).toHaveCount(0);
+	});
+
+	test('waits for a delayed prepare before discarding an immediately cancelled picker', async ({ page }) => {
+		await page.evaluate((nextSession) => {
+			(window as any).mockReceiveMessage({ action: 'PLAYBACK_STATE_UPDATE', session: nextSession });
+			(window as any).deferredRuntimeActions = ['PREPARE_AUDIO_EXPORT'];
+			(window as any).showSaveFilePicker = () => Promise.reject(new DOMException('Cancelled', 'AbortError'));
+		}, exportSession);
+
+		await page.getByRole('button', { name: 'Xuất MP3' }).click();
+		await expect.poll(() => page.evaluate(() => (window as any).sentMessages.map((message: any) => message.action))).toContain(
+			'PREPARE_AUDIO_EXPORT',
+		);
+		await page.waitForTimeout(250);
+		expect(await page.evaluate(() => (window as any).sentMessages.map((message: any) => message.action))).not.toContain('DISCARD_AUDIO_EXPORT');
+
+		await page.evaluate(() => {
+			(window as any).resolveDeferredRuntimeResponse('PREPARE_AUDIO_EXPORT', { success: true });
+		});
+		await expect.poll(() => page.evaluate(() => (window as any).sentMessages.map((message: any) => message.action))).toContain(
+			'DISCARD_AUDIO_EXPORT',
+		);
+		await expect(page.getByRole('alert')).toHaveCount(0);
+	});
+
 	test('Điều khiển Play/Pause/Stop và hiển thị trạng thái UI tương ứng', async ({ page }) => {
 		// 1. Kiểm tra trạng thái Sẵn sàng ban đầu
 		const statusText = page.locator('.status-text');
@@ -259,6 +377,29 @@ test.describe('Kịch bản 3: Điều khiển TTS (TTS Controls)', () => {
 		const readButton = page.locator('.btn-read');
 		await expect(readButton).toBeFocused();
 	});
+});
+
+test('keeps a newer export-state broadcast when initial hydration resolves late', async ({ page, openPopup }) => {
+	const staleJob = { ...exportJob, state: 'waiting-for-playback' as const };
+	await installPopupRuntimeMock(
+		page,
+		{ session: exportSession, currentTabId: 7 },
+		undefined,
+		{ job: staleJob },
+		{ deferInitialAudioExportStateResponse: true },
+	);
+	await openPopup(page);
+	await expect.poll(() => page.evaluate(() => (window as any).deferredRuntimeCallbacks.GET_AUDIO_EXPORT_STATE !== undefined)).toBe(true);
+
+	await page.evaluate((job) => {
+		(window as any).mockReceiveMessage({ action: 'AUDIO_EXPORT_STATE_UPDATE', job });
+	}, exportJob);
+	await expect(page.locator('.audio-export-button')).toHaveAttribute('data-state', 'exporting');
+
+	await page.evaluate(() => {
+		(window as any).resolveDeferredRuntimeResponse('GET_AUDIO_EXPORT_STATE');
+	});
+	await expect(page.locator('.audio-export-button')).toHaveAttribute('data-state', 'exporting');
 });
 
 test.describe('Popup Layout & Localization - English (en-US)', () => {

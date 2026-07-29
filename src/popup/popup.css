@@ -101,6 +101,7 @@ body::before {
 	color: #fca5a5;
 }
 
+
 .session-meta {
 	display: flex;
 	flex-direction: column;
@@ -137,6 +138,10 @@ body::before {
 	flex-direction: column;
 	gap: 10px;
 	margin-top: 0;
+}
+
+.controls-group .audio-export-control {
+	margin-top: 2px;
 }
 
 .open-side-panel {
@@ -249,6 +254,7 @@ body::before {
 	transform: scale(1.2);
 }
 
+
 /* Footer Section */
 .app-footer {
 	display: flex;
@@ -337,6 +343,8 @@ body::before {
 	}
 }
 
+
+
 .app-container[data-theme="winamp"] {
 	background: repeating-linear-gradient(135deg, #303338 0 2px, #25272b 2px 4px);
 	border: 2px solid;
@@ -376,6 +384,8 @@ body::before {
 	display: none; /* Không sử dụng pulse dot nhấp nháy hiện đại */
 	animation: none;
 }
+
+
 
 .winamp-visualizer {
 	display: flex;
@@ -506,6 +516,8 @@ body:has(.app-container[data-theme="wmp12"])::before {
 	animation: none;
 	box-shadow: none;
 }
+
+
 
 .wmp-transport {
 	display: flex;

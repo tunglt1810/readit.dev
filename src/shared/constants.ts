@@ -40,6 +40,7 @@ export const STORAGE_KEYS = {
 	SPEED: 'readit_speed',
 	READ_MODE_SETTINGS: 'readit_read_mode_settings',
 	PLAYBACK_SESSION: 'readit_playback_session',
+	AUDIO_EXPORT_JOB: 'readit_audio_export_job',
 	THEME: 'readit_active_theme',
 	SELECTION_BUTTON_ENABLED: 'readit_selection_button_enabled',
 	WORD_HIGHLIGHT_ENABLED: 'readit_word_highlight_enabled',
@@ -50,3 +51,4 @@ export const PRIVACY_POLICY_URL = 'https://tunglt1810.github.io/readit.dev/priva
 export const BUY_ME_A_COFFEE_URL = 'https://buymeacoffee.com/bbeeezzzzz';
 
 export const DEFAULT_SPEED = 1.05;
+

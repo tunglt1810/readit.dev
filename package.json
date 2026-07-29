@@ -1,6 +1,6 @@
 {
 	"name": "readit.dev-extension",
-	"version": "1.1.0",
+	"version": "1.1.1",
 	"license": "AGPL-3.0-or-later",
 	"description": "Chrome and Firefox extension to read web articles using Supertonic 3 local TTS",
 	"type": "module",
@@ -28,8 +28,10 @@
 		"lint:fix": "biome check --write ."
 	},
 	"dependencies": {
+		"@mediabunny/mp3-encoder": "1.51.0",
 		"@mozilla/readability": "0.6.0",
 		"fft.js": "4.0.4",
+		"mediabunny": "1.51.0",
 		"onnxruntime-web": "1.26.0",
 		"pdfjs-dist": "6.1.200",
 		"react": "19.2.6",
@@ -47,6 +49,7 @@
 		"@types/react": "19.2.15",
 		"@types/react-dom": "19.2.3",
 		"@types/webextension-polyfill": "0.12.5",
+		"fake-indexeddb": "6.2.5",
 		"typescript": "6.0.3",
 		"web-ext": "10.5.0"
 	}

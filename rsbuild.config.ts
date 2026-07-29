@@ -4,16 +4,9 @@ import { pluginReact } from '@rsbuild/plugin-react';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const targetBrowser = process.env.TARGET_BROWSER || 'chrome';
 const vietnameseBenchmark = process.env.READIT_VI_BENCHMARK === '1';
 const appVersion = JSON.parse(fs.readFileSync(new URL('package.json', import.meta.url), 'utf-8')).version as string;
 const buildVersion = process.env.BUILD_NUMBER ? `${appVersion}-dev.${process.env.BUILD_NUMBER}` : appVersion;
-
-const distDir = vietnameseBenchmark
-	? '.tmp/vietnamese-performance/extension'
-	: targetBrowser === 'firefox'
-		? 'dist/firefox'
-		: 'dist/chrome';
 
 export default defineConfig({
 	// Manifest-injected scripts have no HTML loader for async chunks.
@@ -25,9 +18,9 @@ export default defineConfig({
 			},
 		}),
 		{
-			name: 'manifest-version-and-browser-transform',
+			name: 'manifest-version-sync',
 			setup(api) {
-				const syncAndTransformManifest = () => {
+				const syncVersion = () => {
 					const distPath = api.context.distPath;
 					const manifestPath = path.join(distPath, 'manifest.json');
 					if (fs.existsSync(manifestPath)) {
@@ -38,55 +31,18 @@ export default defineConfig({
 						if (process.env.BUILD_NUMBER) {
 							manifest.version_name = `${packageJson.version}-dev.${process.env.BUILD_NUMBER}`;
 						}
-
-						if (targetBrowser === 'firefox') {
-							delete manifest.minimum_chrome_version;
-							manifest.background = {
-								scripts: ['background.js'],
-							};
-							if (Array.isArray(manifest.permissions)) {
-								manifest.permissions = manifest.permissions.filter((p: string) => p !== 'sidePanel');
-							}
-							if (manifest.side_panel) {
-								manifest.sidebar_action = {
-									default_panel: manifest.side_panel.default_path,
-									default_title: 'readit.dev',
-									default_icon: manifest.action?.default_icon || {
-										'16': 'assets/icon16.png',
-										'32': 'assets/icon32.png',
-										'48': 'assets/icon48.png',
-										'128': 'assets/icon128.png',
-									},
-								};
-								delete manifest.side_panel;
-							}
-							if (manifest.commands?.open_side_panel) {
-								manifest.commands._execute_sidebar_action = manifest.commands.open_side_panel;
-								delete manifest.commands.open_side_panel;
-							}
-							manifest.browser_specific_settings = {
-								gecko: {
-									id: 'readit-dev@readit.dev',
-									strict_min_version: '115.0',
-									data_collection_permissions: {
-										required: ['none'],
-									},
-								},
-							};
-						}
-
 						fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, '\t'));
 					}
 				};
-				api.onAfterBuild(syncAndTransformManifest);
-				api.onDevCompileDone(syncAndTransformManifest);
+				api.onAfterBuild(syncVersion);
+				api.onDevCompileDone(syncVersion);
 			},
 		},
 	],
 	performance: {
 		buildCache: {
-			cacheDirectory: `.tmp/rsbuild-cache-${targetBrowser}`,
-			cacheDigest: [process.env.READIT_VI_BENCHMARK, targetBrowser],
+			cacheDirectory: '.tmp/rsbuild-cache',
+			cacheDigest: [process.env.READIT_VI_BENCHMARK],
 		},
 	},
 	resolve: {
@@ -95,7 +51,6 @@ export default defineConfig({
 	source: {
 		define: {
 			__BUILD_VERSION__: JSON.stringify(buildVersion),
-			__TARGET_BROWSER__: JSON.stringify(targetBrowser),
 		},
 		entry: {
 			popup: './src/popup/index.tsx',
@@ -122,7 +77,7 @@ export default defineConfig({
 	},
 	output: {
 		distPath: {
-			root: distDir,
+			root: vietnameseBenchmark ? '.tmp/vietnamese-performance/extension' : 'dist',
 			js: '',
 		},
 		assetPrefix: '/',

@@ -64,3 +64,41 @@ Runtime dependencies
   https://github.com/microsoft/onnxruntime
 - React 19.2.6 and React DOM 19.2.6: MIT License
   https://github.com/facebook/react
+
+Mediabunny 1.51.0 and @mediabunny/mp3-encoder 1.51.0
+---------------------------------------------------------
+readit.dev uses Mediabunny and its MP3 encoder extension for local MP3 export.
+
+- Copyright (c) 2026-present, Vanilagy and contributors
+- License: Mozilla Public License 2.0 (MPL-2.0)
+- Project: https://mediabunny.dev/
+- Mediabunny source: https://github.com/Vanilagy/mediabunny/tree/v1.51.0
+- MP3 encoder source: https://github.com/Vanilagy/mediabunny/tree/v1.51.0/packages/mp3-encoder
+- Mediabunny package: https://www.npmjs.com/package/mediabunny/v/1.51.0
+- MP3 encoder package: https://www.npmjs.com/package/%40mediabunny%2Fmp3-encoder/v/1.51.0
+- Bundled MPL-2.0 text: licenses/mediabunny-MPL-2.0.txt
+
+readit.dev does not modify Mediabunny or @mediabunny/mp3-encoder source.
+
+LAME 3.100
+----------
+@mediabunny/mp3-encoder 1.51.0 bundles a WebAssembly build of the LAME MP3
+Encoder for local MP3 encoding.
+
+- Copyright (c) 1999-2011 by The LAME Project
+- Copyright (c) 1999, 2000, 2001 by Mark Taylor
+- Copyright (c) 1998 by Michael Cheng
+- Copyright (c) 1995, 1996, 1997 by Michael Hipp: mpglib
+- License: GNU LIBRARY GENERAL PUBLIC LICENSE, Version 2, June 1991 (called LGPL in the LAME README)
+- Acknowledgement: LAME MP3 Encoder, https://lame.sourceforge.io/
+- Project: https://lame.sourceforge.io/
+- Source: https://sourceforge.net/projects/lame/files/lame/3.100/lame-3.100.tar.gz/download
+- Bundled COPYING text: licenses/lame-COPYING.txt
+
+readit.dev does not modify LAME source. The encoder JavaScript, worker code,
+and WASM are packaged locally with the extension; readit.dev does not fetch
+executable code at runtime.
+
+These notices and source links are engineering evidence, not legal advice or a
+guarantee of license compliance. Legal review is required before public
+distribution of this feature.

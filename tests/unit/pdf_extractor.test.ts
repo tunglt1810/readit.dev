@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { extractPdfArticle, isSupportedPdfSource, type PdfExtractorDependencies } from '../../src/background/pdf_extractor.ts';
 import { PDF_ERROR_CODES } from '../../src/shared/constants.ts';
+import { extractPdfArticle, isSupportedPdfSource, type PdfExtractorDependencies } from '../../src/background/pdf_extractor.ts';
 
 const source = { url: 'https://example.com/reports/q2.pdf', title: 'Q2 report' };
 const pdfBytes = new TextEncoder().encode('%PDF-1.7\nfixture').buffer as ArrayBuffer;
@@ -58,18 +58,8 @@ test('keeps a display heading separate while joining its body line-wraps', async
 					items: [
 						{ str: 'Executive Summary', transform: [1, 0, 0, 16, 50, 701.6], width: 150, height: 16 },
 						{ str: 'This system card describes Claude Opus 5.', transform: [1, 0, 0, 11, 50, 675.33], width: 250, height: 11 },
-						{
-							str: 'It is an upgrade with gains in agentic coding,',
-							transform: [1, 0, 0, 11, 50, 659.14],
-							width: 250,
-							height: 11,
-						},
-						{
-							str: 'computer use, and long-horizon knowledge work.',
-							transform: [1, 0, 0, 11, 50, 642.95],
-							width: 250,
-							height: 11,
-						},
+						{ str: 'It is an upgrade with gains in agentic coding,', transform: [1, 0, 0, 11, 50, 659.14], width: 250, height: 11 },
+						{ str: 'computer use, and long-horizon knowledge work.', transform: [1, 0, 0, 11, 50, 642.95], width: 250, height: 11 },
 					],
 				}),
 			}),

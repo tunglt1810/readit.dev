@@ -38,7 +38,12 @@ export function createReadableSurfaceCoordinator(dependencies: ReadableSurfaceDe
 			return false;
 		}
 		const snapshot = await dependencies.requestDocumentReaderSnapshot(sessionId);
-		if (!snapshot || activeSession?.sessionId !== sessionId || documentReaderOwner !== owner || snapshot.sessionId !== sessionId) {
+		if (
+			!snapshot ||
+			activeSession?.sessionId !== sessionId ||
+			documentReaderOwner !== owner ||
+			snapshot.sessionId !== sessionId
+		) {
 			return false;
 		}
 		try {

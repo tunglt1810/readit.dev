@@ -57,6 +57,43 @@ export interface PlaybackProgress {
 	error?: string;
 }
 
+export type AudioExportJobState =
+	| 'preparing'
+	| 'exporting'
+	| 'waiting-for-playback'
+	| 'cancelling'
+	| 'completed'
+	| 'failed'
+	| 'interrupted';
+
+export type AudioExportErrorCode =
+	| 'permission-denied'
+	| 'write-failed'
+	| 'encoding-failed'
+	| 'snapshot-unavailable'
+	| 'interrupted';
+
+export interface AudioExportEstimate {
+	durationSeconds: number;
+	estimatedBytes: number;
+}
+
+export interface AudioExportJobSnapshot {
+	jobId: string;
+	playbackSessionId: string;
+	title: string;
+	outputFilename: string;
+	state: AudioExportJobState;
+	estimate: AudioExportEstimate;
+	processedDurationSeconds: number;
+	progressPercentage: number;
+	bytesWritten: number;
+	etaSeconds?: number;
+	startedAt: number;
+	updatedAt: number;
+	errorCode?: AudioExportErrorCode;
+}
+
 export interface PlaybackSessionBase {
 	sessionId: string;
 	readableSurface: ReadableSurfaceKind;
@@ -67,6 +104,7 @@ export interface PlaybackSessionBase {
 	progressPercentage: number;
 	voiceStyleId: string;
 	speed: number;
+	audioExportEstimate?: AudioExportEstimate;
 	error?: string;
 	updatedAt: number;
 }
@@ -102,4 +140,8 @@ export interface PlaybackProgressUpdateMessage {
 export interface PlaybackStateResponse {
 	session: PlaybackSessionSnapshot | null;
 	currentTabId?: number;
+}
+
+export interface AudioExportStateResponse {
+	job: AudioExportJobSnapshot | null;
 }

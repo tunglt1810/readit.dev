@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Added
 - full document reader - [@tunglt1810]
+- export audio mp3 - [@tunglt1810]
 
 ## [1.1.0] - 2026-07-28
 

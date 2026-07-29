@@ -2,7 +2,7 @@ import { type BrowserContext, test as base, chromium, type Page, type Request } 
 import fs from 'fs';
 import path from 'path';
 
-import type { PageInfoResponse, PlaybackStateResponse } from '../../src/shared/types';
+import type { AudioExportStateResponse, PageInfoResponse, PlaybackStateResponse } from '../../src/shared/types';
 import { resolveExtensionId } from './extension_id';
 import { MODEL_CACHE_SEED_DIR, MODEL_CACHE_SEED_MARKER } from './model_cache_seed';
 
@@ -15,15 +15,22 @@ export type RecordedRequest = Readonly<{
 
 const requestAccessors = new WeakMap<BrowserContext, () => readonly RecordedRequest[]>();
 
+type AudioExportRuntimeMockOptions = {
+	deferInitialAudioExportStateResponse?: boolean;
+};
+
 export async function installExtensionUiRuntimeMock(
 	page: Page,
 	initialPlaybackState: PlaybackStateResponse,
 	pageInfo?: PageInfoResponse,
+	audioExportState: AudioExportStateResponse = { job: null },
+	audioExportOptions: AudioExportRuntimeMockOptions = {},
 ): Promise<void> {
 	await page.addInitScript(
-		({ playbackState, currentPageInfo }) => {
+		({ playbackState, currentPageInfo, initialAudioExportState, initialAudioExportOptions }) => {
 			const listeners = new Set<Function>();
 			const playbackStateKey = 'readit_e2e_playback_state';
+			const audioExportStateKey = 'readit_e2e_audio_export_state';
 
 			const readPlaybackState = (): PlaybackStateResponse => {
 				const storedState = localStorage.getItem(playbackStateKey);
@@ -34,6 +41,15 @@ export async function installExtensionUiRuntimeMock(
 				return playbackState;
 			};
 
+			const readAudioExportState = (): AudioExportStateResponse => {
+				const storedState = localStorage.getItem(audioExportStateKey);
+				if (storedState) {
+					return JSON.parse(storedState) as AudioExportStateResponse;
+				}
+				localStorage.setItem(audioExportStateKey, JSON.stringify(initialAudioExportState));
+				return initialAudioExportState;
+			};
+
 			chrome.runtime.onMessage.addListener = (listener) => {
 				listeners.add(listener);
 			};
@@ -42,6 +58,15 @@ export async function installExtensionUiRuntimeMock(
 			};
 
 			(window as any).sentMessages = [] as any[];
+			(window as any).deferredRuntimeCallbacks = {} as Record<string, { callback: Function; response: unknown }>;
+			(window as any).resolveDeferredRuntimeResponse = (action: string, response?: unknown) => {
+				const deferred = (window as any).deferredRuntimeCallbacks[action];
+				if (!deferred) {
+					return;
+				}
+				delete (window as any).deferredRuntimeCallbacks[action];
+				deferred.callback(response === undefined ? deferred.response : response);
+			};
 			(window as any).sidePanelOpenCalls = [] as chrome.sidePanel.OpenOptions[];
 			(window as any).tabsQueryCalls = 0;
 			chrome.tabs.query = async () => {
@@ -55,8 +80,20 @@ export async function installExtensionUiRuntimeMock(
 				(window as any).sentMessages.push(message);
 				if (message.action === 'GET_PLAYBACK_STATE') {
 					callback?.(readPlaybackState());
+				} else if (message.action === 'GET_AUDIO_EXPORT_STATE') {
+					const response = readAudioExportState();
+					if (initialAudioExportOptions.deferInitialAudioExportStateResponse) {
+						(window as any).deferredRuntimeCallbacks[message.action] = { callback, response };
+					} else {
+						callback?.(response);
+					}
 				} else if (message.action === 'GET_CURRENT_PAGE_INFO') {
 					callback?.(currentPageInfo);
+				} else if ((window as any).deferredRuntimeActions?.includes(message.action)) {
+					(window as any).deferredRuntimeCallbacks[message.action] = {
+						callback,
+						response: (window as any).commandResponses?.[message.action] ?? { success: true },
+					};
 				} else if ((window as any).missingResponseActions?.includes(message.action)) {
 					callback?.(undefined);
 				} else {
@@ -70,16 +107,98 @@ export async function installExtensionUiRuntimeMock(
 					const currentState = readPlaybackState();
 					localStorage.setItem(playbackStateKey, JSON.stringify({ ...currentState, session: message.session ?? null }));
 				}
+				if (message.action === 'AUDIO_EXPORT_STATE_UPDATE') {
+					localStorage.setItem(audioExportStateKey, JSON.stringify({ job: message.job ?? null }));
+				}
 				for (const listener of listeners) {
 					listener(message, {}, () => {});
 				}
 			};
 		},
-		{ playbackState: initialPlaybackState, currentPageInfo: pageInfo },
+		{
+			playbackState: initialPlaybackState,
+			currentPageInfo: pageInfo,
+			initialAudioExportState: audioExportState,
+			initialAudioExportOptions: audioExportOptions,
+		},
 	);
 }
 
 export const installPopupRuntimeMock = installExtensionUiRuntimeMock;
+
+export async function installOpfsAudioExportPicker(
+	page: Page,
+	filename = 'readit-export-test.mp3',
+	options: { invalidHandleKind?: 'directory' } = {},
+): Promise<void> {
+	await page.addInitScript(
+		({ outputFilename, invalidHandleKind }) => {
+			window.showSaveFilePicker = async (options) => {
+				(window as unknown as { __readitOpfsPickerOptions?: SaveFilePickerOptions }).__readitOpfsPickerOptions = options;
+				const root = await navigator.storage.getDirectory();
+				if (invalidHandleKind === 'directory') {
+					return root as unknown as FileSystemFileHandle;
+				}
+				const handle = await root.getFileHandle(outputFilename, { create: true });
+				return handle;
+			};
+		},
+		{
+			outputFilename: filename,
+			invalidHandleKind: options.invalidHandleKind,
+		},
+	);
+}
+
+export async function readOpfsFile(page: Page, filename: string): Promise<number[]> {
+	return page.evaluate(async (outputFilename) => {
+		const root = await navigator.storage.getDirectory();
+		const handle = await root.getFileHandle(outputFilename);
+		return [...new Uint8Array(await (await handle.getFile()).arrayBuffer())];
+	}, filename);
+}
+
+export async function putOpfsAudioExportHandle(page: Page, jobId: string, filename: string): Promise<void> {
+	await page.evaluate(
+		async ({ jobId, filename }) => {
+			const root = await navigator.storage.getDirectory();
+			const handle = await root.getFileHandle(filename, { create: true });
+			const database = await new Promise<IDBDatabase>((resolve, reject) => {
+				const request = indexedDB.open('readit-audio-export', 1);
+				request.onupgradeneeded = () => {
+					if (!request.result.objectStoreNames.contains('handles')) {
+						request.result.createObjectStore('handles', { keyPath: 'jobId' });
+					}
+				};
+				request.onerror = () => reject(request.error);
+				request.onsuccess = () => resolve(request.result);
+			});
+			try {
+				await new Promise<void>((resolve, reject) => {
+					const transaction = database.transaction('handles', 'readwrite');
+					transaction.objectStore('handles').put({ jobId, handle });
+					transaction.onerror = () => reject(transaction.error);
+					transaction.oncomplete = () => resolve();
+				});
+			} finally {
+				database.close();
+			}
+		},
+		{ jobId, filename },
+	);
+}
+
+export async function opfsFileSizeOrNull(page: Page, filename: string): Promise<number | null> {
+	return page.evaluate(async (outputFilename) => {
+		try {
+			const root = await navigator.storage.getDirectory();
+			const handle = await root.getFileHandle(outputFilename);
+			return (await handle.getFile()).size;
+		} catch {
+			return null;
+		}
+	}, filename);
+}
 
 export const test = base.extend<{
 	context: BrowserContext;
@@ -93,9 +212,7 @@ export const test = base.extend<{
 	browserLocale: ['vi-VN', { option: true }],
 	freshExtensionWorker: [true, { option: true }],
 	context: async ({ browserLocale, headless, freshExtensionWorker }, use) => {
-		const pathToExtension = fs.existsSync(path.join(process.cwd(), 'dist', 'chrome'))
-			? path.join(process.cwd(), 'dist', 'chrome')
-			: path.join(process.cwd(), 'dist');
+		const pathToExtension = path.join(process.cwd(), 'dist');
 		const tempDir = path.join(process.cwd(), '.tmp');
 		fs.mkdirSync(tempDir, { recursive: true });
 		const userDataDir = fs.mkdtempSync(path.join(tempDir, 'playwright-chrome-profile-'));

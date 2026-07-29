@@ -1,15 +1,26 @@
+import {
+	isAudioExportEstimate,
+	isAudioExportOffscreenAction,
+	isInternalAudioExportOffscreenCommand,
+} from '../shared/audio_export.ts';
+import { deleteAudioExportHandle, takeAudioExportHandle } from '../shared/audio_export_handle_store.ts';
 import { MODEL_FILES, VOICE_STYLES } from '../shared/constants';
 import type { DocumentReaderSnapshot } from '../shared/document_reader.ts';
 import { isPanelInstanceId } from '../shared/manual_playback';
 import { buildReadableSurfaceWords } from '../shared/readable_surface.ts';
 import type { PlaybackContent, PlaybackContentScope, PlaybackProgress, PlaybackStatus, ReadableSurfaceKind } from '../shared/types';
 import { createSpeechAudioBuffer, synthesizeSpeechUnitSamples } from './audio';
+import { createAudioExportEncoder } from './audio_export_encoder.ts';
+import { AudioExportEngine } from './audio_export_engine.ts';
+import { estimateSpeechUnits } from './audio_export_estimate';
+import { canStartBackgroundSynthesis, type PlaybackRunway } from './audio_export_runway';
 import { captureManualCheckpoint, isCheckpointOwner, type ManualCheckpoint, resumeOffsetSeconds } from './manual_checkpoint';
 import { createPauseKeepalive } from './pause_keepalive';
 import { METRICS_STORAGE_KEY, PlaybackMetricsRecorder, summarizePlaybackMetrics } from './playback_metrics';
 import { isVietnameseLanguage, preparePlaybackUnits, VietnameseTextNormalizer } from './playback_preparation';
 import { createSingleFlight } from './single_flight';
 import type { SpeechUnit } from './speech_unit';
+import { SynthesisArbiter } from './synthesis_arbiter';
 import { loadTextToSpeech, loadVoiceStyle, Style, TextToSpeech } from './supertonic_helper';
 import { IndexedSynthesisCoordinator, type SynthesisKey } from './synthesis_coordinator';
 import { loadVietnameseNormalizerAssets } from './vietnamese/assets';
@@ -46,6 +57,7 @@ let currentWordIndex = -1;
 let currentReadableSurface: ReadableSurfaceKind = 'none';
 let currentReadableSurfaceContentScope: PlaybackContentScope = 'article';
 let currentDocumentReader: Omit<DocumentReaderSnapshot, 'currentWordIndex'> | null = null;
+const recentSynthesisMilliseconds: number[] = [];
 
 type PendingManualPlayback = {
 	sessionId: string;
@@ -92,6 +104,18 @@ async function initStorage() {
 initStorage();
 
 const playbackMetrics = new PlaybackMetricsRecorder();
+const exportRunwayWaiters = new Set<() => void>();
+
+function notifyExportRunway(): void {
+	for (const resolve of exportRunwayWaiters) {
+		resolve();
+	}
+	exportRunwayWaiters.clear();
+}
+
+function waitForExportRunway(): Promise<void> {
+	return new Promise((resolve) => exportRunwayWaiters.add(resolve));
+}
 
 /**
  * Persist the Phase 0 baseline numbers where they can be read from outside this document:
@@ -123,6 +147,7 @@ function flushPlaybackMetrics() {
 	bufferOffsetSec: currentBufferOffsetSec,
 	audioContextTime: audioCtx?.currentTime ?? null,
 	pauseKeepalive: pauseKeepalive.getDebugState(),
+	backgroundSynthesisAllowed: canStartBackgroundSynthesis(playbackRunway()),
 });
 
 /**
@@ -130,6 +155,7 @@ function flushPlaybackMetrics() {
  */
 function reportProgress(status: PlaybackStatus, extra: Partial<PlaybackProgress> = {}) {
 	playbackStatus = status;
+	notifyExportRunway();
 	const progress: PlaybackProgress = {
 		status,
 		currentParagraphIndex: currentUnitIndex,
@@ -222,7 +248,9 @@ async function getVoiceStyle(styleId: string): Promise<Style> {
 /**
  * Synthesize a single speech unit to an AudioBuffer
  */
-async function synthesizeUnit(unit: SpeechUnit, lang: string, style: Style, speed: number): Promise<AudioBuffer> {
+type SynthesisOwner = 'playback' | 'export';
+
+async function synthesizeUnit(unit: SpeechUnit, lang: string, style: Style, speed: number, owner: SynthesisOwner): Promise<AudioBuffer> {
 	if (!ttsEngine) {
 		throw new Error('TTS Engine is not initialized');
 	}
@@ -241,10 +269,19 @@ async function synthesizeUnit(unit: SpeechUnit, lang: string, style: Style, spee
 			return result.wav;
 		},
 	);
-	playbackMetrics.recordInferDuration(performance.now() - inferStartedAtMs);
+	if (owner === 'playback') {
+		playbackMetrics.recordInferDuration(performance.now() - inferStartedAtMs);
+	}
 
 	const buffer = createSpeechAudioBuffer(audioCtx, wav, engine.sampleRate, unit.pauseAfterMs ?? 0);
-	playbackMetrics.recordSynthDuration(performance.now() - synthesisStartedAtMs);
+	if (owner === 'playback') {
+		const synthesisMilliseconds = performance.now() - synthesisStartedAtMs;
+		playbackMetrics.recordSynthDuration(synthesisMilliseconds);
+		recentSynthesisMilliseconds.push(synthesisMilliseconds);
+		if (recentSynthesisMilliseconds.length > 5) {
+			recentSynthesisMilliseconds.shift();
+		}
+	}
 	return buffer;
 }
 
@@ -253,10 +290,16 @@ interface SynthesisInput {
 	lang: string;
 	style: Style;
 	speed: number;
+	owner: SynthesisOwner;
 }
 
-const synthesisCoordinator = new IndexedSynthesisCoordinator<SynthesisInput, AudioBuffer>(({ unit, lang, style, speed }) =>
-	synthesizeUnit(unit, lang, style, speed),
+const synthesisArbiter = new SynthesisArbiter<SynthesisInput, AudioBuffer>(({ unit, lang, style, speed, owner }) =>
+	synthesizeUnit(unit, lang, style, speed, owner),
+);
+
+const synthesisCoordinator = new IndexedSynthesisCoordinator<SynthesisInput, AudioBuffer>(
+	(input) => synthesisArbiter.foreground(input),
+	{ onResolved: () => notifyExportRunway() },
 );
 
 function synthesisKey(session: number, unitIndex: number): SynthesisKey {
@@ -280,6 +323,35 @@ function retainedSynthesisKeys(session: number): SynthesisKey[] {
 	return keys;
 }
 
+function playbackRunway(): PlaybackRunway {
+	const nextUnitIndex = currentUnitIndex + 1;
+	const nextBuffer =
+		currentExtensionSessionId !== null && nextUnitIndex < speechUnits.length
+			? (synthesisCoordinator.peekResolved(synthesisKey(playbackSession, nextUnitIndex))?.duration ?? null)
+			: null;
+	return {
+		active: currentExtensionSessionId !== null,
+		status: playbackStatus,
+		currentRemainingSeconds: currentBuffer ? Math.max(currentBuffer.duration - currentBufferElapsedSec(), 0) : 0,
+		nextBufferSeconds: nextBuffer,
+		recentSynthesisMilliseconds,
+	};
+}
+
+const audioExportEngine = new AudioExportEngine({
+	takeHandle: takeAudioExportHandle,
+	deleteHandle: deleteAudioExportHandle,
+	createEncoder: createAudioExportEncoder,
+	synthesize: ({ unit, language, style, speed }) => synthesisArbiter.background({ unit, lang: language, style, speed, owner: 'export' }),
+	canStartBackgroundSynthesis: () => canStartBackgroundSynthesis(playbackRunway()),
+	waitForRunway: waitForExportRunway,
+	wakeRunway: notifyExportRunway,
+	onProgress: (progress) => {
+		chrome.runtime.sendMessage({ action: 'AUDIO_EXPORT_PROGRESS', progress });
+	},
+	now: () => performance.now(),
+});
+
 function prefetchNextUnit(lang: string, style: Style, session: number): void {
 	const unitIndex = currentUnitIndex + 1;
 	if (unitIndex >= speechUnits.length) {
@@ -292,6 +364,7 @@ function prefetchNextUnit(lang: string, style: Style, session: number): void {
 		lang,
 		style,
 		speed: currentSpeed,
+		owner: 'playback',
 	});
 }
 
@@ -408,6 +481,7 @@ function stopAudio() {
 	flushPlaybackMetrics();
 	isPaused = false;
 	synthesisCoordinator.clear();
+	recentSynthesisMilliseconds.length = 0;
 	reportProgress('stopped');
 	speechUnits = [];
 	currentUnitIndex = 0;
@@ -424,12 +498,20 @@ function stopAudio() {
 	currentWordIndex = -1;
 	pendingManualPlayback = null;
 	currentExtensionSessionId = null;
+	notifyExportRunway();
 }
 
 /**
  * Play a synthesized AudioBuffer
  */
-function playAudioBuffer(buffer: AudioBuffer, lang: string, style: Style, session: number, unitIndex: number, offsetSec = 0) {
+function playAudioBuffer(
+	buffer: AudioBuffer,
+	lang: string,
+	style: Style,
+	session: number,
+	unitIndex: number,
+	offsetSec = 0,
+) {
 	// Split from one combined guard so a refusal names its cause: each of these silently drops
 	// a whole unit, which is heard as missing text.
 	if (!audioCtx) {
@@ -516,6 +598,7 @@ async function playNextUnit(lang: string, style: Style, session: number) {
 		lang,
 		style,
 		speed: currentSpeed,
+		owner: 'playback',
 	};
 	synthesisCoordinator.retain(retainedSynthesisKeys(session));
 	reportProgress('loading');
@@ -595,7 +678,10 @@ async function resumePendingManualPlayback(checkpoint: RuntimeManualCheckpoint, 
 	}
 	currentPlaybackStyle = style;
 	if (!audioCtx) {
-		audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+		audioCtx = new (
+			window.AudioContext ||
+			(window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+		)();
 	}
 	if (audioCtx.state === 'suspended') {
 		await audioCtx.resume();
@@ -671,7 +757,10 @@ async function resumeManualCheckpoint(payload: unknown): Promise<{ success: bool
 		return { success: false };
 	}
 	if (!audioCtx) {
-		audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+		audioCtx = new (
+			window.AudioContext ||
+			(window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+		)();
 	}
 	if (audioCtx.state === 'suspended') {
 		await audioCtx.resume();
@@ -697,7 +786,14 @@ async function resumeManualCheckpoint(payload: unknown): Promise<{ success: bool
 	}
 
 	if (checkpoint.buffer && checkpoint.style && checkpoint.sourceOffsetSec < checkpoint.buffer.duration) {
-		playAudioBuffer(checkpoint.buffer, checkpoint.lang, checkpoint.style, session, checkpoint.unitIndex, checkpoint.sourceOffsetSec);
+		playAudioBuffer(
+			checkpoint.buffer,
+			checkpoint.lang,
+			checkpoint.style,
+			session,
+			checkpoint.unitIndex,
+			checkpoint.sourceOffsetSec,
+		);
 	} else if (checkpoint.style && checkpoint.speechUnits.length > 0) {
 		if (checkpoint.buffer) {
 			currentUnitIndex++;
@@ -724,13 +820,102 @@ function discardManualCheckpoint(payload: unknown): boolean {
 	return true;
 }
 
+function exportJobId(payload: unknown): string | null {
+	const jobId = (payload as { jobId?: unknown } | undefined)?.jobId;
+	return typeof jobId === 'string' && jobId.length > 0 ? jobId : null;
+}
+
+function prepareAudioExport(payload: unknown): { success: boolean; error?: string } {
+	const input = payload as { jobId?: unknown; playbackSessionId?: unknown; estimate?: unknown } | undefined;
+	if (
+		!input ||
+		typeof input.jobId !== 'string' ||
+		input.jobId.length === 0 ||
+		typeof input.playbackSessionId !== 'string' ||
+		input.playbackSessionId !== currentExtensionSessionId ||
+		!isAudioExportEstimate(input.estimate) ||
+		!currentPlaybackLanguage ||
+		!currentPlaybackStyle ||
+		!currentVoiceStyleId ||
+		speechUnits.length === 0
+	) {
+		return { success: false, error: 'Audio export session is unavailable' };
+	}
+	try {
+		audioExportEngine.prepare({
+			jobId: input.jobId,
+			playbackSessionId: input.playbackSessionId,
+			units: speechUnits,
+			language: currentPlaybackLanguage,
+			voiceStyleId: currentVoiceStyleId,
+			style: currentPlaybackStyle,
+			speed: currentSpeed,
+			estimate: input.estimate,
+		});
+		return { success: true };
+	} catch (error) {
+		return { success: false, error: (error as Error).message };
+	}
+}
+
 // Runtime Message Listener
 chrome.runtime.onMessage.addListener(
 	(message: unknown, _sender: chrome.runtime.MessageSender, sendResponse: (response?: unknown) => void) => {
+		if (!message || typeof message !== 'object') {
+			return undefined;
+		}
 		const msg = message as { action: string; payload?: unknown };
 		const { action, payload } = msg;
+		if (isAudioExportOffscreenAction(action) && !isInternalAudioExportOffscreenCommand(message)) {
+			return undefined;
+		}
 
 		switch (action) {
+			case 'PREPARE_AUDIO_EXPORT':
+				sendResponse(prepareAudioExport(payload));
+				break;
+
+			case 'START_AUDIO_EXPORT': {
+				const jobId = exportJobId(payload);
+				if (!jobId) {
+					sendResponse({ success: false, error: 'Missing audio export job ID' });
+					break;
+				}
+				try {
+					void audioExportEngine.start(jobId).catch(() => undefined);
+					sendResponse({ success: true });
+				} catch (error) {
+					sendResponse({ success: false, error: (error as Error).message });
+				}
+				break;
+			}
+
+			case 'CANCEL_AUDIO_EXPORT': {
+				const jobId = exportJobId(payload);
+				if (!jobId) {
+					sendResponse({ success: false, error: 'Missing audio export job ID' });
+					break;
+				}
+				void audioExportEngine.cancel(jobId).then(
+					() => sendResponse({ success: true }),
+					(error: Error) => sendResponse({ success: false, error: error.message }),
+				);
+				return true;
+			}
+
+			case 'DISCARD_AUDIO_EXPORT': {
+				const jobId = exportJobId(payload);
+				if (!jobId) {
+					sendResponse({ success: false, error: 'Missing audio export job ID' });
+					break;
+				}
+				void audioExportEngine.discard(jobId).then(
+					() => sendResponse({ success: true }),
+					(error: Error) => sendResponse({ success: false, error: error.message }),
+				);
+				return true;
+			}
+
 			case 'INIT_MODELS':
 				initModels().catch(() => {
 					// The failure is reported through MODEL_LOAD_FAILED.
@@ -819,6 +1004,7 @@ chrome.runtime.onMessage.addListener(
 							}
 
 							speechUnits = preparedUnits;
+							const audioExportEstimate = estimateSpeechUnits(speechUnits, article.lang, speed);
 							currentUnitIndex = 0;
 							isPaused = false;
 							playbackMetrics.recordTotalUnits(speechUnits.length);
@@ -861,7 +1047,7 @@ chrome.runtime.onMessage.addListener(
 							currentPlaybackStyle = style;
 							pendingManualPlayback = null;
 
-							sendResponse({ success: true });
+							sendResponse({ success: true, audioExportEstimate });
 
 							// Trigger first chunk playback
 							void playNextUnit(article.lang, style, session);
@@ -972,7 +1158,7 @@ chrome.runtime.onMessage.addListener(
 				speedVersion++;
 				synthesisCoordinator.clear();
 				reportProgress(playbackStatus);
-				sendResponse({ success: true });
+				sendResponse({ success: true, audioExportEstimate: estimateSpeechUnits(speechUnits, currentPlaybackLanguage ?? '', speed) });
 				break;
 			}
 

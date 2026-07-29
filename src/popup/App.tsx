@@ -1,16 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { PlaybackControlButton } from '../shared/components/PlaybackControlButton';
-import { PlaybackIcon } from '../shared/components/PlaybackIcon';
-import { SettingsCard } from '../shared/components/SettingsCard';
 import { BUY_ME_A_COFFEE_URL, DEFAULT_SPEED, PRIVACY_POLICY_URL, STORAGE_KEYS } from '../shared/constants';
 import { getLocalizedPlaybackError, t } from '../shared/i18n';
 import { requestPlaybackState, sendPlaybackCommand, subscribePlaybackState } from '../shared/playback_client';
 import { isSelectionButtonEnabled } from '../shared/selection_button';
 import type { PlaybackSessionSnapshot, PlaybackStatus, ThemeName } from '../shared/types';
 import { isWordHighlightEnabled } from '../shared/word_highlight';
+import { PlaybackIcon } from '../shared/components/PlaybackIcon';
+import { AudioExportButton } from '../shared/components/AudioExportButton';
+import { PlaybackControlButton } from '../shared/components/PlaybackControlButton';
+import { SettingsCard } from '../shared/components/SettingsCard';
 import { buildFeedbackUrl } from './feedback';
 import { openSidePanelForCurrentWindow, shouldFallbackToOpen } from './side_panel';
+import { getDisplayVersion } from '../shared/version';
+
+
 
 export default function App() {
 	// Playback state is owned by the background coordinator.
@@ -32,15 +36,17 @@ export default function App() {
 	const [loadingProgress, setLoadingProgress] = useState({ loaded: 0, total: 0, modelName: '' });
 	const [modelError, setModelError] = useState('');
 	const [commandError, setCommandError] = useState('');
-	const status: PlaybackStatus = session?.status ?? 'stopped';
+	const rawStatus: PlaybackStatus = session?.status ?? 'stopped';
+	const status: PlaybackStatus =
+		rawStatus === 'loading' && session !== null && session.currentParagraphIndex > 0 ? 'playing' : rawStatus;
 	const tabSource = session?.source.kind === 'tab' ? session.source : null;
 	const isSessionOnAnotherTab = tabSource !== null && tabSource.tabId !== currentTabId;
 	const sessionTitle = session?.contentScope === 'manual' ? t('pastedText') : (tabSource?.title ?? '');
 	const errorMsg = getLocalizedPlaybackError(commandError || session?.error || modelError);
 	const sessionHost = tabSource ? getHost(tabSource.url) : '';
-	const manifest = chrome.runtime.getManifest();
-	const displayVersion = manifest.version_name ?? manifest.version;
+	const displayVersion = getDisplayVersion();
 	const feedbackUrl = buildFeedbackUrl(displayVersion);
+
 
 	// Fetch initial states on mount
 	useEffect(() => {
@@ -157,6 +163,7 @@ export default function App() {
 		};
 	}, []);
 
+
 	// Handler: Start/Stop Reading Page
 	const handleStartCurrentPage = () => {
 		setCommandError('');
@@ -215,14 +222,17 @@ export default function App() {
 		setCommandError('');
 		if (isSidePanelOpen) {
 			if (sidePanelWindowId && typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
-				chrome.runtime.sendMessage({ action: 'CLOSE_SIDEPANEL', payload: { windowId: sidePanelWindowId } }, (response) => {
-					if (shouldFallbackToOpen(response)) {
-						void openSidePanelForCurrentWindow({
-							windowId: sidePanelWindowId,
-							open: (options) => chrome.sidePanel.open(options),
-						}).catch(() => setCommandError(t('openSidePanelFailed')));
-					}
-				});
+				chrome.runtime.sendMessage(
+					{ action: 'CLOSE_SIDEPANEL', payload: { windowId: sidePanelWindowId } },
+					(response) => {
+						if (shouldFallbackToOpen(response)) {
+							void openSidePanelForCurrentWindow({
+								windowId: sidePanelWindowId,
+								open: (options) => chrome.sidePanel.open(options),
+							}).catch(() => setCommandError(t('openSidePanelFailed')));
+						}
+					},
+				);
 			}
 		} else {
 			void openSidePanelForCurrentWindow({
@@ -296,12 +306,12 @@ export default function App() {
 					<h1 className="logo-text">
 						readit<span>.dev</span>
 					</h1>
-				</div>
-				<span className="extension-version">v{displayVersion}</span>
-				<a className="support-link header-support-link" href={BUY_ME_A_COFFEE_URL} target="_blank" rel="noreferrer">
-					<span aria-hidden="true">☕</span> {t('buyMeCoffee')}
-				</a>
-			</header>
+					</div>
+					<span className="extension-version">v{displayVersion}</span>
+					<a className="support-link header-support-link" href={BUY_ME_A_COFFEE_URL} target="_blank" rel="noreferrer">
+						<span aria-hidden="true">☕</span> {t('buyMeCoffee')}
+					</a>
+				</header>
 
 			{/* Main Playback Area */}
 			<main className="app-main">
@@ -356,7 +366,7 @@ export default function App() {
 						<div className="session-context">
 							<span>
 								{session.totalParagraphs > 0
-									? `${t('paragraphLabel')} ${session.currentParagraphIndex + 1}/${session.totalParagraphs} • ${Math.round(session.progressPercentage)}%`
+									? `${t('paragraphLabel')} ${session.currentParagraphIndex + 1}/${session.totalParagraphs} • ${Math.round(session.progressPercentage)}% `
 									: t('preparingContent')}
 							</span>
 							<span>
@@ -388,6 +398,7 @@ export default function App() {
 								onClick={handleThemedPrimaryPlayback}
 								aria-label={themedPrimaryLabel}
 								title={themedPrimaryLabel}
+								data-tooltip={themedPrimaryLabel}
 							>
 								<PlaybackIcon name={status === 'playing' ? 'pause' : 'resume'} />
 							</button>
@@ -397,10 +408,12 @@ export default function App() {
 									onClick={handleStopReading}
 									aria-label={t('stopReading')}
 									title={t('stopReading')}
+									data-tooltip={t('stopReading')}
 								>
 									<PlaybackIcon name="stop" />
 								</button>
 							)}
+							<AudioExportButton session={session} />
 						</div>
 					) : (
 						<div className="playback-controls">
@@ -411,6 +424,7 @@ export default function App() {
 									onClick={handlePlayPause}
 									aria-label={status === 'playing' ? t('pauseState') : t('resumeStatus')}
 									title={status === 'playing' ? t('pauseState') : t('resumeStatus')}
+									data-tooltip={status === 'playing' ? t('pauseState') : t('resumeStatus')}
 								>
 									<PlaybackIcon name={status === 'playing' ? 'pause' : 'resume'} />
 								</button>
@@ -420,6 +434,7 @@ export default function App() {
 								onClick={handleReadPage}
 								buttonRef={status === 'playing' || status === 'paused' ? undefined : primaryButtonRef}
 							/>
+							<AudioExportButton session={session} />
 						</div>
 					)}
 
@@ -439,7 +454,7 @@ export default function App() {
 						</span>
 					</div>
 				</div>
-			</main>
+				</main>
 
 			<SettingsCard
 				collapsible={false}
@@ -456,10 +471,10 @@ export default function App() {
 				onThemeChange={handleThemeChange}
 			/>
 
-			{/* Footer */}
-			<footer className="app-footer">
-				<div className="footer-links">
-					<a className="support-link feedback-link" href={feedbackUrl} target="_blank" rel="noreferrer">
+				{/* Footer */}
+				<footer className="app-footer">
+					<div className="footer-links">
+						<a className="support-link feedback-link" href={feedbackUrl} target="_blank" rel="noreferrer">
 						{t('feedback')}
 					</a>
 					<a className="privacy-link" href={PRIVACY_POLICY_URL} target="_blank" rel="noreferrer">

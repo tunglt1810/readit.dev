@@ -1,5 +1,6 @@
 import { isPanelInstanceId } from '../shared/manual_playback.ts';
-import type { PlaybackProgress, PlaybackSessionSnapshot, PlaybackStatus } from '../shared/types';
+import { isAudioExportEstimate } from '../shared/audio_export.ts';
+import type { AudioExportEstimate, PlaybackProgress, PlaybackSessionSnapshot, PlaybackStatus } from '../shared/types';
 
 type PlaybackSessionInputBase = {
 	sessionId: string;
@@ -40,6 +41,7 @@ const MANUAL_PLAYBACK_SESSION_KEYS = new Set([
 	'progressPercentage',
 	'voiceStyleId',
 	'speed',
+	'audioExportEstimate',
 	'error',
 	'updatedAt',
 ]);
@@ -107,6 +109,18 @@ export function applyPlaybackProgress(
 	return { ...session, ...progress, updatedAt: now };
 }
 
+export function applyAudioExportEstimate(
+	session: PlaybackSessionSnapshot | null,
+	sessionId: string,
+	estimate: AudioExportEstimate,
+	now: number,
+): PlaybackSessionSnapshot | null {
+	if (session === null || session.sessionId !== sessionId) {
+		return null;
+	}
+	return { ...session, audioExportEstimate: estimate, updatedAt: now };
+}
+
 function isPlaybackStatus(value: unknown): value is PlaybackStatus {
 	return value === 'stopped' || value === 'loading' || value === 'playing' || value === 'paused' || value === 'error';
 }
@@ -130,6 +144,7 @@ export function isPlaybackSessionSnapshot(value: unknown): value is PlaybackSess
 		isFiniteNumber(session.progressPercentage) &&
 		typeof session.voiceStyleId === 'string' &&
 		isFiniteNumber(session.speed) &&
+		(session.audioExportEstimate === undefined || isAudioExportEstimate(session.audioExportEstimate)) &&
 		(session.error === undefined || typeof session.error === 'string') &&
 		isFiniteNumber(session.updatedAt);
 	if (!baseIsValid || !source) {
@@ -146,9 +161,7 @@ export function isPlaybackSessionSnapshot(value: unknown): value is PlaybackSess
 	}
 	const validTabSurface =
 		session.contentScope === 'article'
-			? session.readableSurface === 'website-dom' ||
-				session.readableSurface === 'document-reader' ||
-				session.readableSurface === 'none'
+			? session.readableSurface === 'website-dom' || session.readableSurface === 'document-reader' || session.readableSurface === 'none'
 			: session.contentScope === 'selection' && (session.readableSurface === 'website-dom' || session.readableSurface === 'none');
 	return (
 		source.kind === 'tab' &&
