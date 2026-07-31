@@ -114,12 +114,13 @@ export function AudioExportButton({ session }: { session: PlaybackSessionSnapsho
 		return () => clearTimeout(timeout);
 	}, [job]);
 
-	const hasExportableSession = session !== null && session.audioExportEstimate !== undefined;
+	const hasExportableSession = session?.audioExportEstimate !== undefined;
 	const jobState = job?.state === 'completed' && dismissedCompletedJobId === job.jobId ? 'ready' : (job?.state ?? 'ready');
 	const activeJob =
 		job &&
 		(job.state === 'preparing' || job.state === 'exporting' || job.state === 'waiting-for-playback' || job.state === 'cancelling');
-	const disabled = starting || jobState === 'cancelling' || (!activeJob && !hasExportableSession);
+	const canRetry = jobState === 'failed' || jobState === 'interrupted';
+	const disabled = starting || jobState === 'cancelling' || (!activeJob && !hasExportableSession && !canRetry);
 	const label =
 		jobState === 'exporting'
 			? `${t('exportingMp3')} — ${Math.round(job?.progressPercentage ?? 0)}%`

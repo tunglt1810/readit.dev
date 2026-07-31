@@ -15,7 +15,7 @@ in `backend/`. Product and deployment guidance is under `_docs/`.
 Run `pnpm install` from the repository root before development.
 
 - `pnpm dev` starts the extension development build and writes output to
-  `dist/`; load that directory with Chrome's “Load unpacked” flow.
+  `dist/chrome/`; load that directory with Chrome's “Load unpacked” flow.
 - `pnpm build` runs strict TypeScript checking and creates the production
   extension bundle.
 - `pnpm test:e2e` runs the Playwright suite against bundled Chromium. Tests

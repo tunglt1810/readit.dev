@@ -267,3 +267,10 @@ test('accounts for the paragraph separator when computing word map offsets acros
 	assert.ok(abbrevEntry, 'expected a word map entry for the abbreviation in the second paragraph');
 	assert.equal(result.text.slice(abbrevEntry.spokenStart, abbrevEntry.spokenEnd), 'đại học');
 });
+
+test('normalizes rate units and numeric ranges properly', async () => {
+	const dependencies = createTestNormalizationDependencies();
+	const source = 'Tốc độ 4.800 xe/ngày và 2,35–2,375 triệu xe/năm.';
+	const result = await normalizeVietnameseText(source, dependencies);
+	assert.equal(result.text, 'Tốc độ bốn nghìn tám trăm xe trên ngày và hai phẩy ba năm đến hai phẩy ba bảy năm triệu xe trên năm.');
+});

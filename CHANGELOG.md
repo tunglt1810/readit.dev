@@ -6,9 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## Added
+## [1.1.1] - 2026-08-01
+
+### Added
 - full document reader - [@tunglt1810]
 - export audio mp3 - [@tunglt1810]
+- update xenforo extract and highlight - [@tunglt1810]
+- support firefox add-on - [@tunglt1810]
+
+### Fixed
+- UI reader - [@tunglt1810]
 
 ## [1.1.0] - 2026-07-28
 

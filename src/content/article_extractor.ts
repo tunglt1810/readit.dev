@@ -1,6 +1,6 @@
 import { Readability } from '@mozilla/readability';
 
-import { Article } from '../shared/types';
+import type { Article } from '../shared/types.ts';
 
 const STRUCTURAL_NOISE_SELECTOR = [
 	'script',
@@ -28,10 +28,30 @@ const STRUCTURAL_NOISE_SELECTOR = [
 ].join(',');
 
 const NOISE_IDENTITY_PATTERN =
-	/(?:advert|banner|comment|related|recommend|lienquan|xemnhieu|social|share|sidebar|navigation|menu|toolbar|control|player|flip)/i;
+	/(?:advert|banner|comment|related|recommend|lienquan|xemnhieu|social|share|sidebar|navigation|menu(?!id)|toolbar|control|player|flip|promo)/i;
 const ARTICLE_END_PATTERN = /article[-_]?end/i;
-const BLOCK_SELECTOR = 'h1, h2, h3, h4, h5, h6, p, blockquote, pre, li, figcaption';
+const LONG_SPAN_MIN_LENGTH = 20;
 
+const BLOCK_ELEMENT_TAGS = new Set(['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'P', 'BLOCKQUOTE', 'PRE', 'LI', 'FIGCAPTION']);
+
+// Inline-only elements that may act as paragraph containers on non-standard CMSes (e.g. XenForo).
+// When not nested inside a block element, they are treated as block text if their content is long enough.
+const INLINE_ELEMENT_TAGS = new Set(['SPAN', 'B', 'STRONG', 'EM', 'I', 'U', 'CITE', 'ABBR']);
+
+/**
+ * Returns true if `el` has a block-level element ancestor between itself and `root`.
+ * Used to avoid promoting spans that are already inside a captured block (e.g. <p><span>...).
+ */
+export function isWithinBlockElement(el: Element, root: Element): boolean {
+	let ancestor: Element | null = el.parentElement;
+	while (ancestor && ancestor !== root) {
+		if (BLOCK_ELEMENT_TAGS.has(ancestor.tagName)) {
+			return true;
+		}
+		ancestor = ancestor.parentElement;
+	}
+	return false;
+}
 function getElementIdentity(element: Element): string {
 	const className = typeof element.className === 'string' ? element.className : '';
 	return `${element.id} ${className} ${element.getAttribute('role') || ''}`;
@@ -89,7 +109,7 @@ function removeStructuralNoise(root: Element): void {
 	}
 }
 
-function cleanContentTree(root: Element): void {
+export function cleanContentTree(root: Element): void {
 	trimAtArticleEnd(root);
 	removeStructuralNoise(root);
 
@@ -112,8 +132,11 @@ function normaliseText(text: string): string {
 // pronunciation and word-highlight DOM lookup. Walking text nodes and inserting a boundary space
 // wherever one doesn't already exist keeps normal prose (which already has real whitespace at
 // every element boundary) unchanged while fixing this fusion.
+const SHOW_ELEMENT = typeof NodeFilter !== 'undefined' ? NodeFilter.SHOW_ELEMENT : 1;
+const SHOW_TEXT = typeof NodeFilter !== 'undefined' ? NodeFilter.SHOW_TEXT : 4;
+
 function extractBlockText(element: Element): string {
-	const walker = (element.ownerDocument ?? document).createTreeWalker(element, NodeFilter.SHOW_TEXT);
+	const walker = (element.ownerDocument ?? document).createTreeWalker(element, SHOW_TEXT);
 	let result = '';
 	let node = walker.nextNode();
 	while (node) {
@@ -129,15 +152,139 @@ function extractBlockText(element: Element): string {
 	return result;
 }
 
-function getTextBlocks(root: Element): string[] {
-	const seen = new Set<string>();
-	const blocks: string[] = [];
+const TEXT_NODE_TYPE = typeof Node !== 'undefined' ? Node.TEXT_NODE : 3;
+const ELEMENT_NODE_TYPE = typeof Node !== 'undefined' ? Node.ELEMENT_NODE : 1;
 
-	for (const element of Array.from(root.querySelectorAll(BLOCK_SELECTOR))) {
-		const text = normaliseText(extractBlockText(element));
+// When an element uses <br> as line separators (common in XenForo span.xf-body-paragraph
+// bullet lists), split it into individual text blocks so each line gets its own TTS pause.
+function extractBrBlocks(element: Element, seen: Set<string>, blocks: string[]): void {
+	const segments: string[] = [];
+	let current = '';
+	for (const child of element.childNodes) {
+		if (child.nodeType === TEXT_NODE_TYPE) {
+			current += child.textContent;
+		} else if ((child as Element).tagName === 'BR') {
+			segments.push(current);
+			current = '';
+		} else {
+			// Inline element (b, a, em…) — keep its text in the current segment
+			current += (child as Element).textContent || '';
+		}
+	}
+	segments.push(current);
+
+	for (const seg of segments) {
+		const text = normaliseText(seg);
 		if (text && !seen.has(text)) {
 			seen.add(text);
 			blocks.push(text);
+		}
+	}
+}
+
+// Skip an element's entire subtree in a TreeWalker. Moving directly to nextSibling is not enough
+// when an element is the last child of its parent (nextSibling is null): calling nextNode()
+// would erroneously dive into the element's first child instead of skipping it.
+function skipSubtree(walker: TreeWalker): Element | null {
+	let next = walker.nextSibling() as Element | null;
+	while (!next) {
+		const parent = walker.parentNode();
+		if (!parent) {
+			return null;
+		}
+		next = walker.nextSibling() as Element | null;
+	}
+	return next;
+}
+
+export function getTextBlocks(root: Element): string[] {
+	const seen = new Set<string>();
+	const blocks: string[] = [];
+	const ownerDoc = root.ownerDocument ?? document;
+
+	// Single-pass TreeWalker maintains document order and enables subtree skipping
+	// to avoid double-counting text that appears in both a parent and its descendants.
+	// Promotes long orphan inlines (e.g. XenForo's span.xf-body-paragraph) as block text.
+	// For container elements we walk through, collects any direct text-node children
+	// (prose fragments in div.xfBody etc.) splitting on newlines to preserve paragraph breaks.
+	const walker = ownerDoc.createTreeWalker(root, SHOW_ELEMENT);
+	let node = walker.nextNode() as Element | null;
+
+	while (node) {
+		const isStandardBlock = BLOCK_ELEMENT_TAGS.has(node.tagName);
+		const isLongOrphanInline =
+			INLINE_ELEMENT_TAGS.has(node.tagName) &&
+			!isWithinBlockElement(node, root) &&
+			normaliseText(node.textContent || '').length >= LONG_SPAN_MIN_LENGTH;
+
+		if (isStandardBlock || isLongOrphanInline) {
+			if (node.querySelector('br')) {
+				extractBrBlocks(node, seen, blocks);
+			} else {
+				const text = normaliseText(extractBlockText(node));
+				if (text && !seen.has(text)) {
+					seen.add(text);
+					blocks.push(text);
+				}
+			}
+			node = skipSubtree(walker);
+		} else {
+			// For container elements we walk into, collect runs of adjacent direct text nodes
+			// and short inline element children, merging them into single coherent blocks.
+			// Break runs at <br> or block-level element boundaries.
+			// Short inline children (e.g. <b>18 năm 5 tháng</b>) that are below threshold
+			// individually are included in the surrounding text run so they are not lost.
+			let run = '';
+			const flushRun = (): void => {
+				const text = normaliseText(run);
+				if (text.length >= LONG_SPAN_MIN_LENGTH && !seen.has(text)) {
+					seen.add(text);
+					blocks.push(text);
+				}
+				run = '';
+			};
+			for (const child of node.childNodes) {
+				const childEl = child as Element;
+				if (child.nodeType === TEXT_NODE_TYPE) {
+					const lines = (child.textContent || '').split('\n');
+					for (let i = 0; i < lines.length; i++) {
+						if (i > 0) {
+							flushRun();
+						}
+						const seg = lines[i];
+						if (seg.trim()) {
+							if (run && !/\s$/.test(run)) {
+								run += ' ';
+							}
+							run += seg;
+						}
+					}
+				} else if (child.nodeType === ELEMENT_NODE_TYPE) {
+					if (childEl.tagName === 'BR') {
+						flushRun();
+					} else if (INLINE_ELEMENT_TAGS.has(childEl.tagName)) {
+						if (normaliseText(childEl.textContent || '').length >= LONG_SPAN_MIN_LENGTH) {
+							// Long inline: will be captured by isLongOrphanInline when walker visits it — flush run
+							flushRun();
+						} else {
+							// Short inline element (e.g. <b>, <a>): merge its text into current run
+							const t = childEl.textContent || '';
+							if (t.trim()) {
+								if (run && !/\s$/.test(run)) {
+									run += ' ';
+								}
+								run += t;
+							}
+						}
+					} else {
+						// Any container or block element (DIV, SECTION, P, UL, etc.): flush run
+						// and do NOT consume its text content; TreeWalker will visit its children
+						flushRun();
+					}
+				}
+			}
+			flushRun();
+			node = walker.nextNode() as Element | null;
 		}
 	}
 

@@ -78,7 +78,7 @@ After the build completes:
 
 1. Open `chrome://extensions/` in Chrome.
 2. Enable **Developer mode**.
-3. Choose **Load unpacked** and select the repository's `dist/` directory.
+3. Choose **Load unpacked** and select the repository's `dist/chrome/` directory.
 
 ### Backend
 

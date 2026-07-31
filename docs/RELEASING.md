@@ -29,7 +29,7 @@ is future-Pro source and must not be included in the extension build or ZIP.
 
 ## Free Side Panel release checklist
 
-- [ ] Verify `dist/src/sidepanel/sidepanel.html` exists in the built extension
+- [ ] Verify `dist/chrome/src/sidepanel/sidepanel.html` exists in the built extension
   and release archive, and confirm the Chrome Web Store privacy disclosure
   states that user-pasted text stays local and is not persisted.
 - [ ] In both English and Vietnamese, verify the locked pasted-text reader

@@ -417,7 +417,7 @@ async function initializeReadableSurface(session: number): Promise<void> {
 		currentDocumentReader = { ...currentDocumentReader, words };
 	}
 	surfaceReady = false;
-	if (!currentExtensionSessionId || currentReadableSurface === 'none' || words.length === 0) {
+	if (!currentExtensionSessionId || currentReadableSurface === 'none' || currentReadableSurface === 'document-reader' || words.length === 0) {
 		return;
 	}
 	try {

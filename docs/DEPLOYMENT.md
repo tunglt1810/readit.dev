@@ -23,7 +23,7 @@ Run this command from the repository root:
 pnpm build
 ```
 
-The command creates `dist/` at the repository root. It contains the compiled extension resources: `manifest.json`, popup HTML/JS/CSS, the background service worker, the offscreen document, the WASM engine, and static assets.
+The command creates `dist/chrome/` at the repository root. It contains the compiled extension resources: `manifest.json`, popup HTML/JS/CSS, the background service worker, the offscreen document, the WASM engine, and static assets.
 
 ### Step 1.2: Load the extension for testing
 
@@ -31,12 +31,12 @@ The command creates `dist/` at the repository root. It contains the compiled ext
 2. Navigate to `chrome://extensions/`.
 3. Enable **Developer mode**.
 4. Click **Load unpacked**.
-5. Select the `dist/` directory created in Step 1.1.
+5. Select the `dist/chrome/` directory created in Step 1.1.
 6. The **readit.dev** extension will appear in the browser's extension list.
 
 ### Step 1.3: Publish to the Chrome Web Store
 
-1. Zip the contents *inside* `dist/` into a file such as `readit-extension.zip`.
+1. Zip the contents *inside* `dist/chrome/` into a file such as `readit-extension.zip`.
 2. Open the [Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole/).
 3. Register a Developer account. New accounts may require Google's one-time registration fee.
 4. Click **Create new item** and upload the ZIP file.

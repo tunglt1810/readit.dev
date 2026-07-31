@@ -72,9 +72,9 @@ jobs:
       - name: Validate third-party notices
         run: |
           set -euo pipefail
-          test -s dist/THIRD_PARTY_NOTICES.txt
-          grep -Fq 'OpenRAIL-M License' dist/THIRD_PARTY_NOTICES.txt
-          grep -Fq 'https://huggingface.co/Supertone/supertonic-3/blob/main/LICENSE' dist/THIRD_PARTY_NOTICES.txt
+          test -s dist/chrome/THIRD_PARTY_NOTICES.txt
+          grep -Fq 'OpenRAIL-M License' dist/chrome/THIRD_PARTY_NOTICES.txt
+          grep -Fq 'https://huggingface.co/Supertone/supertonic-3/blob/main/LICENSE' dist/chrome/THIRD_PARTY_NOTICES.txt
 
       - name: Run unit tests
         run: pnpm test:unit
@@ -91,7 +91,7 @@ jobs:
         run: |
           set -euo pipefail
           archive="readit.dev-${RELEASE_VERSION}.zip"
-          (cd dist && zip -qr "../$archive" . -x '*.DS_Store')
+          (cd dist/chrome && zip -qr "../../$archive" . -x '*.DS_Store')
           pnpm validate:release-zip "$archive"
           echo "archive=$archive" >> "$GITHUB_ENV"
 

@@ -212,7 +212,7 @@ export const test = base.extend<{
 	browserLocale: ['vi-VN', { option: true }],
 	freshExtensionWorker: [true, { option: true }],
 	context: async ({ browserLocale, headless, freshExtensionWorker }, use) => {
-		const pathToExtension = path.join(process.cwd(), 'dist');
+		const pathToExtension = path.join(process.cwd(), 'dist', 'chrome');
 		const tempDir = path.join(process.cwd(), '.tmp');
 		fs.mkdirSync(tempDir, { recursive: true });
 		const userDataDir = fs.mkdtempSync(path.join(tempDir, 'playwright-chrome-profile-'));
@@ -236,7 +236,7 @@ export const test = base.extend<{
 			}
 		}
 
-		// Khởi chạy Chromium với extension được unpack từ thư mục dist/
+		// Khởi chạy Chromium với extension được unpack từ thư mục dist/chrome/
 		const context = await chromium.launchPersistentContext(userDataDir, {
 			channel: 'chromium',
 			headless,

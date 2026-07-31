@@ -39,6 +39,14 @@ function resolveWalkerRoot(startRange: Range | null): Node {
 	if (startRange && !articleRoot.contains(startRange.startContainer)) {
 		return document.body;
 	}
+	const h1 = document.querySelector('h1');
+	if (h1 && !articleRoot.contains(h1)) {
+		let common: Node | null = articleRoot.parentElement;
+		while (common && common !== document.body && !common.contains(h1)) {
+			common = common.parentElement;
+		}
+		return common || document.body;
+	}
 	return articleRoot;
 }
 
@@ -46,7 +54,7 @@ function resolveWalkerRoot(startRange: Range | null): Node {
 // (Unicode form, a word split across inline markup, ...) would silently disable highlighting for
 // the rest of the reading session. Bound the work for each map entry, then restore the cursor when
 // an entry cannot be found so later words can still be mapped.
-const MAX_NODES_SCANNED_PER_WORD = 40;
+const MAX_NODES_SCANNED_PER_WORD = 15;
 
 // The spoken word (from the TTS pipeline) is always NFC-normalized (see vietnamese/tokenizer.ts
 // and latin/speech_units.ts), but the live page's own HTML text is not guaranteed to be NFC — so
@@ -284,48 +292,50 @@ export function installWordHighlight(): void {
 		true,
 	);
 
-	chrome.runtime.onMessage.addListener((message: unknown, _sender: chrome.runtime.MessageSender, sendResponse: (response?: unknown) => void) => {
-		const msg = message as { action?: string; sessionId?: string; selectionText?: string };
-		if (
-			msg.action === 'WORD_HIGHLIGHT_SET_SELECTION_SCOPE' &&
-			typeof msg.sessionId === 'string' &&
-			typeof msg.selectionText === 'string'
-		) {
-			if (currentSessionId && currentSessionId !== msg.sessionId) {
-				disposeCurrentHighlightSession();
-			}
-			currentSessionId = msg.sessionId;
-			wordRanges = null;
-			currentWordIndex = -1;
-			activatePendingSelectionScope(msg.sessionId, msg.selectionText);
-			clearHighlight();
-		} else if (isWordHighlightInitMessage(message)) {
-			if (currentSessionId !== message.sessionId) {
-				disposeCurrentHighlightSession();
-				currentSessionId = message.sessionId;
-			} else {
+	chrome.runtime.onMessage.addListener(
+		(message: unknown, _sender: chrome.runtime.MessageSender, sendResponse: (response?: unknown) => void) => {
+			const msg = message as { action?: string; sessionId?: string; selectionText?: string };
+			if (
+				msg.action === 'WORD_HIGHLIGHT_SET_SELECTION_SCOPE' &&
+				typeof msg.sessionId === 'string' &&
+				typeof msg.selectionText === 'string'
+			) {
+				if (currentSessionId && currentSessionId !== msg.sessionId) {
+					disposeCurrentHighlightSession();
+				}
+				currentSessionId = msg.sessionId;
 				wordRanges = null;
 				currentWordIndex = -1;
+				activatePendingSelectionScope(msg.sessionId, msg.selectionText);
 				clearHighlight();
+			} else if (isWordHighlightInitMessage(message)) {
+				if (currentSessionId !== message.sessionId) {
+					disposeCurrentHighlightSession();
+					currentSessionId = message.sessionId;
+				} else {
+					wordRanges = null;
+					currentWordIndex = -1;
+					clearHighlight();
+				}
+				const selectionRange = message.contentScope === 'selection' ? getActiveSelectionRange(message.sessionId) : null;
+				wordRanges =
+					message.contentScope === 'selection' && !selectionRange
+						? new Map()
+						: precomputeWordRanges(message.words, selectionRange ?? null);
+				sendResponse({ success: true });
+			} else if (isWordHighlightUpdateMessage(message)) {
+				if (message.sessionId !== currentSessionId || !wordRanges) {
+					return;
+				}
+				handleHighlightUpdate(message.wordIndex);
+			} else if (msg.action === 'WORD_HIGHLIGHT_CLEAR' && typeof msg.sessionId === 'string') {
+				clearActiveSelectionScope(msg.sessionId);
+				if (msg.sessionId === currentSessionId) {
+					disposeCurrentHighlightSession();
+				}
 			}
-			const selectionRange = message.contentScope === 'selection' ? getActiveSelectionRange(message.sessionId) : null;
-			wordRanges =
-				message.contentScope === 'selection' && !selectionRange
-					? new Map()
-					: precomputeWordRanges(message.words, selectionRange ?? null);
-			sendResponse({ success: true });
-		} else if (isWordHighlightUpdateMessage(message)) {
-			if (message.sessionId !== currentSessionId || !wordRanges) {
-				return;
-			}
-			handleHighlightUpdate(message.wordIndex);
-		} else if (msg.action === 'WORD_HIGHLIGHT_CLEAR' && typeof msg.sessionId === 'string') {
-			clearActiveSelectionScope(msg.sessionId);
-			if (msg.sessionId === currentSessionId) {
-				disposeCurrentHighlightSession();
-			}
-		}
-	});
+		},
+	);
 
 	document.addEventListener('visibilitychange', updateVisualUpdatePermission);
 

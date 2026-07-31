@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const vietnameseBenchmark = process.env.READIT_VI_BENCHMARK === '1';
+const targetBrowser = process.env.TARGET_BROWSER ?? 'chrome';
 const appVersion = JSON.parse(fs.readFileSync(new URL('package.json', import.meta.url), 'utf-8')).version as string;
 const buildVersion = process.env.BUILD_NUMBER ? `${appVersion}-dev.${process.env.BUILD_NUMBER}` : appVersion;
 
@@ -77,7 +78,7 @@ export default defineConfig({
 	},
 	output: {
 		distPath: {
-			root: vietnameseBenchmark ? '.tmp/vietnamese-performance/extension' : 'dist',
+			root: vietnameseBenchmark ? '.tmp/vietnamese-performance/extension' : `dist/${targetBrowser}`,
 			js: '',
 		},
 		assetPrefix: '/',

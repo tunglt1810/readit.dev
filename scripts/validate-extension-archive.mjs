@@ -41,7 +41,7 @@ for (const path of ['manifest.json', 'THIRD_PARTY_NOTICES.txt']) {
 	if (!files.has(path)) {
 		throw new Error(`Release archive is missing ${path}`);
 	}
-	if (!readArchivedFile(path).equals(readFileSync(`dist/${path}`))) {
+	if (!readArchivedFile(path).equals(readFileSync(`dist/chrome/${path}`))) {
 		throw new Error(`Archived ${path} differs from the production build`);
 	}
 }
@@ -61,7 +61,7 @@ if (!runtimeFiles.some((path) => /^static\/assets\/ort\.webgpu\.min\.[a-f0-9]+\.
 	throw new Error('Release archive is missing the verified bundled ONNX Runtime WebGPU frontend');
 }
 for (const path of runtimeFiles) {
-	if (!readArchivedFile(path).equals(readFileSync(`dist/${path}`))) {
+	if (!readArchivedFile(path).equals(readFileSync(`dist/chrome/${path}`))) {
 		throw new Error(`Archived ONNX Runtime file differs from the production build: ${path}`);
 	}
 }

@@ -86,7 +86,13 @@ function deterministicOverlay(tokens: readonly SourceToken[], labels: Checkpoint
 				labels[index] = 'B-NDAY';
 			} else if (previousPhrase === 'tỷ số') {
 				labels[index] = 'B-NSCR';
-			} else if (previous === 'khoảng' || previous === 'từ') {
+			} else if (
+				previous === 'khoảng' ||
+				previous === 'từ' ||
+				previous === 'vượt' ||
+				previous === 'đạt' ||
+				source.includes('–') // en-dash is almost always a range, not a score
+			) {
 				labels[index] = 'B-NRNG';
 			}
 		}
@@ -227,6 +233,7 @@ async function expandParagraph(
 export async function normalizeVietnameseText(text: string, dependencies: NormalizationDependencies): Promise<NormalizationResult> {
 	const startedAt = dependencies.now();
 	const document = tokenizeVietnameseText(text);
+
 	let tokenCount = 0;
 	let crfMs = 0;
 	let expansionMs = 0;
