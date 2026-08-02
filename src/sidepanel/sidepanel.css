@@ -101,6 +101,7 @@ input {
 
 .current-page-card,
 .manual-text-card,
+.queue-card,
 .side-panel-player,
 .alert {
 	margin-inline: var(--space-4);
@@ -334,6 +335,7 @@ input:focus-visible {
 
 .side-panel[data-theme="winamp"] .current-page-card,
 .side-panel[data-theme="winamp"] .manual-text-card,
+.side-panel[data-theme="winamp"] .queue-card,
 .side-panel[data-theme="winamp"] .alert,
 .side-panel[data-theme="winamp"] button,
 .side-panel[data-theme="winamp"] textarea,
@@ -389,6 +391,7 @@ input:focus-visible {
 
 .side-panel[data-theme="wmp12"] .current-page-card,
 .side-panel[data-theme="wmp12"] .manual-text-card,
+.side-panel[data-theme="wmp12"] .queue-card,
 .side-panel[data-theme="wmp12"] .settings-card {
 	border-color: #43525b;
 	background: rgba(16, 21, 23, 0.85);
@@ -415,3 +418,162 @@ input:focus-visible {
 		grid-template-columns: 1fr;
 	}
 }
+
+/* Queue Card */
+.queue-card {
+	background: var(--card-bg, var(--bg-glass));
+	border-radius: var(--radius-lg, 14px);
+	padding: var(--space-md, var(--space-4));
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-sm, var(--space-3));
+}
+
+.queue-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+}
+
+.queue-card h2 {
+	font-size: var(--font-sm, 0.95rem);
+	font-weight: 600;
+	color: var(--text-secondary, var(--color-text-secondary));
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	margin: 0;
+}
+
+.queue-add-controls {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-xs, var(--space-2));
+}
+
+.queue-add-tab-btn {
+	width: 100%;
+}
+
+.queue-url-row {
+	display: flex;
+	gap: var(--space-xs, var(--space-2));
+}
+
+.queue-url-input {
+	flex: 1;
+	padding: var(--space-xs, var(--space-2)) var(--space-sm, var(--space-3));
+	border: 1px solid var(--border-color, var(--border-glass));
+	border-radius: var(--radius-sm, 8px);
+	background: var(--input-bg, color-mix(in srgb, var(--bg-app) 82%, white 3%));
+	color: var(--text-primary, var(--color-text-primary));
+	font-size: var(--font-sm, 0.85rem);
+}
+
+.queue-error {
+	font-size: var(--font-xs, 0.75rem);
+	color: var(--color-error, var(--color-danger));
+	margin: 0;
+}
+
+.queue-list {
+	list-style: none;
+	padding: 0;
+	margin: 0;
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-xs, var(--space-2));
+}
+
+.queue-item {
+	display: flex;
+	align-items: center;
+	gap: var(--space-sm, var(--space-3));
+	padding: var(--space-xs, var(--space-2)) var(--space-sm, var(--space-3));
+	border-radius: var(--radius-sm, 8px);
+	border: 1px solid var(--border-color, var(--border-glass));
+	background: var(--surface-bg, rgba(255, 255, 255, 0.03));
+}
+
+.queue-item[data-status='playing'] {
+	border-color: var(--color-primary, #099fb5);
+	background: var(--surface-active, rgba(9, 159, 181, 0.15));
+}
+
+.queue-item[data-status='done'] {
+	opacity: 0.6;
+}
+
+.queue-item-icon {
+	font-size: var(--font-sm, 0.85rem);
+	width: 1rem;
+	text-align: center;
+	flex-shrink: 0;
+}
+
+.queue-item-meta {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.queue-item-title {
+	font-size: var(--font-sm, 0.85rem);
+	font-weight: 500;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.queue-item-host {
+	font-size: var(--font-xs, 0.75rem);
+	color: var(--text-secondary, var(--color-text-secondary));
+}
+
+.queue-item-actions {
+	flex-shrink: 0;
+}
+
+.queue-action-btn {
+	background: none;
+	border: 1px solid var(--border-color, var(--border-glass));
+	border-radius: var(--radius-sm, 6px);
+	padding: 2px var(--space-xs, 6px);
+	font-size: var(--font-xs, 0.75rem);
+	cursor: pointer;
+	color: var(--text-secondary, var(--color-text-secondary));
+}
+
+.queue-action-btn:hover {
+	border-color: var(--color-primary, #099fb5);
+	color: var(--color-primary, #099fb5);
+}
+
+.queue-remove-btn:hover {
+	border-color: var(--color-error, var(--color-danger));
+	color: var(--color-error, var(--color-danger));
+}
+
+.queue-footer {
+	margin-top: var(--space-xs, var(--space-2));
+}
+
+.queue-footer-actions {
+	display: flex;
+	gap: var(--space-xs, 4px);
+	align-items: center;
+}
+
+.queue-play-btn {
+	flex: 1;
+	padding: var(--space-xs, 4px) var(--space-sm, 8px);
+	font-size: var(--font-sm, 0.875rem);
+	min-height: 32px;
+}
+
+.queue-stats {
+	font-size: var(--font-xs, 0.75rem);
+	color: var(--text-secondary, var(--color-text-secondary));
+}
+

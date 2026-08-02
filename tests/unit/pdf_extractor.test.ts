@@ -126,6 +126,40 @@ test('uses tab title and filename fallbacks, recognizes PDF signatures, and igno
 	);
 });
 
+test('derives valid filename title when source.title and metadata title are empty', async () => {
+	const fileSource = { url: 'file:///Users/bez/Downloads/Claude%20Opus%20System%20Card.pdf', title: '' };
+	const noTitleDeps = dependencies({
+		loadDocument: async () => ({
+			numPages: 1,
+			getMetadata: async () => ({ info: {} }),
+			getPage: async () => ({ getTextContent: async () => ({ items: [{ str: 'Sample PDF content' }] }) }),
+			destroy: async () => undefined,
+		}),
+	});
+
+	const result = await extractPdfArticle(fileSource, noTitleDeps);
+	assert.ok(result && result.success);
+	assert.equal(result.article.title, 'Claude Opus System Card.pdf');
+});
+
+test('omits credentials option when fetching file:// URLs to avoid fetch spec TypeError', async () => {
+	let capturedInit: RequestInit | undefined;
+	const fileSource = { url: 'file:///Users/bez/Downloads/report.pdf', title: 'report.pdf' };
+	const fileDeps = dependencies({
+		fetchPdf: async (_url, init) => {
+			capturedInit = init;
+			return {
+				ok: true,
+				headers: new Headers({ 'content-type': 'application/pdf' }),
+				arrayBuffer: async () => pdfBytes,
+			};
+		},
+	});
+
+	await extractPdfArticle(fileSource, fileDeps);
+	assert.equal(capturedInit?.credentials, undefined);
+});
+
 test('returns the local-file permission error before fetching', async () => {
 	let fetches = 0;
 	const result = await extractPdfArticle(

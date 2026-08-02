@@ -16,6 +16,7 @@ type CreatePlaybackSessionInput = PlaybackSessionInputBase &
 				contentScope: 'article';
 				source: { kind: 'tab'; tabId: number; title: string; url: string };
 				readableSurface: 'website-dom' | 'document-reader' | 'none';
+				queueItemId?: string;
 		  }
 		| {
 				contentScope: 'selection';
@@ -62,7 +63,13 @@ export function createPlaybackSession(input: CreatePlaybackSessionInput): Playba
 		return { ...base, contentScope: 'manual', source: input.source, readableSurface: input.readableSurface };
 	}
 	if (input.contentScope === 'article') {
-		return { ...base, contentScope: 'article', source: input.source, readableSurface: input.readableSurface };
+		return {
+			...base,
+			contentScope: 'article',
+			source: input.source,
+			readableSurface: input.readableSurface,
+			...(input.queueItemId === undefined ? {} : { queueItemId: input.queueItemId }),
+		};
 	}
 	return { ...base, contentScope: 'selection', source: input.source, readableSurface: input.readableSurface };
 }
@@ -146,6 +153,7 @@ export function isPlaybackSessionSnapshot(value: unknown): value is PlaybackSess
 		isFiniteNumber(session.speed) &&
 		(session.audioExportEstimate === undefined || isAudioExportEstimate(session.audioExportEstimate)) &&
 		(session.error === undefined || typeof session.error === 'string') &&
+		(session.queueItemId === undefined || typeof session.queueItemId === 'string') &&
 		isFiniteNumber(session.updatedAt);
 	if (!baseIsValid || !source) {
 		return false;
@@ -165,6 +173,7 @@ export function isPlaybackSessionSnapshot(value: unknown): value is PlaybackSess
 			: session.contentScope === 'selection' && (session.readableSurface === 'website-dom' || session.readableSurface === 'none');
 	return (
 		source.kind === 'tab' &&
+		(session.contentScope !== 'selection' || session.queueItemId === undefined) &&
 		validTabSurface &&
 		Number.isInteger(source.tabId) &&
 		typeof source.title === 'string' &&

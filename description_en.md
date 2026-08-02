@@ -6,6 +6,7 @@ Smart Extraction: Automatically extracts the main article, stripping away ads, m
 Word Highlighting: Follow along easily as spoken words are highlighted in real-time.
 100% On-device: Runs locally via the Supertonic WebGPU engine. Your text is never sent to any server.
 Voice Customization: Choose from a variety of Voice Styles to suit your preference.
+Playlist Queue: Queue web articles and local PDF files for continuous listening with auto-advance.
 
 📖 How to use:
 
@@ -21,6 +22,11 @@ Right-click and select "Read with readit.dev" from the context menu (or use the 
 Open the extension's Side Panel.
 Paste your custom text into the input area and press Play.
 
-4. Quick Controls:
+4. Use Playlist Queue:
+Open the Side Panel, click "+ Add current tab" or paste a URL/PDF link into the Queue section (or right-click a link and select "Add to Queue").
+Click "Play Queue" to listen continuously as items automatically advance.
+
+5. Quick Controls:
 Easily play, pause, or switch Voice Styles directly from the Popup or Side Panel.
+
 🔒 Privacy First: Because all speech synthesis is processed locally on your computer, your reading materials remain strictly private. readit.dev never collects, stores, or transmits the content you read.

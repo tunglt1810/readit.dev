@@ -26,7 +26,7 @@ This keeps PDF content in memory, uses the existing TTS, Popup, Side Panel, play
 - OCR, scanned/image-only PDFs, handwriting recognition, or image descriptions.
 - Word highlighting, selection reading, annotations, search, download, or rendering inside PDFs.
 - Replacing Chrome's PDF Viewer, using Chrome's MIME handler API, requiring Chrome 151+, or adding a custom document UI.
-- New backend services, telemetry, PDF/text storage, broad host permissions, or file handling outside the active tab.
+- New backend services, telemetry, PDF/text storage, broad host permissions, or file handling outside the active tab. The local-file path explicitly uses the narrow `file://*/*` host permission required by Chrome to expose the user-controlled file-access toggle; it does not add `<all_urls>` or any other broad network host.
 - Guaranteed support for PDFs delivered by POST, single-use URLs, or sessions that cannot be fetched again after the user invokes the extension.
 
 ## Architecture
@@ -50,7 +50,7 @@ The title preference is PDF metadata title, then the active-tab title, then a fi
 When the content-script receiver is unavailable or returns an unsuccessful extraction, as can happen for Chrome's PDF Viewer, the background invokes the PDF adapter:
 
 1. Reject existing restricted URLs exactly as today.
-2. For `file://`, call `chrome.extension.isAllowedFileSchemeAccess()` before fetching. A false result returns a local-file-permission failure.
+2. For `file://`, call `chrome.extension.isAllowedFileSchemeAccess()` before fetching. A false, unavailable, throwing, or timed-out result returns a local-file-permission failure and no file fetch is attempted.
 3. Fetch the current tab URL into memory, with the user-triggered active-tab access and a 30-second timeout.
 4. If the response is not a PDF, preserve the current generic page-extraction failure.
 5. Parse text-layer PDF content. Map password errors, empty text, and parser/fetch errors to their distinct PDF failure codes.
@@ -62,7 +62,7 @@ Only successful extraction reaches `startPlayback()`. As a result, existing `pre
 
 Add `pdfjs-dist` as a bundled production dependency. The worker module is statically initialized in the background bundle so PDF.js's fake-worker path does not use dynamic `import()`, which Chrome disallows in a Manifest V3 service worker. PDF.js is always loaded locally from the extension package.
 
-The feature uses the existing `activeTab` permission for a user-invoked current tab. It adds no broad host permissions. Local PDFs require the user-controlled Chrome setting **Allow access to file URLs**; no setting is changed programmatically.
+The feature uses the existing `activeTab` permission for a user-invoked current tab and declares the narrow `file://*/*` host permission for local PDFs. Local PDFs still require the user-controlled Chrome setting **Allow access to file URLs**; no setting is changed programmatically. The permission check is fail-closed: a denied, unavailable, throwing, or timed-out API callback returns `pdfFileAccessRequired` and the PDF is not fetched.
 
 ## UX and Failure Contract
 
@@ -108,7 +108,7 @@ No new artificial file-size limit is introduced. Downloads and parsing remain be
 
 - Recognize PDF responses by MIME type or file signature and return `null` for a non-PDF fallback response.
 - Extract page-ordered text, page boundaries, metadata title, and title fallback with a fake PDF.js loader.
-- Return `pdfFileAccessRequired` before any local-file fetch when Chrome file access is disabled.
+- Return `pdfFileAccessRequired` before any local-file fetch when Chrome file access is disabled, unavailable, or the permission check times out.
 - Return `pdfPasswordProtected` for PDF.js password failures.
 - Return `pdfTextUnavailable` for valid PDFs with no non-whitespace text.
 - Return `pdfExtractionFailed` for timeout, HTTP, malformed input, and parser failures without exposing response bodies.
@@ -117,7 +117,7 @@ No new artificial file-size limit is introduced. Downloads and parsing remain be
 ### End-to-end tests
 
 - Route a deterministic text-layer PDF fixture in a top-level tab, invoke **Read current page**, and assert that the background publishes a normal tab playback session with PDF title/text.
-- Assert Popup and Side Panel show the localized missing-local-file-permission, password-protected, no-text, and generic extraction errors.
+- Assert Popup and Side Panel show the localized missing-local-file-permission, password-protected, no-text, and generic extraction errors, including when a persisted playback session contains a PDF error code.
 - Start a manual reader, force each PDF extraction failure, and assert that the manual session continues unmodified.
 - Retain standard web-page and Google Docs extraction coverage to prove the PDF fallback does not replace those paths.
 

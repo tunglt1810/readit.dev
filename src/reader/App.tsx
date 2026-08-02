@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+import { PlaybackIcon } from '../shared/components/PlaybackIcon.tsx';
 import { DEFAULT_SPEED, STORAGE_KEYS, VOICE_STYLES } from '../shared/constants.ts';
 import {
 	DOCUMENT_READER_PORT_NAME,
@@ -135,6 +136,7 @@ export default function App() {
 					<h1>{snapshot?.title || t('documentReaderTitle')}</h1>
 				</div>
 				<button
+					className="btn btn-secondary btn-back-source"
 					type="button"
 					disabled={sourceTabId === null}
 					onClick={() => sourceTabId !== null && void chrome.tabs.update(sourceTabId, { active: true })}
@@ -146,39 +148,55 @@ export default function App() {
 			{snapshot ? (
 				<>
 					<section className="document-reader-toolbar" aria-label={t('documentReaderControls')}>
-						<div className="document-reader-playback">
+						<div className="playback-controls">
 							{(status === 'playing' || status === 'paused') && (
 								<button
-									className="primary-button"
+									className="btn btn-primary btn-icon-only"
 									type="button"
+									aria-label={status === 'playing' ? t('pauseState') : t('resumeStatus')}
+									title={status === 'playing' ? t('pauseState') : t('resumeStatus')}
 									onClick={() =>
 										void sendPlaybackCommand({ action: status === 'playing' ? 'PAUSE_READING' : 'RESUME_READING' })
 									}
 								>
-									{status === 'playing' ? t('pauseState') : t('resumeStatus')}
+									<PlaybackIcon name={status === 'playing' ? 'pause' : 'resume'} />
 								</button>
 							)}
 							<button
+								className="btn btn-secondary btn-icon-only"
 								type="button"
 								disabled={status === 'stopped'}
+								aria-label={t('stopReading')}
+								title={t('stopReading')}
 								onClick={() => void sendPlaybackCommand({ action: 'STOP_READING' })}
 							>
-								{t('stopReading')}
+								<PlaybackIcon name="stop" />
 							</button>
 						</div>
-						<label>
-							<span>{t('selectVoice')}</span>
-							<select value={activeVoice} onChange={(event) => handleVoiceChange(event.target.value)}>
+						<div className="form-group">
+							<label className="form-label" htmlFor="reader-voice-select">
+								{t('selectVoice')}
+							</label>
+							<select
+								id="reader-voice-select"
+								className="form-select"
+								value={activeVoice}
+								onChange={(event) => handleVoiceChange(event.target.value)}
+							>
 								{VOICE_STYLES.map((voice) => (
 									<option key={voice.id} value={voice.id}>
 										{voice.name}
 									</option>
 								))}
 							</select>
-						</label>
-						<label>
-							<span>{t('readingSpeed')}</span>
+						</div>
+						<div className="form-group">
+							<div className="slider-label-group">
+								<span className="form-label">{t('readingSpeed')}</span>
+								<output className="slider-value">{speed.toFixed(2)}×</output>
+							</div>
 							<input
+								className="form-slider"
 								type="range"
 								min="0.7"
 								max="1.8"
@@ -186,12 +204,14 @@ export default function App() {
 								value={speed}
 								onChange={(event) => handleSpeedChange(Number(event.target.value))}
 							/>
-							<output>{speed.toFixed(2)}×</output>
-						</label>
-						<div className="document-reader-progress" role="status">
-							<span>{Math.round(documentSession?.progressPercentage ?? 0)}%</span>
-							<div>
-								<i style={{ width: `${documentSession?.progressPercentage ?? 0}%` }} />
+						</div>
+						<div className="form-group document-reader-progress" role="status">
+							<div className="slider-label-group">
+								<span className="form-label">PROGRESS</span>
+								<span className="slider-value">{Math.round(documentSession?.progressPercentage ?? 0)}%</span>
+							</div>
+							<div className="progress-bar-container">
+								<div className="progress-bar" style={{ width: `${documentSession?.progressPercentage ?? 0}%` }} />
 							</div>
 						</div>
 					</section>

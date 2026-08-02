@@ -1036,6 +1036,25 @@ rtk git add scripts/validate-extension-archive.mjs .github/workflows/release-ext
 rtk git commit -m "Gate MP3 export release compliance"
 ```
 
+## Review corrections 2026-08-02
+
+### Cancellation cleanup race
+
+Implementation checklist:
+
+- [x] Ignore late `failed` progress after the coordinator has published
+  `cancelling`.
+- [x] Clear the transient handle and job snapshot after a cancellation
+  attempt, even when offscreen cancellation reports a cleanup error.
+- [x] Keep ordinary TTS/encoder failures retryable when no cancellation was
+  requested.
+
+Test cases:
+
+- [x] A failed progress event racing with cancellation leaves no job or
+  committed partial file.
+- [x] A normal export failure still remains `failed` and retryable.
+
 ---
 
 ## Final Review Checklist

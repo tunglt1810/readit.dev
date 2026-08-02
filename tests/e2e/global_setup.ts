@@ -65,6 +65,12 @@ export default async function globalSetup(): Promise<void> {
 			'--no-first-run',
 			'--no-default-browser-check',
 			'--disable-sync',
+			'--disable-gpu',
+			'--disable-dev-shm-usage',
+			'--disable-background-networking',
+			'--disable-default-apps',
+			'--mute-audio',
+			...(process.env.CI ? ['--no-sandbox', '--disable-setuid-sandbox'] : []),
 		],
 	});
 

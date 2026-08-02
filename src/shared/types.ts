@@ -55,6 +55,27 @@ export interface PlaybackProgress {
 	duration?: number;
 	currentTime?: number;
 	error?: string;
+	completedNaturally?: boolean;
+}
+
+export interface QueueItem {
+	id: string;
+	url: string;
+	normalizedUrl: string;
+	title: string;
+	addedAt: number;
+	status: 'pending' | 'playing' | 'done' | 'error';
+}
+
+export interface PlaylistQueue {
+	items: QueueItem[];
+	activeIndex: number | null;
+}
+
+export interface PendingQueueNavigation {
+	itemId: string;
+	tabId: number;
+	expectedUrl: string;
 }
 
 export type AudioExportJobState =
@@ -117,6 +138,7 @@ export type TabPlaybackSessionSnapshot =
 	| (TabPlaybackSessionBase & {
 			contentScope: 'article';
 			readableSurface: 'website-dom' | 'document-reader' | 'none';
+			queueItemId?: string;
 	  })
 	| (TabPlaybackSessionBase & {
 			contentScope: 'selection';

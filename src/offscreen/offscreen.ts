@@ -474,7 +474,7 @@ function startWordHighlightTracking(windows: WordTimingWindow[], unitStartTime: 
 /**
  * Stop active audio and clear state
  */
-function stopAudio() {
+function stopAudio(options?: { completedNaturally?: boolean }) {
 	void pauseKeepalive.stop();
 	stopCurrentSource();
 	clearWordHighlightTracking();
@@ -482,7 +482,7 @@ function stopAudio() {
 	isPaused = false;
 	synthesisCoordinator.clear();
 	recentSynthesisMilliseconds.length = 0;
-	reportProgress('stopped');
+	reportProgress('stopped', options?.completedNaturally ? { completedNaturally: true } : {});
 	speechUnits = [];
 	currentUnitIndex = 0;
 	currentBuffer = null;
@@ -565,7 +565,7 @@ function playAudioBuffer(
 		if (currentUnitIndex < speechUnits.length) {
 			void playNextUnit(lang, style, session);
 		} else {
-			stopAudio();
+			stopAudio({ completedNaturally: true });
 		}
 	};
 
@@ -587,7 +587,7 @@ async function playNextUnit(lang: string, style: Style, session: number) {
 	}
 
 	if (currentUnitIndex >= speechUnits.length) {
-		stopAudio();
+		stopAudio({ completedNaturally: true });
 		return;
 	}
 
@@ -871,6 +871,38 @@ chrome.runtime.onMessage.addListener(
 		}
 
 		switch (action) {
+			case 'FETCH_FILE_BYTES': {
+				const fileUrl = (payload as { url?: unknown } | undefined)?.url;
+				if (typeof fileUrl !== 'string') {
+					sendResponse({ success: false, error: 'Missing file URL' });
+					break;
+				}
+				let targetUrl = fileUrl;
+				try {
+					targetUrl = encodeURI(decodeURI(fileUrl));
+				} catch {
+					// fallback to original fileUrl
+				}
+				fetch(targetUrl)
+					.then((res) => res.blob())
+					.then((blob) => {
+						const reader = new FileReader();
+						reader.onloadend = () => {
+							const dataUrl = reader.result as string;
+							const base64 = dataUrl ? dataUrl.split(',')[1] ?? '' : '';
+							sendResponse({ success: true, base64 });
+						};
+						reader.onerror = () => {
+							sendResponse({ success: false, error: 'Failed to read file blob' });
+						};
+						reader.readAsDataURL(blob);
+					})
+					.catch((err) => {
+						sendResponse({ success: false, error: (err as Error).message });
+					});
+				return true;
+			}
+
 			case 'PREPARE_AUDIO_EXPORT':
 				sendResponse(prepareAudioExport(payload));
 				break;

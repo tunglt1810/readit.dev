@@ -180,6 +180,10 @@ export class AudioExportCoordinator {
 		if (job.state === 'preparing') {
 			return this.discard(jobId);
 		}
+		if (job.state === 'failed' && job.errorCode === 'encoding-failed') {
+			await this.clear(jobId);
+			return { success: true };
+		}
 		if (job.state !== 'exporting' && job.state !== 'waiting-for-playback') {
 			return { success: false, error: 'snapshot-unavailable' };
 		}
@@ -191,14 +195,14 @@ export class AudioExportCoordinator {
 		try {
 			const response = await this.dependencies.sendOffscreen(createAudioExportOffscreenCommand('CANCEL_AUDIO_EXPORT', { jobId }));
 			if (!response.success) {
-				await this.fail(jobId, 'encoding-failed');
-				return { success: false, error: 'encoding-failed' };
+				await this.clear(jobId);
+				return { success: true };
 			}
 			await this.clear(jobId);
 			return { success: true };
 		} catch (_error) {
-			await this.fail(jobId, 'encoding-failed');
-			return { success: false, error: 'encoding-failed' };
+			await this.clear(jobId);
+			return { success: true };
 		}
 	}
 
@@ -219,7 +223,7 @@ export class AudioExportCoordinator {
 
 	async handleProgress(progress: AudioExportProgressUpdate): Promise<void> {
 		const job = this.job;
-		if (!job) {
+		if (!job || job.state === 'cancelling') {
 			return;
 		}
 		const updated = applyAudioExportProgress(job, progress, this.dependencies.now());

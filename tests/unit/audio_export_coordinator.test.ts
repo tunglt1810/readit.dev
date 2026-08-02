@@ -175,6 +175,58 @@ test('returns success and clears a prepared job when offscreen discard fails', a
 	assert.deepEqual(harness.handleDeletes, ['job-1']);
 });
 
+test('clears a cancellation despite a late encoder failure and offscreen cleanup error', async () => {
+	let releaseCancel!: (response: { success: boolean }) => void;
+	const cancelResponse = new Promise<{ success: boolean }>((resolve) => {
+		releaseCancel = resolve;
+	});
+	const harness = createHarness({
+		sendOffscreen: async (command) => {
+			if (command.action === 'CANCEL_AUDIO_EXPORT') {
+				return cancelResponse;
+			}
+			return { success: true };
+		},
+	});
+	await harness.coordinator.prepare(request);
+	await harness.coordinator.start('job-1');
+
+	const cancellation = harness.coordinator.cancel('job-1');
+	await new Promise<void>((resolve) => setImmediate(resolve));
+	assert.equal(harness.coordinator.snapshot()?.state, 'cancelling');
+	await harness.coordinator.handleProgress({
+		jobId: 'job-1',
+		state: 'failed',
+		processedDurationSeconds: 10,
+		progressPercentage: 10,
+		bytesWritten: 0,
+	});
+	assert.equal(harness.coordinator.snapshot()?.state, 'cancelling');
+
+	releaseCancel({ success: false });
+	assert.deepEqual(await cancellation, { success: true });
+	assert.equal(harness.coordinator.snapshot(), null);
+	assert.equal(harness.stored, undefined);
+});
+
+test('clears a stale encoding failure when cancellation arrives after the race', async () => {
+	const harness = createHarness();
+	await harness.coordinator.prepare(request);
+	await harness.coordinator.start('job-1');
+	await harness.coordinator.handleProgress({
+		jobId: 'job-1',
+		state: 'failed',
+		processedDurationSeconds: 10,
+		progressPercentage: 10,
+		bytesWritten: 0,
+	});
+	assert.equal(harness.coordinator.snapshot()?.state, 'failed');
+
+	assert.deepEqual(await harness.coordinator.cancel('job-1'), { success: true });
+	assert.equal(harness.coordinator.snapshot(), null);
+	assert.equal(harness.stored, undefined);
+});
+
 test('never resumes a persisted nonterminal job and enforces stale preparation on hydration', async () => {
 	const stored = createAudioExportJob({
 		...request,

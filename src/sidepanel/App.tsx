@@ -9,11 +9,12 @@ import { getLocalizedPlaybackError, t } from '../shared/i18n.ts';
 import { normalizeManualText } from '../shared/manual_text.ts';
 import { requestPlaybackState, sendPlaybackCommand, sendRuntimeRequest, subscribePlaybackState } from '../shared/playback_client.ts';
 import { isSelectionButtonEnabled } from '../shared/selection_button.ts';
-import type { ManualTextLanguage, PageInfoResponse, PlaybackSessionSnapshot, PlaybackStatus, ThemeName } from '../shared/types.ts';
+import type { ManualTextLanguage, PageInfoResponse, PlaybackSessionSnapshot, PlaybackStatus, PlaylistQueue, ThemeName } from '../shared/types.ts';
 import { isWordHighlightEnabled } from '../shared/word_highlight.ts';
 import { buildSidePanelRegisterMessage } from '../popup/side_panel.ts';
 import { advanceManualHighlight, createManualHighlightCursor, type ManualWordRange } from './manual_word_highlight.ts';
 import { getDisplayVersion } from '../shared/version.ts';
+import { deriveQueueHost } from '../background/playlist_queue.ts';
 
 const EMPTY_PAGE_INFO: PageInfoResponse = { available: false };
 
@@ -39,7 +40,7 @@ function getStatusText(session: PlaybackSessionSnapshot | null): string {
 		return t('pauseState');
 	}
 	if (session.status === 'error') {
-		return t('errorState');
+		return getLocalizedPlaybackError(session.error) ?? t('errorState');
 	}
 	return t('readyStatus');
 }
@@ -53,6 +54,9 @@ export default function App() {
 	const [language, setLanguage] = useState<ManualTextLanguage>('auto');
 	const [commandError, setCommandError] = useState('');
 	const [session, setSession] = useState<PlaybackSessionSnapshot | null>(null);
+	const [queue, setQueue] = useState<PlaylistQueue>({ items: [], activeIndex: null });
+	const [urlInput, setUrlInput] = useState('');
+	const [queueError, setQueueError] = useState('');
 	const [activeVoice, setActiveVoice] = useState('M1');
 	const [speed, setSpeed] = useState(DEFAULT_SPEED);
 	const [theme, setTheme] = useState<ThemeName>('default');
@@ -103,11 +107,29 @@ export default function App() {
 			},
 		);
 
+		// Load initial queue
+		chrome.runtime.sendMessage({ action: 'GET_PLAYLIST_QUEUE' }, (response: unknown) => {
+			if (response && typeof response === 'object' && 'queue' in response) {
+				setQueue((response as { queue: PlaylistQueue }).queue);
+			}
+		});
+
 		void requestPlaybackState().then((response) => setSession(response.session));
 		void sendRuntimeRequest<PageInfoResponse>({ action: 'GET_CURRENT_PAGE_INFO' }).then(setPageInfo, () =>
 			setPageInfo(EMPTY_PAGE_INFO),
 		);
 		const unsubscribePlayback = subscribePlaybackState(chrome.runtime, setSession);
+		const handleQueueMessage = (message: unknown) => {
+			if (!message || typeof message !== 'object') {
+				return;
+			}
+			const msg = message as Record<string, unknown>;
+			if (msg.action === 'PLAYLIST_QUEUE_UPDATE' && msg.queue) {
+				setQueue(msg.queue as PlaylistQueue);
+			}
+		};
+		chrome.runtime.onMessage.addListener(handleQueueMessage);
+
 		const handleManualPlaybackMessage = (message: unknown) => {
 			if (!message || typeof message !== 'object') {
 				return;
@@ -192,6 +214,7 @@ export default function App() {
 		chrome.storage.onChanged.addListener(handleStorageChange);
 		return () => {
 			unsubscribePlayback();
+			chrome.runtime.onMessage.removeListener(handleQueueMessage);
 			chrome.runtime.onMessage.removeListener(handleManualPlaybackMessage);
 			chrome.storage.onChanged.removeListener(handleStorageChange);
 		};
@@ -360,6 +383,55 @@ export default function App() {
 		}
 	};
 
+	const handleAddCurrentTab = async () => {
+		setQueueError('');
+		const response = (await chrome.runtime.sendMessage({ action: 'ADD_TAB_TO_QUEUE' })) as { success: boolean; error?: string };
+		if (!response.success) {
+			setQueueError(response.error === 'DUPLICATE_URL' ? t('queueErrorDuplicate') : (response.error ?? t('queueErrorUnknown')));
+		}
+	};
+
+	const handleAddUrl = async () => {
+		setQueueError('');
+		const response = (await chrome.runtime.sendMessage({
+			action: 'ADD_URL_TO_QUEUE',
+			payload: { url: urlInput.trim() },
+		})) as { success: boolean; error?: string };
+		if (response.success) {
+			setUrlInput('');
+		} else {
+			setQueueError(response.error === 'DUPLICATE_URL' ? t('queueErrorDuplicate') : t('queueErrorInvalidUrl'));
+		}
+	};
+
+	const handleRemoveItem = (id: string) => {
+		void chrome.runtime.sendMessage({ action: 'REMOVE_QUEUE_ITEM', payload: { id } });
+	};
+
+	const handleRequeueItem = (id: string) => {
+		void chrome.runtime.sendMessage({ action: 'REQUEUE_ITEM', payload: { id } });
+	};
+
+	const handleClearQueue = () => {
+		void chrome.runtime.sendMessage({ action: 'CLEAR_QUEUE' });
+	};
+
+	const handlePlayQueue = async () => {
+		setQueueError('');
+		const response = (await chrome.runtime.sendMessage({ action: 'PLAY_QUEUE' })) as { success: boolean; error?: string };
+		if (!response.success) {
+			setQueueError(response.error ?? t('queueErrorPlayFailed'));
+		}
+	};
+
+	const handleReplayQueue = async () => {
+		setQueueError('');
+		const response = (await chrome.runtime.sendMessage({ action: 'REPLAY_QUEUE' })) as { success: boolean; error?: string };
+		if (!response.success) {
+			setQueueError(response.error ?? t('queueErrorReplayFailed'));
+		}
+	};
+
 	const handleVoiceChange = (voice: string) => {
 		setActiveVoice(voice);
 		void chrome.storage.local.set({ [STORAGE_KEYS.ACTIVE_VOICE]: voice });
@@ -434,8 +506,8 @@ export default function App() {
 							<div className="session-context">
 								<span>
 									{session.totalParagraphs > 0
-										? `${t('paragraphLabel')} ${session.currentParagraphIndex + 1}/${session.totalParagraphs} • ${Math.round(session.progressPercentage)}% `
-										: t('preparingContent')}
+										? `${t('paragraphLabel')} ${session.currentParagraphIndex + 1}/${session.totalParagraphs} • ${Math.round(session.progressPercentage)}% • `
+										: `${t('preparingContent')} • `}
 								</span>
 								<span>{t('readingThisTab')}</span>
 							</div>
@@ -595,6 +667,114 @@ export default function App() {
 								buttonRef={session.status === 'playing' || session.status === 'paused' ? undefined : primaryButtonRef}
 							/>
 							<AudioExportButton session={session} />
+						</div>
+					</>
+				)}
+			</section>
+
+			<section className="queue-card" aria-labelledby="queue-title">
+				<div className="queue-header">
+					<h2 id="queue-title">{t('queueTitle')}</h2>
+					{queue.items.length > 0 && (
+						<span className="queue-stats">
+							{queue.items.filter((i) => i.status === 'done').length}/{queue.items.length} {t('queueStatsDone')}
+						</span>
+					)}
+				</div>
+
+				<div className="queue-add-controls">
+					<button className="secondary-button queue-add-tab-btn" type="button" onClick={() => void handleAddCurrentTab()}>
+						{t('queueAddCurrentTab')}
+					</button>
+					<div className="queue-url-row">
+						<input
+							className="queue-url-input"
+							type="url"
+							placeholder={t('queueUrlPlaceholder')}
+							value={urlInput}
+							onChange={(e) => setUrlInput(e.target.value)}
+							onKeyDown={(e) => {
+								if (e.key === 'Enter') void handleAddUrl();
+							}}
+							aria-label={t('queueUrlAriaLabel')}
+						/>
+						<button
+							className="secondary-button"
+							type="button"
+							disabled={!urlInput.trim()}
+							onClick={() => void handleAddUrl()}
+						>
+							{t('queueAddUrl')}
+						</button>
+					</div>
+					{queueError && (
+						<p className="queue-error" role="alert">
+							{queueError}
+						</p>
+					)}
+				</div>
+
+				{queue.items.length > 0 && (
+					<>
+						<ul className="queue-list" aria-label={t('queueListAriaLabel')}>
+							{queue.items.map((item) => {
+								const icon = item.status === 'playing' ? '▶' : item.status === 'done' ? '✓' : item.status === 'error' ? '✕' : '·';
+								const hostname = deriveQueueHost(item.url);
+								return (
+									<li key={item.id} className="queue-item" data-status={item.status}>
+										<span className="queue-item-icon" aria-hidden="true">
+											{icon}
+										</span>
+										<div className="queue-item-meta">
+											<span className="queue-item-title" title={item.title}>
+												{item.title}
+											</span>
+											<span className="queue-item-host">{hostname}</span>
+										</div>
+										<div className="queue-item-actions">
+											{(item.status === 'done' || item.status === 'error') && (
+												<button className="queue-action-btn" type="button" onClick={() => handleRequeueItem(item.id)}>
+													{t('queueReadd')}
+												</button>
+											)}
+											{item.status === 'pending' && (
+												<button
+													className="queue-action-btn queue-remove-btn"
+													type="button"
+													aria-label={t('queueRemove')}
+													onClick={() => handleRemoveItem(item.id)}
+												>
+													✕
+												</button>
+											)}
+										</div>
+									</li>
+								);
+							})}
+						</ul>
+						<div className="queue-footer">
+							<div className="queue-footer-actions">
+								{queue.items.some((i) => i.status === 'pending') ? (
+									<button
+										className="primary-button queue-play-btn"
+										type="button"
+										onClick={() => void handlePlayQueue()}
+									>
+										{t('queuePlay')}
+									</button>
+								) : queue.items.length > 0 ? (
+									<button
+										className="primary-button queue-play-btn"
+										type="button"
+										onClick={() => void handleReplayQueue()}
+									>
+										{t('queueReplay')}
+									</button>
+								) : null}
+								<button className="secondary-button" type="button" onClick={handleClearQueue}>
+									{t('queueClearAll')}
+								</button>
+							</div>
 						</div>
 					</>
 				)}

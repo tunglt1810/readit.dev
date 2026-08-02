@@ -5,6 +5,7 @@ import path from 'path';
 import type { AudioExportStateResponse, PageInfoResponse, PlaybackStateResponse } from '../../src/shared/types';
 import { resolveExtensionId } from './extension_id';
 import { MODEL_CACHE_SEED_DIR, MODEL_CACHE_SEED_MARKER } from './model_cache_seed';
+import { copyDirectoryTreeSync } from './cache_storage_copy';
 
 export type RecordedRequest = Readonly<{
 	url: string;
@@ -222,7 +223,7 @@ export const test = base.extend<{
 				const seedCacheStorage = path.join(MODEL_CACHE_SEED_DIR, 'Default', 'Service Worker', 'CacheStorage');
 				const profileCacheStorage = path.join(userDataDir, 'Default', 'Service Worker', 'CacheStorage');
 				fs.mkdirSync(path.dirname(profileCacheStorage), { recursive: true });
-				fs.cpSync(seedCacheStorage, profileCacheStorage, { recursive: true });
+				copyDirectoryTreeSync(seedCacheStorage, profileCacheStorage);
 			} else {
 				// Clone the pre-warmed profile (see global_setup.ts) so this test's
 				// Supertonic model Cache Storage is already populated — avoids
@@ -242,11 +243,18 @@ export const test = base.extend<{
 			headless,
 			locale: browserLocale,
 			args: [
+				'--allow-file-access-from-files',
 				`--disable-extensions-except=${pathToExtension}`,
 				`--load-extension=${pathToExtension}`,
 				'--no-first-run',
 				'--no-default-browser-check',
 				'--disable-sync',
+				'--disable-gpu',
+				'--disable-dev-shm-usage',
+				'--disable-background-networking',
+				'--disable-default-apps',
+				...(headless ? ['--mute-audio'] : []),
+				...(process.env.CI ? ['--no-sandbox', '--disable-setuid-sandbox'] : []),
 			],
 		});
 		const recordedRequests: RecordedRequest[] = [];

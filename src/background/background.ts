@@ -1,4 +1,5 @@
 import { DEFAULT_SPEED, GOOGLE_DOCS_EXPORT_UNAVAILABLE, MODEL_FILES, PDF_ERROR_CODES, STORAGE_KEYS, type PdfErrorCode } from '../shared/constants';
+import { t } from '../shared/i18n.ts';
 import { isInternalAudioExportOffscreenCommand } from '../shared/audio_export.ts';
 import { deleteAudioExportHandle } from '../shared/audio_export_handle_store.ts';
 import { DOCUMENT_READER_PORT_NAME } from '../shared/document_reader.ts';
@@ -27,11 +28,12 @@ import { prepareManualStart } from './manual_text';
 import {
 	type ManualCheckpointMetadata,
 	type OffscreenCommand,
+	type OffscreenCommandResponse,
 	type OffscreenPlayPayload,
 	sendOffscreenCommand,
 } from './offscreen_transport';
 import { requestPageInfoFromTab } from './page_info';
-import { extractPdfArticle } from './pdf_extractor';
+import { extractPdfArticle, isSupportedPdfSource } from './pdf_extractor';
 import { loadPdfJsDocument } from './pdfjs_loader';
 import {
 	applyPlaybackProgress,
@@ -46,6 +48,31 @@ import { createSelectedTextArticle } from './selected_text';
 import { prepareSelectedTextRequest } from './selected_text_request';
 import { createReadableSurfaceCoordinator } from './readable_surface';
 import { computeOpenSidePanelWindowIds, handleOpenSidePanelCommand } from '../popup/side_panel';
+import {
+	addToQueue,
+	clearQueue,
+	createPlaylistQueue,
+	getNextPending,
+	getPlayingItem,
+	loadQueue,
+	markDone,
+	markError,
+	markPlaying,
+	normalizeQueueUrl,
+	removeItem,
+	requeueAllItems,
+	requeueItem,
+	saveQueue,
+} from './playlist_queue.ts';
+import { setupContextMenus } from './context_menu.ts';
+import { checkIsFileSchemeAccessAllowed } from './file_access.ts';
+import {
+	createPendingQueueNavigation,
+	isPendingQueueNavigation,
+	matchesPendingQueueNavigation,
+	selectNavigationTab,
+} from './queue_navigation.ts';
+import type { PendingQueueNavigation, PlaylistQueue, QueueItem } from '../shared/types.ts';
 
 const DEFAULT_VOICE_STYLE_ID = 'M1';
 
@@ -70,6 +97,7 @@ type StartPlaybackInput =
 			source: { kind: 'tab'; tabId: number; title: string; url: string };
 			content: PlaybackContent;
 			readableSurface: 'website-dom' | 'document-reader' | 'none';
+			queueItemId?: string;
 	  }
 	| {
 			contentScope: 'selection';
@@ -88,6 +116,8 @@ let activeSession: PlaybackSessionSnapshot | null = null;
 let suspendedManualCheckpoint: ManualCheckpointMetadata | null = null;
 let suspendedManualSession: ManualPlaybackSessionSnapshot | null = null;
 let hydrated = false;
+let playlistQueue: PlaylistQueue = createPlaylistQueue();
+let pendingQueueNavigation: PendingQueueNavigation | null = null;
 let stateQueue = Promise.resolve();
 
 function enqueue<T>(operation: () => Promise<T>): Promise<T> {
@@ -163,14 +193,38 @@ function isArticleReadableSurface(value: unknown): value is 'website-dom' | 'doc
 	return value === 'website-dom' || value === 'document-reader' || value === 'none';
 }
 
+function getQueueItemId(session: PlaybackSessionSnapshot | null): string | undefined {
+	if (!session || session.source.kind !== 'tab') {
+		return undefined;
+	}
+	return 'queueItemId' in session && typeof session.queueItemId === 'string' ? session.queueItemId : undefined;
+}
+
 async function requestCurrentTabArticle(tabId: number, title: string | undefined, url: string): Promise<ArticleResponse> {
 	const requestPdfFallback = () =>
 		extractPdfArticle(
 			{ url, title: title || url },
 			{
 				fetchPdf: (sourceUrl, init) => globalThis.fetch(sourceUrl, init),
-				isFileSchemeAccessAllowed: () => chrome.extension.isAllowedFileSchemeAccess(),
+				isFileSchemeAccessAllowed: checkIsFileSchemeAccessAllowed,
 				loadDocument: loadPdfJsDocument,
+				fetchFileBytesViaOffscreen: async (fileUrl) => {
+					await setupOffscreen();
+					const response = (await dispatchOffscreenCommand({
+						action: 'FETCH_FILE_BYTES',
+						payload: { url: fileUrl },
+					})) as { success: boolean; base64?: string; error?: string };
+					if (response?.success && typeof response.base64 === 'string' && response.base64.length > 0) {
+						const binaryString = atob(response.base64);
+						const len = binaryString.length;
+						const bytes = new Uint8Array(len);
+						for (let i = 0; i < len; i++) {
+							bytes[i] = binaryString.charCodeAt(i);
+						}
+						return bytes;
+					}
+					return null;
+				},
 			},
 		);
 
@@ -200,17 +254,61 @@ async function ensureHydrated(): Promise<void> {
 		return;
 	}
 
-	const result = (await chrome.storage.session.get(STORAGE_KEYS.PLAYBACK_SESSION)) as Record<string, unknown>;
+	const result = (await chrome.storage.session.get([
+		STORAGE_KEYS.PLAYBACK_SESSION,
+		STORAGE_KEYS.PENDING_QUEUE_NAVIGATION,
+	])) as Record<string, unknown>;
 	const storedSession = result[STORAGE_KEYS.PLAYBACK_SESSION];
+	const storedPendingNavigation = result[STORAGE_KEYS.PENDING_QUEUE_NAVIGATION];
 	activeSession = isPlaybackSessionSnapshot(storedSession) ? storedSession : null;
+	pendingQueueNavigation = isPendingQueueNavigation(storedPendingNavigation) ? storedPendingNavigation : null;
 	if (activeSession) {
 		readableSurface.activate(activeSession);
 	}
-	hydrated = true;
+	playlistQueue = await loadQueue();
+	let queueChanged = false;
+	const activeQueueItemId = getQueueItemId(activeSession);
+	const retainedPlayingItemIds = new Set(
+		[pendingQueueNavigation?.itemId, activeQueueItemId].filter((itemId): itemId is string => typeof itemId === 'string'),
+	);
+
+	if (pendingQueueNavigation) {
+		const pendingItem = playlistQueue.items.find((item) => item.id === pendingQueueNavigation?.itemId);
+		if (!pendingItem || pendingItem.status !== 'playing') {
+			if (pendingItem && pendingItem.status !== 'error') {
+				playlistQueue = markError(playlistQueue, pendingItem.id);
+				queueChanged = true;
+			}
+			pendingQueueNavigation = null;
+			await chrome.storage.session.remove(STORAGE_KEYS.PENDING_QUEUE_NAVIGATION);
+			retainedPlayingItemIds.delete(pendingItem?.id ?? '');
+		}
+	}
+	if (activeQueueItemId) {
+		const activeQueueItem = playlistQueue.items.find((item) => item.id === activeQueueItemId);
+		if (activeQueueItem && activeQueueItem.status !== 'playing' && activeQueueItem.status !== 'error') {
+			playlistQueue = markError(playlistQueue, activeQueueItem.id);
+			queueChanged = true;
+		}
+	}
+
+	for (const item of playlistQueue.items) {
+		if (item.status === 'playing' && !retainedPlayingItemIds.has(item.id)) {
+			playlistQueue = markError(playlistQueue, item.id);
+			queueChanged = true;
+		}
+	}
 
 	if (storedSession !== undefined && activeSession === null) {
 		await chrome.storage.session.remove(STORAGE_KEYS.PLAYBACK_SESSION);
 	}
+	if (storedPendingNavigation !== undefined && pendingQueueNavigation === null) {
+		await chrome.storage.session.remove(STORAGE_KEYS.PENDING_QUEUE_NAVIGATION);
+	}
+	if (queueChanged) {
+		await saveAndBroadcastQueue();
+	}
+	hydrated = true;
 
 	await audioExportCoordinator.hydrate();
 	await updateBadge(activeSession);
@@ -231,6 +329,57 @@ async function broadcastSession(session: PlaybackSessionSnapshot | null): Promis
 	} catch (_error) {
 		// The popup may be closed, so there may be no receiver for this broadcast.
 	}
+}
+
+async function broadcastQueue(queue: PlaylistQueue): Promise<void> {
+	try {
+		await chrome.runtime.sendMessage({ action: 'PLAYLIST_QUEUE_UPDATE', queue });
+	} catch (_error) {
+		// Side Panel may be closed.
+	}
+}
+
+async function saveAndBroadcastQueue(): Promise<void> {
+	await saveQueue(playlistQueue);
+	await broadcastQueue(playlistQueue);
+}
+
+async function persistPendingQueueNavigation(pending: PendingQueueNavigation): Promise<void> {
+	pendingQueueNavigation = pending;
+	await chrome.storage.session.set({ [STORAGE_KEYS.PENDING_QUEUE_NAVIGATION]: pending });
+}
+
+async function clearPendingQueueNavigation(itemId?: string): Promise<void> {
+	if (itemId !== undefined && pendingQueueNavigation?.itemId !== itemId) {
+		return;
+	}
+	pendingQueueNavigation = null;
+	await chrome.storage.session.remove(STORAGE_KEYS.PENDING_QUEUE_NAVIGATION);
+}
+
+async function markQueueItemStatus(id: string, status: 'pending' | 'error' | 'done'): Promise<boolean> {
+	const item = playlistQueue.items.find((candidate) => candidate.id === id);
+	if (!item || item.status === status) {
+		return false;
+	}
+	playlistQueue =
+		status === 'pending' ? requeueItem(playlistQueue, id) : status === 'done' ? markDone(playlistQueue, id) : markError(playlistQueue, id);
+	await saveAndBroadcastQueue();
+	return true;
+}
+
+async function failPendingQueueNavigation(itemId: string): Promise<void> {
+	await clearPendingQueueNavigation(itemId);
+	await markQueueItemStatus(itemId, 'error');
+}
+
+async function cancelPendingQueueNavigation(): Promise<void> {
+	const itemId = pendingQueueNavigation?.itemId;
+	if (!itemId) {
+		return;
+	}
+	await clearPendingQueueNavigation(itemId);
+	await markQueueItemStatus(itemId, 'pending');
 }
 
 async function broadcastManualCheckpointState(
@@ -468,6 +617,12 @@ const modelCacheWarmer = createModelCacheWarmer(async () => {
 });
 
 async function stopActiveSession(_reason: string): Promise<void> {
+	const activePlaybackSession = activeSession;
+	const queueItemId = getQueueItemId(activePlaybackSession);
+	if (queueItemId) {
+		const releaseStatus = _reason === 'tab-removed' ? 'error' : 'pending';
+		await markQueueItemStatus(queueItemId, releaseStatus);
+	}
 	const session = await clearSession();
 	if (!session) {
 		return;
@@ -598,6 +753,15 @@ async function startPlayback(input: StartPlaybackInput): Promise<CommandResponse
 		await stopActiveSession('session-replaced');
 	}
 
+	if (
+		input.contentScope === 'article' &&
+		input.queueItemId &&
+		playlistQueue.items.some((item) => item.id === input.queueItemId)
+	) {
+		playlistQueue = markPlaying(playlistQueue, input.queueItemId);
+		await saveAndBroadcastQueue();
+	}
+
 	const preferences = (await chrome.storage.local.get([STORAGE_KEYS.ACTIVE_VOICE, STORAGE_KEYS.SPEED])) as Record<string, unknown>;
 	const storedVoiceStyleId = preferences[STORAGE_KEYS.ACTIVE_VOICE];
 	const storedSpeed = preferences[STORAGE_KEYS.SPEED];
@@ -610,27 +774,30 @@ async function startPlayback(input: StartPlaybackInput): Promise<CommandResponse
 		speed,
 		now: Date.now(),
 	};
-	const session =
-		input.contentScope === 'manual'
-			? createPlaybackSession({
-					...sessionInput,
-					contentScope: 'manual',
-					source: input.source,
-					readableSurface: input.readableSurface,
-				})
-			: input.contentScope === 'article'
-				? createPlaybackSession({
-						...sessionInput,
-						contentScope: 'article',
-						source: input.source,
-						readableSurface: input.readableSurface,
-					})
-				: createPlaybackSession({
-						...sessionInput,
-						contentScope: 'selection',
-						source: input.source,
-						readableSurface: input.readableSurface,
-					});
+	let session: PlaybackSessionSnapshot;
+	if (input.contentScope === 'manual') {
+		session = createPlaybackSession({
+			...sessionInput,
+			contentScope: 'manual',
+			source: input.source,
+			readableSurface: input.readableSurface,
+		});
+	} else if (input.contentScope === 'article') {
+		session = createPlaybackSession({
+			...sessionInput,
+			contentScope: 'article',
+			source: input.source,
+			readableSurface: input.readableSurface,
+			queueItemId: input.queueItemId,
+		});
+	} else {
+		session = createPlaybackSession({
+			...sessionInput,
+			contentScope: 'selection',
+			source: input.source,
+			readableSurface: input.readableSurface,
+		});
+	}
 
 	activeSession = session;
 	readableSurface.activate(session);
@@ -662,7 +829,9 @@ async function startPlayback(input: StartPlaybackInput): Promise<CommandResponse
 			readableSurface: input.readableSurface,
 			...(input.source.kind === 'tab' ? { contentScope: input.contentScope } : {}),
 			...(input.contentScope === 'manual' ? { panelInstanceId: input.source.panelInstanceId } : {}),
-			...(input.readableSurface === 'document-reader' && input.source.kind === 'tab' ? { documentTitle: input.source.title } : {}),
+			...(input.readableSurface === 'document-reader'
+				? { documentTitle: input.source.title?.trim() || (input.content as { title?: string }).title?.trim() || 'Document' }
+				: {}),
 		};
 		observeOffscreenPlay(session.sessionId, {
 			action: 'PLAY',
@@ -676,15 +845,27 @@ async function startPlayback(input: StartPlaybackInput): Promise<CommandResponse
 	}
 }
 
-async function startCurrentPage(): Promise<CommandResponse> {
+async function startCurrentPage(targetTabId?: number, queueItemId?: string, fallbackUrl?: string): Promise<CommandResponse> {
 	await ensureHydrated();
-	const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+	if (!queueItemId) {
+		await cancelPendingQueueNavigation();
+	}
+	const tabId = await findTargetTabForNavigation(targetTabId);
+	if (!tabId) {
+		return { success: false, error: ERROR_MESSAGES.activeTab };
+	}
+	let activeTab: chrome.tabs.Tab | undefined;
+	try {
+		activeTab = await chrome.tabs.get(tabId);
+	} catch {
+		return { success: false, error: ERROR_MESSAGES.activeTab };
+	}
 
 	if (!activeTab || typeof activeTab.id !== 'number') {
 		return { success: false, error: ERROR_MESSAGES.activeTab };
 	}
 
-	const url = activeTab.url ?? '';
+	const url = activeTab.url || (await readCurrentTabUrl(activeTab.id)) || fallbackUrl || '';
 	if (isRestrictedUrl(url)) {
 		return { success: false, error: ERROR_MESSAGES.restrictedPage };
 	}
@@ -724,11 +905,54 @@ async function startCurrentPage(): Promise<CommandResponse> {
 			kind: 'tab',
 			tabId: activeTab.id,
 			title: articleResponse.article.title || activeTab.title || url,
-			url: articleResponse.article.url || url,
+			url: queueItemId ? url : articleResponse.article.url || url,
 		},
 		content: articleResponse.article,
 		readableSurface: articleResponse.readableSurface,
+		...(queueItemId ? { queueItemId } : {}),
 	});
+}
+
+async function playQueueItem(item: QueueItem, preferredTabId?: number): Promise<CommandResponse> {
+	const targetTabId = await findTargetTabForNavigation(preferredTabId);
+	if (!targetTabId) {
+		await markQueueItemStatus(item.id, 'error');
+		return { success: false, error: ERROR_MESSAGES.activeTab };
+	}
+
+	let targetTabUrl = '';
+	try {
+		const targetTab = await chrome.tabs.get(targetTabId);
+		targetTabUrl = targetTab.url ?? '';
+	} catch {
+		// Treat an unavailable URL as a navigation that still needs to be started.
+	}
+
+	let isAlreadyOnPage = false;
+	try {
+		isAlreadyOnPage = normalizeQueueUrl(targetTabUrl) === item.normalizedUrl;
+	} catch {
+		// Invalid current URL means the target needs navigation.
+	}
+	playlistQueue = markPlaying(playlistQueue, item.id);
+	await saveAndBroadcastQueue();
+
+	if (isAlreadyOnPage) {
+		const result = await startCurrentPage(targetTabId, item.id, item.url);
+		if (!result.success) {
+			await markQueueItemStatus(item.id, 'error');
+		}
+		return result;
+	}
+
+	try {
+		await persistPendingQueueNavigation(createPendingQueueNavigation(item.id, targetTabId, item.url));
+		await chrome.tabs.update(targetTabId, { url: item.url });
+		return { success: true };
+	} catch {
+		await failPendingQueueNavigation(item.id);
+		return { success: false, error: t('queueErrorNavigationFailed') };
+	}
 }
 
 async function startManualText(payload: unknown): Promise<CommandResponse> {
@@ -761,8 +985,30 @@ async function getCurrentPageInfo(): Promise<PageInfoResponse> {
 	}
 }
 
+async function dispatchOffscreenCommand(command: OffscreenCommand): Promise<OffscreenCommandResponse> {
+	let retries = 3;
+	while (retries > 0) {
+		try {
+			const res = await sendOffscreenCommand(command, (message) => chrome.runtime.sendMessage(message));
+			if (res.success || retries === 1) return res;
+			retries--;
+			await new Promise((resolve) => setTimeout(resolve, 150));
+			await setupOffscreen();
+		} catch (error) {
+			retries--;
+			if (retries > 0 && isMissingReceiverError(error)) {
+				await new Promise((resolve) => setTimeout(resolve, 150));
+				await setupOffscreen();
+			} else {
+				throw error;
+			}
+		}
+	}
+	return { success: false };
+}
+
 function observeOffscreenPlay(sessionId: string, command: OffscreenCommand): void {
-	void sendOffscreenCommand(command, (message) => chrome.runtime.sendMessage(message)).then(
+	void dispatchOffscreenCommand(command).then(
 		(response) => {
 			if (!response.success) {
 				void failPendingStart(sessionId);
@@ -885,6 +1131,7 @@ async function changeSpeed(payload: unknown): Promise<CommandResponse> {
 
 async function stopReading(): Promise<CommandResponse> {
 	await ensureHydrated();
+	await cancelPendingQueueNavigation();
 	await stopActiveSession('user-stop');
 	await closeOffscreenWhenIdle();
 	return { success: true };
@@ -973,6 +1220,42 @@ async function stopSidePanelAudio(panelInstanceId: string): Promise<CommandRespo
 	return { success: true };
 }
 
+async function findTargetTabForNavigation(preferredTabId?: number): Promise<number | undefined> {
+	if (typeof preferredTabId === 'number') {
+		try {
+			const tab = await chrome.tabs.get(preferredTabId);
+			const preferred = selectNavigationTab([tab], preferredTabId);
+			if (preferred !== undefined) {
+				return preferred;
+			}
+		} catch {
+			// Preferred tab no longer exists
+		}
+	}
+
+	try {
+		const tabs = await chrome.tabs.query({ currentWindow: true });
+		const currentWindowTabId = selectNavigationTab(tabs, preferredTabId);
+		if (currentWindowTabId !== undefined) {
+			return currentWindowTabId;
+		}
+	} catch {
+		// Ignore error querying tabs
+	}
+
+	try {
+		const tabs = await chrome.tabs.query({});
+		const anyWindowTabId = selectNavigationTab(tabs, preferredTabId);
+		if (anyWindowTabId !== undefined) {
+			return anyWindowTabId;
+		}
+	} catch {
+		// Ignore error querying tabs
+	}
+
+	return undefined;
+}
+
 async function applyProgressMessage(message: Record<string, unknown>): Promise<void> {
 	await ensureHydrated();
 	if (!activeSession || typeof message.sessionId !== 'string' || !isPlaybackProgress(message.progress)) {
@@ -985,7 +1268,22 @@ async function applyProgressMessage(message: Record<string, unknown>): Promise<v
 	}
 
 	if (updatedSession.status === 'stopped') {
+		const completedNaturally = (message.progress as unknown as Record<string, unknown>)?.completedNaturally === true;
+		const completedSession = activeSession;
+		const currentSessionTabId = completedSession?.source.kind === 'tab' ? completedSession.source.tabId : undefined;
+		const queueItemId = getQueueItemId(completedSession);
 		await clearSession();
+
+		if (completedNaturally && queueItemId && getPlayingItem(playlistQueue, queueItemId)) {
+			playlistQueue = markDone(playlistQueue, queueItemId);
+			await saveAndBroadcastQueue();
+
+			const nextItem = getNextPending(playlistQueue);
+			if (nextItem) {
+				await playQueueItem(nextItem, currentSessionTabId);
+			}
+		}
+
 		await closeOffscreenWhenIdle();
 		return;
 	}
@@ -1000,6 +1298,55 @@ function respondFromQueue<T>(operation: () => Promise<T>, sendResponse: (respons
 		() => sendResponse({ success: false, error: ERROR_MESSAGES.setup }),
 	);
 	return true;
+}
+
+async function readCurrentTabUrl(tabId: number): Promise<string | null> {
+	try {
+		const tab = await chrome.tabs.get(tabId);
+		if (typeof tab.url === 'string' && tab.url.length > 0) {
+			return tab.url;
+		}
+	} catch {
+		// Fall back to the content script when the tabs API redacts the URL.
+	}
+	return liveDocumentUrl(tabId);
+}
+
+async function handlePendingQueueNavigationUpdate(tabId: number, changeInfo: { status?: string; url?: string }): Promise<void> {
+	await ensureHydrated();
+	const pending = pendingQueueNavigation;
+	if (!pending || pending.tabId !== tabId) {
+		return;
+	}
+	if (typeof changeInfo.url === 'string' && !matchesPendingQueueNavigation(pending, tabId, changeInfo.url)) {
+		await failPendingQueueNavigation(pending.itemId);
+		return;
+	}
+	if (changeInfo.status !== 'complete') {
+		return;
+	}
+
+	const currentUrl = typeof changeInfo.url === 'string' ? changeInfo.url : await readCurrentTabUrl(tabId);
+	if (!currentUrl || !matchesPendingQueueNavigation(pending, tabId, currentUrl)) {
+		await failPendingQueueNavigation(pending.itemId);
+		return;
+	}
+
+	const pendingItem = playlistQueue.items.find((item) => item.id === pending.itemId);
+	if (!pendingItem || pendingItem.status !== 'playing') {
+		await failPendingQueueNavigation(pending.itemId);
+		return;
+	}
+	await clearPendingQueueNavigation(pending.itemId);
+	let result = await startCurrentPage(tabId, pending.itemId, pending.expectedUrl);
+	if (!result.success && pendingItem && isSupportedPdfSource(pendingItem.url)) {
+		// Retry nhẹ cho file PDF local phòng trường hợp Chrome PDF Viewer chưa kịp ready.
+		await new Promise((resolve) => setTimeout(resolve, 350));
+		result = await startCurrentPage(tabId, pending.itemId, pending.expectedUrl);
+	}
+	if (!result.success) {
+		await markQueueItemStatus(pending.itemId, 'error');
+	}
 }
 
 // Handle runtime messages
@@ -1207,6 +1554,145 @@ chrome.runtime.onMessage.addListener(
 				}
 				break;
 
+			case 'GET_PLAYLIST_QUEUE':
+				return respondFromQueue(async () => {
+					await ensureHydrated();
+					return { queue: playlistQueue };
+				}, sendResponse);
+
+			case 'ADD_TAB_TO_QUEUE': {
+				return respondFromQueue(async () => {
+					await ensureHydrated();
+					const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+					if (!activeTab?.id) {
+						return { success: false, error: 'No active tab' };
+					}
+					let tabUrl = activeTab.url;
+					let tabTitle = activeTab.title;
+					if (!tabUrl) {
+						const info = await requestPageInfoFromTab(activeTab.id, {
+							sendMessage: (tabId, message) => chrome.tabs.sendMessage(tabId, message),
+							executeScript: (options) => chrome.scripting.executeScript(options),
+						}).catch(() => null);
+						if (info?.available) {
+							tabUrl = info.url;
+							tabTitle = info.title;
+						}
+					}
+					if (!tabUrl || isRestrictedUrl(tabUrl)) {
+						return { success: false, error: 'No active tab' };
+					}
+					const result = addToQueue(playlistQueue, {
+						url: tabUrl,
+						title: tabTitle ?? '',
+					});
+					if ('error' in result) {
+						return { success: false, error: result.error };
+					}
+					playlistQueue = result;
+					await saveQueue(playlistQueue);
+					await broadcastQueue(playlistQueue);
+					return { success: true };
+				}, sendResponse);
+			}
+
+			case 'ADD_URL_TO_QUEUE': {
+				const urlPayload = (msg.payload as { url?: unknown } | undefined)?.url;
+				if (typeof urlPayload !== 'string') {
+					sendResponse({ success: false, error: 'Invalid URL' });
+					return undefined;
+				}
+				const rawUrl = urlPayload;
+				return respondFromQueue(async () => {
+					await ensureHydrated();
+					let url: URL;
+					try {
+						url = new URL(rawUrl);
+					} catch {
+						return { success: false, error: 'Invalid URL' };
+					}
+					const result = addToQueue(playlistQueue, {
+						url: rawUrl,
+						title: url.hostname,
+					});
+					if ('error' in result) {
+						return { success: false, error: result.error };
+					}
+					playlistQueue = result;
+					await saveQueue(playlistQueue);
+					await broadcastQueue(playlistQueue);
+					return { success: true };
+				}, sendResponse);
+			}
+
+			case 'REMOVE_QUEUE_ITEM': {
+				const removeId = (msg.payload as { id?: unknown } | undefined)?.id;
+				if (typeof removeId !== 'string') {
+					sendResponse({ success: false });
+					return undefined;
+				}
+				return respondFromQueue(async () => {
+					await ensureHydrated();
+					if (pendingQueueNavigation?.itemId === removeId) {
+						await clearPendingQueueNavigation(removeId);
+					}
+					playlistQueue = removeItem(playlistQueue, removeId);
+					await saveAndBroadcastQueue();
+					return { success: true };
+				}, sendResponse);
+			}
+
+			case 'REQUEUE_ITEM': {
+				const requeueId = (msg.payload as { id?: unknown } | undefined)?.id;
+				if (typeof requeueId !== 'string') {
+					sendResponse({ success: false });
+					return undefined;
+				}
+				return respondFromQueue(async () => {
+					await ensureHydrated();
+					if (pendingQueueNavigation?.itemId === requeueId) {
+						await clearPendingQueueNavigation(requeueId);
+					}
+					playlistQueue = requeueItem(playlistQueue, requeueId);
+					await saveAndBroadcastQueue();
+					return { success: true };
+				}, sendResponse);
+			}
+
+			case 'CLEAR_QUEUE':
+				return respondFromQueue(async () => {
+					await ensureHydrated();
+					await clearPendingQueueNavigation();
+					playlistQueue = clearQueue(playlistQueue);
+					await saveAndBroadcastQueue();
+					return { success: true };
+				}, sendResponse);
+
+			case 'PLAY_QUEUE':
+				return respondFromQueue(async () => {
+					await ensureHydrated();
+					const nextItem = getNextPending(playlistQueue);
+					if (!nextItem) {
+						return { success: false, error: t('queueErrorNoPending') };
+					}
+					return playQueueItem(nextItem);
+				}, sendResponse);
+
+			case 'REPLAY_QUEUE':
+				return respondFromQueue(async () => {
+					await ensureHydrated();
+					if (playlistQueue.items.length === 0) {
+						return { success: false, error: t('queueErrorEmpty') };
+					}
+					playlistQueue = requeueAllItems(playlistQueue);
+					await saveAndBroadcastQueue();
+					const nextItem = getNextPending(playlistQueue);
+					if (!nextItem) {
+						return { success: false, error: t('queueErrorReplayFailed') };
+					}
+					return playQueueItem(nextItem);
+				}, sendResponse);
+
 			default:
 				break;
 		}
@@ -1216,15 +1702,26 @@ chrome.runtime.onMessage.addListener(
 );
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-	void enqueue(() => stopIfOwner(tabId, 'tab-removed'));
+	void enqueue(async () => {
+		await ensureHydrated();
+		if (pendingQueueNavigation?.tabId === tabId) {
+			await failPendingQueueNavigation(pendingQueueNavigation.itemId);
+		}
+		await stopIfOwner(tabId, 'tab-removed');
+	});
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-	// Checked on `complete` as well as `loading`: while a navigation is still loading the tab can
-	// still report the URL it is leaving, and that update is the only other chance to notice.
-	if (changeInfo.status !== undefined || changeInfo.url !== undefined) {
-		void enqueue(() => stopIfNavigatedAway(tabId));
-	}
+	void enqueue(async () => {
+		// Checked on `complete` as well as `loading`: while a navigation is still loading the tab can
+		// still report the URL it is leaving, and that update is the only other chance to notice.
+		if (changeInfo.status !== undefined || changeInfo.url !== undefined) {
+			await stopIfNavigatedAway(tabId);
+		}
+		if (changeInfo.status === 'complete' || changeInfo.url !== undefined) {
+			await handlePendingQueueNavigationUpdate(tabId, changeInfo);
+		}
+	});
 });
 
 const beginModelCacheWarm = async (): Promise<void> => {
@@ -1246,48 +1743,84 @@ registerModelCacheWarmLifecycle(
 );
 
 chrome.runtime.onInstalled.addListener(() => {
-	chrome.contextMenus.create({
-		id: 'read-selected-text',
-		title: 'Đọc phần văn bản đã chọn',
-		contexts: ['selection'],
-		documentUrlPatterns: ['http://*/*', 'https://*/*'],
-	});
+	void setupContextMenus();
 });
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
-	if (info.menuItemId !== 'read-selected-text' || typeof tab?.id !== 'number') {
+	if (info.menuItemId === 'readit-read-selection') {
+		if (typeof tab?.id !== 'number') return;
+		void enqueue(async () => {
+			const [{ result: pageLanguage } = { result: undefined }] = await chrome.scripting
+				.executeScript({
+					target: { tabId: tab.id as number },
+					func: () => document.documentElement.lang,
+				})
+				.catch(() => []);
+			const url = info.pageUrl || tab.url || '';
+			const article = createSelectedTextArticle({
+				selectionText: info.selectionText,
+				title: tab.title || url,
+				url,
+				pageLanguage,
+			});
+			if (!article) {
+				return { success: true };
+			}
+			return startPlayback({
+				contentScope: 'selection',
+				source: {
+					kind: 'tab',
+					tabId: tab.id as number,
+					title: article.title || tab.title || url,
+					url: article.url || url,
+				},
+				content: article,
+				readableSurface: 'website-dom',
+			});
+		});
 		return;
 	}
 
-	void enqueue(async () => {
-		const [{ result: pageLanguage } = { result: undefined }] = await chrome.scripting
-			.executeScript({
-				target: { tabId: tab.id as number },
-				func: () => document.documentElement.lang,
-			})
-			.catch(() => []);
-		const url = info.pageUrl || tab.url || '';
-		const article = createSelectedTextArticle({
-			selectionText: info.selectionText,
-			title: tab.title || url,
-			url,
-			pageLanguage,
-		});
-		if (!article) {
+	if (info.menuItemId === 'readit-add-to-queue') {
+		const url = info.pageUrl || tab?.url || '';
+		const title = tab?.title || '';
+		if (!url || isRestrictedUrl(url)) return;
+		void enqueue(async () => {
+			await ensureHydrated();
+			const result = addToQueue(playlistQueue, {
+				url,
+				title: title || new URL(url).hostname,
+			});
+			if ('error' in result) return { success: false, error: result.error };
+			playlistQueue = result;
+			await saveQueue(playlistQueue);
+			await broadcastQueue(playlistQueue);
 			return { success: true };
-		}
-		return startPlayback({
-			contentScope: 'selection',
-			source: {
-				kind: 'tab',
-				tabId: tab.id as number,
-				title: article.title || tab.title || url,
-				url: article.url || url,
-			},
-			content: article,
-			readableSurface: 'website-dom',
 		});
-	});
+		return;
+	}
+
+	if (info.menuItemId === 'readit-play-queue') {
+		void enqueue(async () => {
+			await ensureHydrated();
+			const nextItem = getNextPending(playlistQueue);
+			if (!nextItem) return { success: false, error: 'Queue trống.' };
+			return playQueueItem(nextItem);
+		});
+		return;
+	}
+
+	if (info.menuItemId === 'readit-replay-queue') {
+		void enqueue(async () => {
+			await ensureHydrated();
+			if (playlistQueue.items.length === 0) return { success: false, error: 'Queue trống.' };
+			playlistQueue = requeueAllItems(playlistQueue);
+			await saveAndBroadcastQueue();
+			const nextItem = getNextPending(playlistQueue);
+			if (!nextItem) return { success: false, error: 'Không thể phát lại queue.' };
+			return playQueueItem(nextItem);
+		});
+	}
 });
 
 chrome.commands.onCommand.addListener((command, tab) => {

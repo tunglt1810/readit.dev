@@ -41,6 +41,34 @@ test('creates a tab-owned loading session', () => {
 	});
 });
 
+test('persists queue ownership only on tab playback sessions', () => {
+	const queueOwned = createPlaybackSession({ ...tabInput, queueItemId: 'queue-item-1' });
+	assert.equal((queueOwned as { queueItemId?: string }).queueItemId, 'queue-item-1');
+	assert.equal(isPlaybackSessionSnapshot(queueOwned), true);
+
+	const manual = createPlaybackSession({
+		sessionId: 'manual-queue-owner',
+		contentScope: 'manual',
+		source: manualSource,
+		readableSurface: 'manual-reader',
+		lang: 'en',
+		voiceStyleId: 'M1',
+		speed: 1.05,
+		now: 1000,
+	});
+	assert.equal('queueItemId' in manual, false);
+	assert.equal(isPlaybackSessionSnapshot({ ...queueOwned, queueItemId: 42 }), false);
+	assert.equal(
+		isPlaybackSessionSnapshot({
+			...queueOwned,
+			contentScope: 'selection',
+			readableSurface: 'website-dom',
+			queueItemId: 'queue-item-1',
+		}),
+		false,
+	);
+});
+
 test('creates a manual loading session without tab metadata', () => {
 	const session = createPlaybackSession({
 		sessionId: 'manual-1',

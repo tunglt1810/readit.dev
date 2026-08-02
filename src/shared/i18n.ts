@@ -10,8 +10,15 @@ export const VOICE_STYLE_TRANSLATIONS = {
 
 export type UiLanguage = keyof typeof THEME_TRANSLATIONS;
 export type TranslationKey = Exclude<keyof typeof en, 'voiceStyles'>;
-export const uiLang: UiLanguage = chrome.i18n.getUILanguage().startsWith('vi') ? 'vi' : 'en';
-export const t = (key: TranslationKey): string => THEME_TRANSLATIONS[uiLang][key];
+export function getUiLanguage(): UiLanguage {
+	if (typeof chrome !== 'undefined' && chrome.i18n?.getUILanguage) {
+		return chrome.i18n.getUILanguage().startsWith('vi') ? 'vi' : 'en';
+	}
+	return 'en';
+}
+
+export const uiLang: UiLanguage = getUiLanguage();
+export const t = (key: TranslationKey): string => THEME_TRANSLATIONS[getUiLanguage()][key];
 
 export function getPlaybackErrorTranslationKey(error: string | undefined): TranslationKey | undefined {
 	switch (error) {

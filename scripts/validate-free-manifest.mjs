@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const REQUIRED_PERMISSIONS = ['activeTab', 'contextMenus', 'offscreen', 'scripting', 'sidePanel', 'storage'];
-const REQUIRED_HOST_PERMISSIONS = ['https://huggingface.co/*'];
+const REQUIRED_HOST_PERMISSIONS = ['file://*/*', 'https://huggingface.co/*'];
 const REQUIRED_MINIMUM_CHROME_VERSION = '127';
 const REQUIRED_SIDE_PANEL_PATH = 'src/sidepanel/sidepanel.html';
 const REQUIRED_WEB_ACCESSIBLE_RESOURCES = [

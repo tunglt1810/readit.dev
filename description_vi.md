@@ -6,6 +6,8 @@ Tự động trích xuất nội dung: Chỉ đọc bài viết chính, tự đ�
 Theo dõi dễ dàng: Tự động highlight (đánh dấu) từ đang được phát âm.
 Xử lý cục bộ (On-device): Hoạt động bằng engine Supertonic WebGPU, không gửi văn bản của bạn lên bất kỳ server nào.
 Tùy biến giọng đọc: Hỗ trợ nhiều lựa chọn giọng đọc (Voice Styles) khác nhau.
+Danh sách phát (Playlist Queue): Lưu danh sách bài viết web và file PDF local để nghe liên tục, tự động chuyển bài khi đọc xong.
+
 📖 Hướng dẫn sử dụng:
 
 1. Đọc toàn bộ bài viết (Current Page):
@@ -20,7 +22,11 @@ Nhấn chuột phải, chọn "Đọc với readit.dev" từ menu ngữ cảnh (
 Mở Side Panel (Bảng điều khiển bên) của readit.dev.
 Dán (Paste) văn bản của bạn vào khung và nhấn Play.
 
-4. Điều khiển (Controls):
+4. Sử dụng Danh sách phát (Playlist Queue):
+Mở Side Panel, nhấn "+ Thêm tab hiện tại" hoặc dán đường dẫn URL/File PDF vào mục Danh sách phát (hoặc nhấn chuột phải vào liên kết/trang và chọn "Thêm vào danh sách phát").
+Nhấn "Phát danh sách" để nghe liên tục, ứng dụng sẽ tự động nhảy bài tiếp theo khi đọc xong.
+
+5. Điều khiển (Controls):
 Dễ dàng Tạm dừng/Phát tiếp (Pause/Play), thay đổi giọng đọc trực tiếp thông qua Popup hoặc Side Panel.
 
 🔒 Quyền riêng tư: Vì công nghệ giọng nói được chạy trực tiếp trên máy tính của bạn, mọi văn bản, bài viết bạn đọc đều được giữ riêng tư hoàn toàn. readit.dev không thu thập hay lưu trữ nội dung bạn đang nghe.

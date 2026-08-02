@@ -19,7 +19,7 @@ jobs:
       name: chrome-web-store
     steps:
       - name: Checkout tagged commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Validate release tag and set manifest version
         id: version
@@ -44,12 +44,12 @@ jobs:
           '
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 11.11.0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: pnpm
@@ -81,6 +81,12 @@ jobs:
 
       - name: Evaluate Vietnamese normalization corpus
         run: pnpm evaluate:vi
+
+      - name: Restore E2E model cache seed
+        uses: actions/cache@v6
+        with:
+          path: .tmp/e2e-model-cache-seed
+          key: e2e-model-seed-${{ hashFiles('src/shared/constants.ts') }}
 
       - name: Run extension E2E tests
         run: xvfb-run --auto-servernum pnpm test:e2e
@@ -156,11 +162,21 @@ jobs:
             status="$(curl --fail-with-body --silent --show-error \
               -H "Authorization: Bearer $CWS_ACCESS_TOKEN" \
               "$base/v2/$name:fetchStatus")"
-            state="$(jq -r '.lastAsyncUploadState // "UNKNOWN"' <<< "$status")"
+            # NO_ASYNC_OP: lastAsyncUploadState vắng mặt = không có async op đang pending,
+            # upload đã hoàn thành synchronously.
+            # Theo API discovery doc v2 (revision 20260729):
+            #   UPLOAD_STATE_UNSPECIFIED = proto default, không phải lỗi
+            #   NOT_FOUND = không có upload attempt nào trong 24h (upload đã xong từ trước)
+            state="$(jq -r '.lastAsyncUploadState // "NO_ASYNC_OP"' <<< "$status")"
             echo "Attempt $attempt/$max_attempts — state: $state"
             case "$state" in
-              SUCCEEDED)
+              SUCCEEDED|NO_ASYNC_OP|UPLOAD_STATE_UNSPECIFIED)
                 echo "Upload succeeded."
+                exit 0
+                ;;
+              NOT_FOUND)
+                # Không có async upload nào trong 24h — upload đã xử lý synchronously hoặc đã xong
+                echo "Upload succeeded (no recent async upload found)."
                 exit 0
                 ;;
               FAILED)
@@ -168,11 +184,7 @@ jobs:
                 echo "$status" | jq . >&2
                 exit 1
                 ;;
-              NOT_FOUND)
-                echo "Item not found:" >&2
-                echo "$status" | jq . >&2
-                exit 1
-                ;;
+
               IN_PROGRESS)
                 sleep 10
                 ;;

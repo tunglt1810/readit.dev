@@ -3,7 +3,12 @@ import 'pdfjs-dist/build/pdf.worker.mjs';
 import type { PdfDocument } from './pdf_extractor.ts';
 
 export async function loadPdfJsDocument(data: Uint8Array): Promise<PdfDocument> {
-	const loadingTask = getDocument({ data });
+	const loadingTask = getDocument({
+		data,
+		useWorkerFetch: false,
+		useSystemFonts: true,
+		disableFontFace: true,
+	});
 	const document = await loadingTask.promise;
 	return {
 		numPages: document.numPages,

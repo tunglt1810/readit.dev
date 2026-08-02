@@ -344,6 +344,11 @@ result, then is cleared by dismissal or the next preparation.
 - **User cancellation:** stop scheduling new units, wait for any
   non-preemptible inference/encoder operation to settle, cancel Mediabunny,
   call `writable.abort()`, and delete handle/snapshot metadata.
+- Once cancellation has been requested, late encoder/progress failures are
+  part of the cancellation cleanup race and must not leave a retryable
+  `failed` snapshot behind. The coordinator clears the handle and job
+  metadata after the cancellation attempt, including when offscreen cleanup
+  reports an error.
 - **TTS or encoder failure:** abort the writable, delete transient resources,
   and expose a retryable localized error.
 - **Permission denied or revoked:** fail before writing or abort an open

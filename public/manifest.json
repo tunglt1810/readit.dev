@@ -20,7 +20,8 @@
 		"sidePanel"
 	],
 	"host_permissions": [
-		"https://huggingface.co/*"
+		"https://huggingface.co/*",
+		"file://*/*"
 	],
 	"content_security_policy": {
 		"extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"

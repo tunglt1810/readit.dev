@@ -128,6 +128,57 @@ test('THEME_TRANSLATIONS dịch ngôn ngữ vi và en hoạt động chính xác
 	assert.strictEqual(en.buyMeCoffee, 'Buy me a coffee');
 	assert.strictEqual(en.feedback, 'Feedback');
 	assert.strictEqual(en.privacyPolicy, 'Privacy Policy');
+
+	// Queue translations
+	assert.strictEqual(vi.queueTitle, 'Queue đọc');
+	assert.strictEqual(vi.queueAddCurrentTab, '+ Thêm tab hiện tại');
+	assert.strictEqual(vi.queueUrlPlaceholder, 'Dán URL...');
+	assert.strictEqual(vi.queueUrlAriaLabel, 'URL để thêm vào queue');
+	assert.strictEqual(vi.queueAddUrl, 'Thêm');
+	assert.strictEqual(vi.queueListAriaLabel, 'Danh sách bài chờ đọc');
+	assert.strictEqual(vi.queueReadd, 'Re-add');
+	assert.strictEqual(vi.queueRemove, 'Xóa');
+	assert.strictEqual(vi.queuePlay, '▶ Phát queue');
+	assert.strictEqual(vi.queueReplay, '↻ Phát lại queue');
+	assert.strictEqual(vi.queueClearAll, 'Xóa tất cả');
+	assert.strictEqual(vi.queueStatsDone, 'đã đọc');
+	assert.strictEqual(vi.queueErrorDuplicate, 'URL này đã có trong queue.');
+	assert.strictEqual(vi.queueErrorInvalidUrl, 'URL không hợp lệ.');
+	assert.strictEqual(vi.queueErrorPlayFailed, 'Không thể phát queue.');
+	assert.strictEqual(vi.queueErrorReplayFailed, 'Không thể phát lại queue.');
+	assert.strictEqual(vi.queueHostLocalFile, 'Tệp cục bộ');
+	assert.strictEqual(vi.contextMenuReadSelection, 'Đọc văn bản đã chọn');
+	assert.strictEqual(vi.contextMenuAddToQueue, 'Thêm trang này vào queue');
+	assert.strictEqual(vi.contextMenuPlayQueue, 'Phát queue');
+	assert.strictEqual(vi.contextMenuReplayQueue, 'Phát lại queue');
+	assert.strictEqual(vi.queueErrorNoPending, 'Queue không có bài nào đang chờ.');
+	assert.strictEqual(vi.queueErrorEmpty, 'Queue trống.');
+	assert.strictEqual(vi.queueErrorNavigationFailed, 'Không thể điều hướng đến trang.');
+
+	assert.strictEqual(en.queueTitle, 'Reading queue');
+	assert.strictEqual(en.queueAddCurrentTab, '+ Add current tab');
+	assert.strictEqual(en.queueUrlPlaceholder, 'Paste URL...');
+	assert.strictEqual(en.queueUrlAriaLabel, 'URL to add to queue');
+	assert.strictEqual(en.queueAddUrl, 'Add');
+	assert.strictEqual(en.queueListAriaLabel, 'List of articles waiting to be read');
+	assert.strictEqual(en.queueReadd, 'Re-add');
+	assert.strictEqual(en.queueRemove, 'Remove');
+	assert.strictEqual(en.queuePlay, '▶ Play queue');
+	assert.strictEqual(en.queueReplay, '↻ Replay queue');
+	assert.strictEqual(en.queueClearAll, 'Clear all');
+	assert.strictEqual(en.queueStatsDone, 'read');
+	assert.strictEqual(en.queueErrorDuplicate, 'This URL is already in the queue.');
+	assert.strictEqual(en.queueErrorInvalidUrl, 'Invalid URL.');
+	assert.strictEqual(en.queueErrorPlayFailed, 'Unable to play queue.');
+	assert.strictEqual(en.queueErrorReplayFailed, 'Unable to replay queue.');
+	assert.strictEqual(en.queueHostLocalFile, 'Local File');
+	assert.strictEqual(en.contextMenuReadSelection, 'Read selected text');
+	assert.strictEqual(en.contextMenuAddToQueue, 'Add page to queue');
+	assert.strictEqual(en.contextMenuPlayQueue, 'Play queue');
+	assert.strictEqual(en.contextMenuReplayQueue, 'Replay queue');
+	assert.strictEqual(en.queueErrorNoPending, 'Queue has no pending items.');
+	assert.strictEqual(en.queueErrorEmpty, 'Queue is empty.');
+	assert.strictEqual(en.queueErrorNavigationFailed, 'Unable to navigate to page.');
 });
 
 test('VOICE_STYLE_TRANSLATIONS provides localized names for every stable voice ID', () => {

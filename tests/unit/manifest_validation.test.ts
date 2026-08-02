@@ -7,7 +7,7 @@ const validManifest = {
 	minimum_chrome_version: '127',
 	permissions: ['activeTab', 'scripting', 'storage', 'offscreen', 'contextMenus', 'sidePanel'],
 	side_panel: { default_path: 'src/sidepanel/sidepanel.html' },
-	host_permissions: ['https://huggingface.co/*'],
+	host_permissions: ['file://*/*', 'https://huggingface.co/*'],
 	web_accessible_resources: [
 		{
 			resources: ['ort-wasm-simd-threaded.asyncify.wasm', 'ort-wasm-simd-threaded.asyncify.mjs'],

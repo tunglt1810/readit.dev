@@ -20,9 +20,10 @@ export interface PdfDocument {
 }
 
 export interface PdfExtractorDependencies {
-	fetchPdf(url: string, init: RequestInit): Promise<Pick<Response, 'ok' | 'headers' | 'arrayBuffer'>>;
+	fetchPdf(url: string, init: RequestInit): Promise<Pick<Response, 'ok' | 'status' | 'headers' | 'arrayBuffer'>>;
 	isFileSchemeAccessAllowed(): Promise<boolean>;
 	loadDocument(data: Uint8Array): Promise<PdfDocument>;
+	fetchFileBytesViaOffscreen?: (url: string) => Promise<Uint8Array | null>;
 }
 
 export type PdfArticleResponse =
@@ -142,30 +143,43 @@ export async function extractPdfArticle(
 	dependencies: PdfExtractorDependencies,
 ): Promise<PdfArticleResponse | null> {
 	if (!isSupportedPdfSource(source.url)) return null;
+
 	if (new URL(source.url).protocol === 'file:' && !(await dependencies.isFileSchemeAccessAllowed())) {
 		return extractionFailure(PDF_ERROR_CODES.fileAccessRequired);
 	}
 
 	const controller = new AbortController();
 	const timeout = setTimeout(() => controller.abort(), PDF_FETCH_TIMEOUT_MS);
-	let response: Pick<Response, 'ok' | 'headers' | 'arrayBuffer'>;
+	let bytes: Uint8Array | null = null;
+	let headers: Headers | undefined;
+	const isFileScheme = new URL(source.url).protocol === 'file:';
+
 	try {
-		response = await dependencies.fetchPdf(source.url, { credentials: 'include', signal: controller.signal });
+		const response = await dependencies.fetchPdf(
+			source.url,
+			isFileScheme ? { signal: controller.signal } : { credentials: 'include', signal: controller.signal },
+		);
+		headers = response.headers as Headers;
+		const isSuccessfulFetch = response.ok || (isFileScheme && (response.status === 0 || response.status === 200));
+		if (isSuccessfulFetch) {
+			bytes = new Uint8Array(await response.arrayBuffer());
+		}
 	} catch {
-		return extractionFailure(PDF_ERROR_CODES.extractionFailed);
+		// SW fetch failed (expected for file:// protocol in MV3 SW)
 	} finally {
 		clearTimeout(timeout);
 	}
 
-	if (!response.ok) return extractionFailure(PDF_ERROR_CODES.extractionFailed);
-
-	let bytes: Uint8Array;
-	try {
-		bytes = new Uint8Array(await response.arrayBuffer());
-	} catch {
-		return extractionFailure(PDF_ERROR_CODES.extractionFailed);
+	if ((!bytes || bytes.length === 0) && isFileScheme && dependencies.fetchFileBytesViaOffscreen) {
+		try {
+			bytes = await dependencies.fetchFileBytesViaOffscreen(source.url);
+		} catch {
+			// Offscreen fetch failed
+		}
 	}
-	if (!isPdfResponse(response.headers, bytes)) return null;
+
+	if (!bytes || bytes.length === 0) return extractionFailure(PDF_ERROR_CODES.extractionFailed);
+	if (headers && !isPdfResponse(headers, bytes)) return null;
 
 	let document: PdfDocument | undefined;
 	try {
