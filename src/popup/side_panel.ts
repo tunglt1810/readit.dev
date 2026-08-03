@@ -1,3 +1,5 @@
+import { openSidebarOrPanel } from '../shared/browser.ts';
+
 export interface SidePanelDependencies {
 	windowId: number | undefined;
 	open(options: { windowId: number }): Promise<void>;
@@ -13,7 +15,9 @@ export function openSidePanelForCurrentWindow(dependencies: SidePanelDependencie
 export function handleOpenSidePanelCommand(
 	command: string,
 	tab?: { windowId?: number },
-	openSidePanel: (options: { windowId: number }) => void = (options) => void chrome.sidePanel.open(options),
+	openSidePanel: (options: { windowId: number }) => void = (options) => {
+		void openSidebarOrPanel(options.windowId);
+	},
 ): boolean {
 	if (command === 'open_side_panel') {
 		if (typeof tab?.windowId === 'number') {
@@ -44,6 +48,3 @@ export function shouldFallbackToOpen(response: unknown): boolean {
 	}
 	return false;
 }
-
-
-

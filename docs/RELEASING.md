@@ -1,4 +1,4 @@
-# Releasing the Chrome Extension
+# Releasing the Chrome and Firefox Extensions
 
 The release workflow runs when a semantic version tag is pushed:
 
@@ -7,18 +7,22 @@ git tag -a v1.0.0 -m "Release v1.0.0"
 git push origin v1.0.0
 ```
 
-`.github/workflows/release-extension.yml` builds the extension with the tag
-version, enforces the exact Free manifest permission and host boundary
-(`activeTab`, `contextMenus`, `offscreen`, `scripting`, `sidePanel`, `storage`,
-and only the Hugging Face model host), runs tests, creates
-`readit.dev-VERSION.zip`, creates a GitHub Release, uploads the package to
-Chrome Web Store, and submits it for review.
+`.github/workflows/release-extension.yml` treats Chrome as the primary release
+path. It builds and fully tests Chrome first, creates the GitHub Release with
+`readit.dev-chrome-VERSION.zip`, and publishes through the Chrome Web Store API.
+A separate Firefox path then builds and validates Firefox, attaches
+`readit.dev-firefox-VERSION.zip` when successful, and submits Firefox to
+Mozilla Add-ons (AMO).
+
+Firefox build, validation, packaging, or AMO failures do not cancel or block
+the completed Chrome GitHub Release or Chrome Web Store publication. The GitHub
+Release may contain only the Chrome archive until the Firefox path succeeds.
 
 The Free release does not require `api.readit.dev`, Cloudflare Workers, D1,
 license secrets, analytics, or crash-reporting services. The `backend/` folder
 is future-Pro source and must not be included in the extension build or ZIP.
 
-`pnpm validate:manifest` asserts:
+`pnpm validate:manifest:chrome` asserts:
 
 - `minimum_chrome_version` is exactly `127`;
 - `side_panel.default_path` is exactly the local
@@ -26,6 +30,22 @@ is future-Pro source and must not be included in the extension build or ZIP.
 - `assets/icon32.png` is exposed only to `http://*/*` and `https://*/*`;
 - the existing ONNX web-accessible resources remain exact; and
 - permissions and host permissions remain at the documented Free boundary.
+
+`pnpm validate:manifest:firefox` checks the Firefox-specific sidebar, Gecko ID,
+and permission boundary. `pnpm validate:firefox` runs Mozilla's `web-ext lint`
+against the Firefox bundle.
+
+The Firefox build converts the Chrome `side_panel` declaration to
+`sidebar_action`, removes Chrome-only `minimum_chrome_version`, file-URL access,
+and the unsupported `offscreen` permission, adds the `downloads` permission,
+and keeps the stable Gecko add-on ID. Firefox uses its MV3 background event page
+as the local audio host: TTS, playback, readable-surface updates, and MP3
+export are routed through a direct in-process bridge instead of Chrome's
+Offscreen Document API. Because Firefox does not support
+`showSaveFilePicker()`, the Firefox encoder buffers the MP3 locally and starts
+a `downloads.download()` Save As flow with a `blob:` URL. The sidebar is
+therefore not the owner of audio playback. Run Firefox runtime checks on a
+Firefox installation before treating a release as fully Firefox-verified.
 
 ## Free Side Panel release checklist
 
@@ -46,6 +66,18 @@ information, and publish it once. Then configure the GitHub secrets below.
 Use `v1.0.1` for the first fully automated store release. Re-running the same
 tag is safe for the GitHub Release asset.
 
+## Firefox AMO release
+
+The Firefox AMO listing is already initialized and version `1.1.0` was approved.
+Every later release tag submits the transformed `dist/firefox` bundle with
+`web-ext sign --channel listed`; no AMO listing metadata file is required for
+these updates. The signed submission may still wait for Mozilla review before
+becoming publicly available.
+
+The Firefox MP3 fallback uses the WebExtension `downloads` permission and keeps
+the encoded bytes local. Long exports temporarily use memory roughly equal to
+the final MP3 size before the download starts.
+
 The release package includes `THIRD_PARTY_NOTICES.txt`, which contains the
 required attribution and license links for Supertonic 3 and the runtime
 dependencies. The workflow validates that this file is present before it
@@ -57,7 +89,9 @@ Before tagging, run the production checks from a clean build output:
 
 ```bash
 pnpm build
-pnpm validate:manifest
+pnpm validate:manifest:chrome
+pnpm validate:manifest:firefox
+pnpm validate:firefox
 pnpm validate:vi-assets:release
 pnpm test:unit
 pnpm evaluate:vi
@@ -101,3 +135,13 @@ secrets:
 Keep the environment protected with required reviewers because the workflow can
 submit a public store release. `GITHUB_TOKEN` is provided automatically by
 GitHub and needs `contents: write` to create the GitHub Release.
+
+Create a separate GitHub Environment named `addons-mozilla-org` and add these
+environment secrets:
+
+- `AMO_JWT_ISSUER`: JWT issuer/API key from the AMO developer credentials page.
+- `AMO_JWT_SECRET`: JWT secret/API secret from the AMO developer credentials page.
+
+Keep the AMO environment protected with required reviewers as well. The
+workflow passes these values only to the Firefox publish job and writes any
+`web-ext` artifacts under the ignored `.tmp/` directory.

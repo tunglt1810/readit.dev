@@ -35,6 +35,7 @@ function prepared(jobId = 'job-1', playbackSessionId = 'session-old', units: Spe
 	return {
 		jobId,
 		playbackSessionId,
+		outputFilename: 'readit-export.mp3',
 		units,
 		language: 'en',
 		voiceStyleId: 'voice-1',
@@ -64,6 +65,8 @@ function createHarness(
 		runwayOpen?: boolean;
 		synthesize?: (input: { unit: SpeechUnit }) => Promise<AudioBuffer>;
 		encoder?: Partial<AudioExportEncoder>;
+		handle?: FileSystemFileHandle | null;
+		download?: (blob: Blob, filename: string) => Promise<void>;
 		onAdd?: () => void;
 		deleteHandle?: (jobId: string) => Promise<void>;
 	} = {},
@@ -74,6 +77,7 @@ function createHarness(
 	const progress: { state: string; progressPercentage: number; etaSeconds?: number; bytesWritten: number }[] = [];
 	const synthesizedTexts: string[] = [];
 	const taken: string[] = [];
+	const createdHandles: (FileSystemFileHandle | null)[] = [];
 	const deleted: string[] = [];
 	let createdEncoders = 0;
 	let now = 0;
@@ -91,21 +95,26 @@ function createHarness(
 		bytesWritten() {
 			return events.filter((event) => event === 'add').length * 100;
 		},
+		outputBlob() {
+			return new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/mpeg' });
+		},
 		...options.encoder,
 	};
 	const engine = new AudioExportEngine({
 		takeHandle: async (jobId) => {
 			taken.push(jobId);
-			return { kind: 'handle' } as unknown as FileSystemFileHandle;
+			return options.handle === undefined ? ({ kind: 'handle' } as unknown as FileSystemFileHandle) : options.handle;
 		},
 		deleteHandle: async (jobId) => {
 			deleted.push(jobId);
 			await options.deleteHandle?.(jobId);
 		},
-		createEncoder: async () => {
+		createEncoder: async (handle) => {
 			createdEncoders++;
+			createdHandles.push(handle);
 			return encoder;
 		},
+		download: options.download,
 		synthesize: async (input) => {
 			synthesizedTexts.push(input.unit.text);
 			now += 1_000;
@@ -120,7 +129,18 @@ function createHarness(
 		},
 		now: () => now,
 	});
-	return { engine, runway, events, progress, synthesizedTexts, taken, deleted, createdEncoders: () => createdEncoders, encoder };
+	return {
+		engine,
+		runway,
+		events,
+		progress,
+		synthesizedTexts,
+		taken,
+		deleted,
+		createdEncoders: () => createdEncoders,
+		createdHandles,
+		encoder,
+	};
 }
 
 test('continues the old immutable snapshot after playback replacement', async () => {
@@ -325,4 +345,22 @@ test('finalizes before completion and removes the transient handle', async () =>
 	await engine.start('job-1');
 	assert.deepEqual(events.slice(-2), ['finalize', 'completed']);
 	assert.deepEqual(deleted, ['job-1']);
+});
+
+test('downloads a memory export when the browser has no file handle picker', async () => {
+	const downloads: { blob: Blob; filename: string }[] = [];
+	const { engine, createdHandles } = createHarness({
+		handle: null,
+		download: async (blob, filename) => {
+			downloads.push({ blob, filename });
+		},
+	});
+
+	engine.prepare(prepared());
+	await engine.start('job-1');
+
+	assert.deepEqual(createdHandles, [null]);
+	assert.equal(downloads.length, 1);
+	assert.equal(downloads[0]?.filename, 'readit-export.mp3');
+	assert.deepEqual([...new Uint8Array(await downloads[0]!.blob.arrayBuffer())], [1, 2, 3]);
 });

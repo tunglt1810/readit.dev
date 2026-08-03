@@ -20,8 +20,27 @@ const validManifest = {
 	],
 };
 
+const validFirefoxManifest = {
+	...validManifest,
+	minimum_chrome_version: undefined,
+	permissions: ['activeTab', 'scripting', 'storage', 'contextMenus', 'downloads'],
+	side_panel: undefined,
+	sidebar_action: { default_panel: 'src/sidepanel/sidepanel.html' },
+	host_permissions: ['https://huggingface.co/*'],
+	browser_specific_settings: {
+		gecko: {
+			id: 'readit-dev@readit.dev',
+			data_collection_permissions: { required: ['none'] },
+		},
+	},
+};
+
 test('accepts the exact Free extension permission boundary', () => {
 	assert.doesNotThrow(() => validateFreeManifest(validManifest));
+});
+
+test('accepts the Firefox manifest boundary', () => {
+	assert.doesNotThrow(() => validateFreeManifest(validFirefoxManifest, 'firefox'));
 });
 
 test('rejects a missing contextMenus permission', () => {

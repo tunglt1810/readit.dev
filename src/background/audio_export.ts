@@ -135,6 +135,7 @@ export class AudioExportCoordinator {
 				createAudioExportOffscreenCommand('PREPARE_AUDIO_EXPORT', {
 					jobId: job.jobId,
 					playbackSessionId: job.playbackSessionId,
+					outputFilename: job.outputFilename,
 					estimate: job.estimate,
 				}),
 			);

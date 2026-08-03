@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { BUY_ME_A_COFFEE_URL, DEFAULT_SPEED, PRIVACY_POLICY_URL, STORAGE_KEYS } from '../shared/constants';
+import { openSidebarOrPanel } from '../shared/browser';
 import { getLocalizedPlaybackError, t } from '../shared/i18n';
 import { requestPlaybackState, sendPlaybackCommand, subscribePlaybackState } from '../shared/playback_client';
 import { isSelectionButtonEnabled } from '../shared/selection_button';
@@ -228,7 +229,7 @@ export default function App() {
 						if (shouldFallbackToOpen(response)) {
 							void openSidePanelForCurrentWindow({
 								windowId: sidePanelWindowId,
-								open: (options) => chrome.sidePanel.open(options),
+								open: (options) => openSidebarOrPanel(options.windowId),
 							}).catch(() => setCommandError(t('openSidePanelFailed')));
 						}
 					},
@@ -237,7 +238,7 @@ export default function App() {
 		} else {
 			void openSidePanelForCurrentWindow({
 				windowId: sidePanelWindowId,
-				open: (options) => chrome.sidePanel.open(options),
+				open: (options) => openSidebarOrPanel(options.windowId),
 			}).catch(() => setCommandError(t('openSidePanelFailed')));
 		}
 	};

@@ -7,6 +7,7 @@ import type { Style } from './supertonic_helper.ts';
 export interface PreparedAudioExport {
 	jobId: string;
 	playbackSessionId: string;
+	outputFilename: string;
 	units: readonly SpeechUnit[];
 	language: string;
 	voiceStyleId: string;
@@ -27,7 +28,9 @@ export interface AudioExportProgress {
 export interface AudioExportEngineDependencies {
 	takeHandle(jobId: string): Promise<FileSystemFileHandle | null>;
 	deleteHandle(jobId: string): Promise<void>;
-	createEncoder(handle: FileSystemFileHandle): Promise<AudioExportEncoder>;
+	createEncoder(handle: FileSystemFileHandle | null): Promise<AudioExportEncoder>;
+	download?: (blob: Blob, filename: string) => Promise<void>;
+	canDownload?: () => boolean;
 	synthesize(input: { unit: SpeechUnit; language: string; style: Style; speed: number }): Promise<AudioBuffer>;
 	canStartBackgroundSynthesis(): boolean;
 	waitForRunway(): Promise<void>;
@@ -219,8 +222,8 @@ export class AudioExportEngine implements AudioExportEngine {
 		try {
 			const handle = await this.dependencies.takeHandle(work.input.jobId);
 			this.throwIfCancelled(work);
-			if (!handle) {
-				throw new Error('Audio export handle is unavailable');
+			if (!handle && (!this.dependencies.download || this.dependencies.canDownload?.() === false)) {
+				throw new Error('Audio export download is unavailable');
 			}
 			await this.waitForSafeRunway(work, processedDurationSeconds, startedAt);
 			this.throwIfCancelled(work);
@@ -251,6 +254,13 @@ export class AudioExportEngine implements AudioExportEngine {
 			this.throwIfCancelled(work);
 			await work.encoder.finalize();
 			this.throwIfCancelled(work);
+			if (!handle) {
+				const outputBlob = work.encoder.outputBlob?.();
+				if (!outputBlob || !this.dependencies.download) {
+					throw new Error('Audio export download is unavailable');
+				}
+				await this.dependencies.download(outputBlob, work.input.outputFilename);
+			}
 			await this.cleanup(work, false);
 			this.report(work, 'completed', processedDurationSeconds, startedAt, true);
 		} catch (error) {

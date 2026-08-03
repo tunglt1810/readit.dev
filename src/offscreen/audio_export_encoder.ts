@@ -1,15 +1,20 @@
-import { AUDIO_EXPORT_BITRATE_BPS } from '../shared/audio_export.ts';
 import type { StreamTargetChunk } from 'mediabunny';
+
+import { AUDIO_EXPORT_BITRATE_BPS } from '../shared/audio_export.ts';
 
 export interface AudioExportEncoder {
 	add(buffer: AudioBuffer): Promise<void>;
 	finalize(): Promise<void>;
 	cancel(reason?: unknown): Promise<void>;
 	bytesWritten(): number;
+	outputBlob?: () => Blob | null;
 }
 
 type EncoderModules = {
-	Output: new (options: { format: unknown; target: unknown }) => {
+	Output: new (options: {
+		format: unknown;
+		target: unknown;
+	}) => {
 		addAudioTrack(source: unknown): unknown;
 		start(): Promise<void>;
 		finalize(): Promise<void>;
@@ -30,11 +35,15 @@ type EncoderModules = {
 
 type NativeWritable = FileSystemWritableFileStream & { close(): Promise<void> };
 
+type ExportSink = {
+	write(chunk: StreamTargetChunk): Promise<void>;
+	close(): Promise<void>;
+	abort(reason?: unknown): Promise<void>;
+	outputBlob?: () => Blob | null;
+};
+
 async function loadMp3Modules() {
-	const [mediabunny, extension] = await Promise.all([
-		import('mediabunny'),
-		import('@mediabunny/mp3-encoder'),
-	]);
+	const [mediabunny, extension] = await Promise.all([import('mediabunny'), import('@mediabunny/mp3-encoder')]);
 	if (!(await mediabunny.canEncodeAudio('mp3'))) {
 		extension.registerMp3Encoder();
 	}
@@ -45,7 +54,51 @@ function cancellationError(reason: unknown): Error {
 	return reason instanceof Error ? reason : new DOMException('Cancelled', 'AbortError');
 }
 
-function createCommitControlledWritable(nativeWritable: NativeWritable) {
+function createNativeSink(nativeWritable: NativeWritable): ExportSink {
+	return {
+		write: (chunk) => nativeWritable.write({ type: 'write', position: chunk.position, data: chunk.data }),
+		close: () => nativeWritable.close(),
+		abort: (reason) => nativeWritable.abort(reason),
+	};
+}
+
+function createMemorySink(): ExportSink {
+	const chunks = new Map<number, Uint8Array<ArrayBuffer>>();
+	let bytesWritten = 0;
+	let aborted = false;
+
+	const sink = {
+		write: async (chunk: StreamTargetChunk) => {
+			if (aborted) {
+				throw new DOMException('The audio export was cancelled.', 'AbortError');
+			}
+			const data = chunk.data.slice();
+			chunks.set(chunk.position, data);
+			bytesWritten = Math.max(bytesWritten, chunk.position + data.byteLength);
+		},
+		close: async () => {
+			// Memory output has no native close operation.
+		},
+		abort: async () => {
+			aborted = true;
+			chunks.clear();
+			bytesWritten = 0;
+		},
+		outputBlob: () => {
+			if (aborted) {
+				return null;
+			}
+			const output = new Uint8Array(bytesWritten);
+			for (const [position, data] of chunks) {
+				output.set(data, position);
+			}
+			return new Blob([output], { type: 'audio/mpeg' });
+		},
+	};
+	return sink;
+}
+
+function createCommitControlledWritable(sink: ExportSink) {
 	let cancelRequested = false;
 	let cancelReason: unknown;
 	let bytesWritten = 0;
@@ -53,7 +106,7 @@ function createCommitControlledWritable(nativeWritable: NativeWritable) {
 
 	const abortNative = (reason?: unknown): Promise<void> => {
 		if (!nativeAbort) {
-			nativeAbort = nativeWritable.abort(reason);
+			nativeAbort = sink.abort(reason);
 		}
 		return nativeAbort;
 	};
@@ -64,7 +117,7 @@ function createCommitControlledWritable(nativeWritable: NativeWritable) {
 				await abortNative(cancelReason);
 				throw cancellationError(cancelReason);
 			}
-			await nativeWritable.write({ type: 'write', position: chunk.position, data: chunk.data });
+			await sink.write(chunk);
 			bytesWritten = Math.max(bytesWritten, chunk.position + chunk.data.byteLength);
 			if (cancelRequested) {
 				await abortNative(cancelReason);
@@ -76,7 +129,7 @@ function createCommitControlledWritable(nativeWritable: NativeWritable) {
 				await abortNative(cancelReason);
 				return;
 			}
-			await nativeWritable.close();
+			await sink.close();
 		},
 		async abort(reason) {
 			await abortNative(reason);
@@ -96,6 +149,9 @@ function createCommitControlledWritable(nativeWritable: NativeWritable) {
 		bytesWritten() {
 			return bytesWritten;
 		},
+		outputBlob() {
+			return sink.outputBlob?.() ?? null;
+		},
 		abortNative,
 		cancelError() {
 			return cancellationError(cancelReason);
@@ -103,12 +159,11 @@ function createCommitControlledWritable(nativeWritable: NativeWritable) {
 	};
 }
 
-export async function createAudioExportEncoder(
-	handle: FileSystemFileHandle,
-	modules?: EncoderModules,
-): Promise<AudioExportEncoder> {
-	const nativeWritable = (await handle.createWritable({ keepExistingData: false })) as NativeWritable;
-	const commitControlledWritable = createCommitControlledWritable(nativeWritable);
+export async function createAudioExportEncoder(handle: FileSystemFileHandle | null, modules?: EncoderModules): Promise<AudioExportEncoder> {
+	const sink = handle
+		? createNativeSink((await handle.createWritable({ keepExistingData: false })) as NativeWritable)
+		: createMemorySink();
+	const commitControlledWritable = createCommitControlledWritable(sink);
 	let output: InstanceType<EncoderModules['Output']> | null = null;
 	try {
 		const loadedModules = modules ?? ((await loadMp3Modules()) as unknown as EncoderModules);
@@ -198,6 +253,7 @@ export async function createAudioExportEncoder(
 				}),
 			cancel,
 			bytesWritten: () => commitControlledWritable.bytesWritten(),
+			outputBlob: () => commitControlledWritable.outputBlob(),
 		};
 	} catch (error) {
 		try {

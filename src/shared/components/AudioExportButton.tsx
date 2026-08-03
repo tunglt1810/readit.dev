@@ -67,6 +67,10 @@ function isAbortError(error: unknown): boolean {
 	return error instanceof DOMException && error.name === 'AbortError';
 }
 
+function canUseDownloadFallback(): boolean {
+	return typeof chrome.downloads?.download === 'function';
+}
+
 function formatEstimate(seconds: number, bytes: number): string {
 	return `${t('exportEstimatedDuration')}: ${Math.ceil(seconds / 60)} min · ${t('exportEstimatedSize')}: ${Math.round(bytes / 1_000_000)} MB`;
 }
@@ -138,13 +142,21 @@ export function AudioExportButton({ session }: { session: PlaybackSessionSnapsho
 		setLocalError(null);
 		const jobId = crypto.randomUUID();
 		const suggestedName = suggestAudioExportFilename(session, new Date());
+		const canUsePicker = typeof window.showSaveFilePicker === 'function';
+		if (!canUsePicker && !canUseDownloadFallback()) {
+			setLocalError(t('exportStartFailed'));
+			setStarting(false);
+			return;
+		}
 		const preparePromise = prepareAudioExport({
 			jobId,
 			playbackSessionId: session.sessionId,
 			title: session.contentScope === 'manual' ? t('pastedText') : session.source.title,
 			outputFilename: suggestedName,
 		});
-		const pickerPromise = window.showSaveFilePicker(pickerOptions(suggestedName));
+		const pickerPromise = canUsePicker
+			? window.showSaveFilePicker(pickerOptions(suggestedName))
+			: Promise.resolve<FileSystemFileHandle | null>(null);
 		try {
 			const [preparedResult, pickerResult] = await Promise.allSettled([preparePromise, pickerPromise]);
 			if (preparedResult.status === 'rejected') {
@@ -158,7 +170,9 @@ export function AudioExportButton({ session }: { session: PlaybackSessionSnapsho
 			if (!prepared.success) {
 				throw prepared.error;
 			}
-			await putAudioExportHandle(jobId, handle);
+			if (handle) {
+				await putAudioExportHandle(jobId, handle);
+			}
 			const started = await startAudioExport(jobId);
 			if (!started.success) {
 				throw started.error;

@@ -135,14 +135,14 @@ const readableSurface = createReadableSurfaceCoordinator({
 	requestDocumentReaderSnapshot: async (sessionId) => {
 		const response = await sendOffscreenCommand(
 			{ action: 'GET_DOCUMENT_READER_SNAPSHOT', payload: { sessionId } },
-			(message) => chrome.runtime.sendMessage(message),
+			sendAudioHostCommand,
 		);
 		return response.success ? (response.snapshot ?? null) : null;
 	},
 	detachDocumentReader: async (sessionId) => {
 		await sendOffscreenCommand(
 			{ action: 'DETACH_DOCUMENT_READER', payload: { sessionId } },
-			(message) => chrome.runtime.sendMessage(message),
+			sendAudioHostCommand,
 		);
 	},
 	enqueue: (operation) => {
@@ -459,11 +459,28 @@ async function publishExtractionFailure(
 	await chrome.storage.session.remove(STORAGE_KEYS.PLAYBACK_SESSION);
 }
 
+export type AudioHost = {
+	ensure(): Promise<void>;
+	close(): Promise<void>;
+	send(command: OffscreenCommand): Promise<unknown>;
+};
+
+let configuredAudioHost: AudioHost | null = null;
+
+export function configureAudioHost(audioHost: AudioHost): void {
+	configuredAudioHost = audioHost;
+}
+
 // Helper to check if offscreen document is already created
 async function hasOffscreenDocument(): Promise<boolean> {
-	if ('getContexts' in chrome.runtime) {
+	if (typeof chrome === 'undefined' || typeof chrome.offscreen === 'undefined') {
+		return false;
+	}
+
+	const offscreenContextType = chrome.runtime.ContextType?.OFFSCREEN_DOCUMENT;
+	if (typeof chrome.runtime.getContexts === 'function' && offscreenContextType) {
 		const contexts = await chrome.runtime.getContexts({
-			contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
+			contextTypes: [offscreenContextType],
 		});
 		return contexts.length > 0;
 	}
@@ -478,7 +495,11 @@ async function hasOffscreenDocument(): Promise<boolean> {
 }
 
 // Create offscreen document if needed
-async function setupOffscreen(): Promise<void> {
+async function setupChromeOffscreen(): Promise<void> {
+	if (typeof chrome === 'undefined' || typeof chrome.offscreen === 'undefined') {
+		throw new Error('This browser does not support the offscreen document required for local audio playback.');
+	}
+
 	if (await hasOffscreenDocument()) {
 		return;
 	}
@@ -497,7 +518,11 @@ async function setupOffscreen(): Promise<void> {
 }
 
 // Close offscreen document
-async function closeOffscreen(): Promise<void> {
+async function closeChromeOffscreen(): Promise<void> {
+	if (typeof chrome === 'undefined' || typeof chrome.offscreen === 'undefined') {
+		return;
+	}
+
 	if (!(await hasOffscreenDocument())) {
 		return;
 	}
@@ -507,6 +532,26 @@ async function closeOffscreen(): Promise<void> {
 	} catch (_error) {
 		// The document may already be closed.
 	}
+}
+
+async function setupOffscreen(): Promise<void> {
+	if (configuredAudioHost) {
+		await configuredAudioHost.ensure();
+		return;
+	}
+	await setupChromeOffscreen();
+}
+
+async function closeOffscreen(): Promise<void> {
+	if (configuredAudioHost) {
+		await configuredAudioHost.close();
+		return;
+	}
+	await closeChromeOffscreen();
+}
+
+function sendAudioHostCommand(command: OffscreenCommand): Promise<unknown> {
+	return configuredAudioHost ? configuredAudioHost.send(command) : chrome.runtime.sendMessage(command);
 }
 
 const audioExportCoordinator = createAudioExportCoordinator({
@@ -524,7 +569,7 @@ const audioExportCoordinator = createAudioExportCoordinator({
 	},
 	getPlaybackSession: () => activeSession,
 	ensureOffscreen: setupOffscreen,
-	sendOffscreen: (command) => sendOffscreenCommand(command, (message) => chrome.runtime.sendMessage(message)),
+	sendOffscreen: (command) => sendOffscreenCommand(command, sendAudioHostCommand),
 	deleteHandle: deleteAudioExportHandle,
 	broadcast: async (job) => {
 		try {
@@ -562,9 +607,7 @@ async function getSuspendedManualCheckpoint(): Promise<ManualCheckpointMetadata 
 		return null;
 	}
 	try {
-		const response = await sendOffscreenCommand({ action: 'GET_MANUAL_CHECKPOINT_METADATA' }, (message) =>
-			chrome.runtime.sendMessage(message),
-		);
+		const response = await sendOffscreenCommand({ action: 'GET_MANUAL_CHECKPOINT_METADATA' }, sendAudioHostCommand);
 		if (!response.success || !response.checkpoint) {
 			return null;
 		}
@@ -629,7 +672,7 @@ async function stopActiveSession(_reason: string): Promise<void> {
 	}
 
 	try {
-		await sendOffscreenCommand({ action: 'STOP' }, (message) => chrome.runtime.sendMessage(message));
+		await sendOffscreenCommand({ action: 'STOP' }, sendAudioHostCommand);
 	} catch (_error) {
 		// Session state is already invalidated; tolerate a missing offscreen receiver.
 	} finally {
@@ -700,7 +743,7 @@ async function preemptManualForWeb(): Promise<CommandResponse> {
 	try {
 		const response = await sendOffscreenCommand(
 			{ action: 'CHECKPOINT_MANUAL', payload: { sessionId: manual.sessionId, panelInstanceId } },
-			(message) => chrome.runtime.sendMessage(message),
+			sendAudioHostCommand,
 		);
 		if (!response.success || !response.checkpoint) {
 			return { success: false, error: 'manualCheckpointFailed' };
@@ -726,7 +769,7 @@ async function discardManualCheckpoint(panelInstanceId: string): Promise<boolean
 	try {
 		await sendOffscreenCommand(
 			{ action: 'DISCARD_MANUAL_CHECKPOINT', payload: { panelInstanceId } },
-			(message) => chrome.runtime.sendMessage(message),
+			sendAudioHostCommand,
 		);
 	} catch (_error) {
 		// Closing the Side Panel still needs to discard the background-only owner state.
@@ -989,7 +1032,7 @@ async function dispatchOffscreenCommand(command: OffscreenCommand): Promise<Offs
 	let retries = 3;
 	while (retries > 0) {
 		try {
-			const res = await sendOffscreenCommand(command, (message) => chrome.runtime.sendMessage(message));
+			const res = await sendOffscreenCommand(command, sendAudioHostCommand);
 			if (res.success || retries === 1) return res;
 			retries--;
 			await new Promise((resolve) => setTimeout(resolve, 150));
@@ -1061,7 +1104,7 @@ async function routeSessionCommand(action: 'PAUSE' | 'PLAY'): Promise<CommandRes
 
 	const payload = action === 'PLAY' ? { sessionId: activeSession.sessionId } : undefined;
 	try {
-		const response = await sendOffscreenCommand({ action, ...(payload ? { payload } : {}) }, (message) => chrome.runtime.sendMessage(message));
+		const response = await sendOffscreenCommand({ action, ...(payload ? { payload } : {}) }, sendAudioHostCommand);
 		if (!response.success) {
 			await failSession(ERROR_MESSAGES.setup);
 			await closeOffscreenWhenIdle();
@@ -1105,9 +1148,7 @@ async function changeSpeed(payload: unknown): Promise<CommandResponse> {
 	}
 
 	try {
-		const response = await sendOffscreenCommand({ action: 'CHANGE_SPEED', payload: { speed } }, (message) =>
-			chrome.runtime.sendMessage(message),
-		);
+		const response = await sendOffscreenCommand({ action: 'CHANGE_SPEED', payload: { speed } }, sendAudioHostCommand);
 		const session = activeSession;
 		if (response.success && session) {
 			const speedChangedSession = { ...session, speed, updatedAt: Date.now() };
@@ -1165,7 +1206,7 @@ async function resumeManualCheckpoint(panelInstanceId: string): Promise<CommandR
 	try {
 		const response = await sendOffscreenCommand(
 			{ action: 'RESUME_MANUAL_CHECKPOINT', payload: { panelInstanceId } },
-			(message) => chrome.runtime.sendMessage(message),
+			sendAudioHostCommand,
 		);
 		if (!response.success) {
 			throw new Error('Manual checkpoint is unavailable');
@@ -1350,8 +1391,11 @@ async function handlePendingQueueNavigationUpdate(tabId: number, changeInfo: { s
 }
 
 // Handle runtime messages
-chrome.runtime.onMessage.addListener(
-	(message: unknown, sender: chrome.runtime.MessageSender, sendResponse: (response?: unknown) => void) => {
+export const handleBackgroundMessage = (
+	message: unknown,
+	sender: chrome.runtime.MessageSender,
+	sendResponse: (response?: unknown) => void,
+) => {
 		if (!message || typeof message !== 'object') {
 			return undefined;
 		}
@@ -1698,8 +1742,9 @@ chrome.runtime.onMessage.addListener(
 		}
 
 		return undefined;
-	},
-);
+	};
+
+chrome.runtime.onMessage.addListener(handleBackgroundMessage);
 
 chrome.tabs.onRemoved.addListener((tabId) => {
 	void enqueue(async () => {

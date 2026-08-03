@@ -65,7 +65,9 @@ function fakeHandle(file: ReturnType<typeof fakeFileStream>, calls: { keepExisti
 	} as FileSystemFileHandle;
 }
 
-function fakeModules(options: { finalizeGate?: Deferred<void>; sourceFailure?: Error } = {}) {
+function fakeModules(
+	options: { finalizeGate?: Deferred<void>; sourceFailure?: Error; chunks?: { position: number; data: Uint8Array }[] } = {},
+) {
 	let markFinalizeStarted!: () => void;
 	const state: {
 		writable: WritableStream<{ type: 'write'; position: number; data: Uint8Array }> | null;
@@ -83,7 +85,7 @@ function fakeModules(options: { finalizeGate?: Deferred<void>; sourceFailure?: E
 		formatOptions: null,
 		outputOptions: null,
 		cancelCalls: 0,
-		chunks: [
+		chunks: options.chunks ?? [
 			{ position: 0, data: new Uint8Array(3) },
 			{ position: 10, data: new Uint8Array(5) },
 		],
@@ -170,13 +172,36 @@ test('configures a constant 96 kbps mono MP3 stream without a BufferTarget', asy
 	await encoder.cancel();
 });
 
+test('collects an MP3 stream in memory when no file handle is provided', async () => {
+	const { modules } = fakeModules({
+		chunks: [
+			{ position: 0, data: new Uint8Array([1, 2, 3]) },
+			{ position: 10, data: new Uint8Array([4, 5]) },
+		],
+	});
+	const encoder = await createAudioExportEncoder(null, modules);
+
+	await encoder.add({} as AudioBuffer);
+	await encoder.add({} as AudioBuffer);
+	await encoder.finalize();
+
+	const output = encoder.outputBlob?.();
+	assert.ok(output);
+	assert.equal(output.type, 'audio/mpeg');
+	assert.equal(output.size, 12);
+	assert.deepEqual([...new Uint8Array(await output.arrayBuffer())], [1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 4, 5]);
+});
+
 test('awaits ordered source adds and tracks the highest written byte', async () => {
 	const file = fakeFileStream();
 	const { modules, state } = fakeModules();
 	const encoder = await createAudioExportEncoder(fakeHandle(file), modules);
 
 	await Promise.all([encoder.add({} as AudioBuffer), encoder.add({} as AudioBuffer)]);
-	assert.deepEqual(state.events.filter((event) => event.startsWith('source.add')), ['source.add:0', 'source.add:10']);
+	assert.deepEqual(
+		state.events.filter((event) => event.startsWith('source.add')),
+		['source.add:0', 'source.add:10'],
+	);
 	assert.deepEqual(file.writes, [
 		{ type: 'write', position: 0, data: new Uint8Array(3) },
 		{ type: 'write', position: 10, data: new Uint8Array(5) },

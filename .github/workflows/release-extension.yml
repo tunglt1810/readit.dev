@@ -1,4 +1,4 @@
-name: Release Chrome extension
+name: Release Chrome and Firefox extensions
 
 on:
   push:
@@ -9,14 +9,15 @@ permissions:
   contents: write
 
 concurrency:
-  group: chrome-extension-release
+  group: extension-release
   cancel-in-progress: false
 
 jobs:
-  release:
+  build-and-release:
     runs-on: ubuntu-latest
-    environment:
-      name: chrome-web-store
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      chrome_archive: ${{ steps.package.outputs.chrome_archive }}
     steps:
       - name: Checkout tagged commit
         uses: actions/checkout@v6
@@ -60,11 +61,12 @@ jobs:
       - name: Install Playwright Chromium
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: Build extension
-        run: pnpm build
+      - name: Build Chrome extension
+        run: pnpm build:chrome
 
-      - name: Validate Free extension manifest
-        run: pnpm validate:manifest
+      - name: Validate Chrome extension manifest
+        run: |
+          pnpm validate:manifest:chrome
 
       - name: Validate Vietnamese normalizer assets and ONNX Runtime packaging
         run: pnpm validate:vi-assets:release
@@ -91,27 +93,108 @@ jobs:
       - name: Run extension E2E tests
         run: xvfb-run --auto-servernum pnpm test:e2e
 
-      - name: Package extension
+      - name: Package extensions
+        id: package
         env:
           RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          archive="readit.dev-${RELEASE_VERSION}.zip"
-          (cd dist/chrome && zip -qr "../../$archive" . -x '*.DS_Store')
-          pnpm validate:release-zip "$archive"
-          echo "archive=$archive" >> "$GITHUB_ENV"
+          chrome_archive="readit.dev-chrome-${RELEASE_VERSION}.zip"
+          (cd dist/chrome && zip -qr "../../$chrome_archive" . -x '*.DS_Store')
+          pnpm validate:release-zip "$chrome_archive"
+          echo "chrome_archive=$chrome_archive" >> "$GITHUB_OUTPUT"
 
-      - name: Create GitHub Release
+      - name: Upload Chrome artifact for publishing
+        uses: actions/upload-artifact@v4
+        with:
+          name: chrome-dist
+          if-no-files-found: error
+          path: |
+            dist/chrome
+            readit.dev-chrome-*.zip
+
+      - name: Create GitHub Release with Chrome archive
         env:
           GH_TOKEN: ${{ github.token }}
+          CHROME_ARCHIVE: ${{ steps.package.outputs.chrome_archive }}
         run: |
           if gh release view "${{ github.ref_name }}" >/dev/null 2>&1; then
-            gh release upload "${{ github.ref_name }}" "$archive" --clobber
+            gh release upload "${{ github.ref_name }}" "$CHROME_ARCHIVE" --clobber
           else
-            gh release create "${{ github.ref_name }}" "$archive" \
+            gh release create "${{ github.ref_name }}" "$CHROME_ARCHIVE" \
               --title "${{ github.ref_name }}" \
               --generate-notes
           fi
+
+  build-firefox:
+    needs: build-and-release
+    runs-on: ubuntu-latest
+    outputs:
+      firefox_archive: ${{ steps.package.outputs.firefox_archive }}
+    steps:
+      - name: Checkout tagged commit
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.11.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Firefox extension
+        run: pnpm build:firefox
+
+      - name: Validate Firefox extension
+        run: |
+          pnpm validate:manifest:firefox
+          pnpm validate:firefox
+
+      - name: Package Firefox extension
+        id: package
+        env:
+          RELEASE_VERSION: ${{ needs.build-and-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          firefox_archive="readit.dev-firefox-${RELEASE_VERSION}.zip"
+          test -s dist/firefox/manifest.json
+          test -s dist/firefox/THIRD_PARTY_NOTICES.txt
+          (cd dist/firefox && zip -qr "../../$firefox_archive" . -x '*.DS_Store')
+          test -s "$firefox_archive"
+          echo "firefox_archive=$firefox_archive" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Firefox artifact for publishing
+        uses: actions/upload-artifact@v4
+        with:
+          name: firefox-dist
+          if-no-files-found: error
+          path: |
+            dist/firefox
+            readit.dev-firefox-*.zip
+
+      - name: Attach Firefox archive to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FIREFOX_ARCHIVE: ${{ steps.package.outputs.firefox_archive }}
+        run: gh release upload "${{ github.ref_name }}" "$FIREFOX_ARCHIVE" --clobber
+
+  publish-chrome:
+    needs: build-and-release
+    runs-on: ubuntu-latest
+    environment:
+      name: chrome-web-store
+    steps:
+      - name: Download extension dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: chrome-dist
 
       - name: Refresh Chrome Web Store access token
         id: cws-token
@@ -136,14 +219,16 @@ jobs:
           CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
           CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
           CWS_ACCESS_TOKEN: ${{ steps.cws-token.outputs.access_token }}
+          CWS_ARCHIVE: ${{ needs.build-and-release.outputs.chrome_archive }}
         run: |
           set -euo pipefail
+          test -s "$CWS_ARCHIVE"
           base="https://chromewebstore.googleapis.com"
           name="publishers/$CWS_PUBLISHER_ID/items/$CWS_EXTENSION_ID"
-          echo "Uploading $archive to Chrome Web Store..."
+          echo "Uploading $CWS_ARCHIVE to Chrome Web Store..."
           upload_response="$(curl --fail-with-body --silent --show-error -X POST \
             -H "Authorization: Bearer $CWS_ACCESS_TOKEN" \
-            --data-binary "@$archive" \
+            --data-binary "@$CWS_ARCHIVE" \
             "$base/upload/v2/$name:upload")"
           echo "Upload response:"
           echo "$upload_response" | jq .
@@ -240,3 +325,50 @@ jobs:
             echo "✅ Publish request accepted."
           fi
 
+  publish-firefox:
+    needs: build-firefox
+    runs-on: ubuntu-latest
+    environment:
+      name: addons-mozilla-org
+    steps:
+      - name: Checkout tagged commit
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.11.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download extension dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: firefox-dist
+
+      - name: Submit package to Firefox AMO Store
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "$AMO_JWT_ISSUER" ] || [ -z "$AMO_JWT_SECRET" ]; then
+            echo "AMO_JWT_ISSUER and AMO_JWT_SECRET must be configured in the addons-mozilla-org environment." >&2
+            exit 1
+          fi
+          test -s dist/firefox/manifest.json
+          echo "Submitting dist/firefox to Mozilla Add-ons Store..."
+          pnpm exec web-ext sign \
+            --source-dir dist/firefox \
+            --artifacts-dir .tmp/web-ext-artifacts \
+            --channel listed \
+            --no-input \
+            --api-key "$AMO_JWT_ISSUER" \
+            --api-secret "$AMO_JWT_SECRET"

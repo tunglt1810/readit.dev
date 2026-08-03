@@ -19,9 +19,9 @@ export default defineConfig({
 			},
 		}),
 		{
-			name: 'manifest-version-sync',
+			name: 'manifest-version-and-browser-transform',
 			setup(api) {
-				const syncVersion = () => {
+				const syncAndTransformManifest = () => {
 					const distPath = api.context.distPath;
 					const manifestPath = path.join(distPath, 'manifest.json');
 					if (fs.existsSync(manifestPath)) {
@@ -32,18 +32,65 @@ export default defineConfig({
 						if (process.env.BUILD_NUMBER) {
 							manifest.version_name = `${packageJson.version}-dev.${process.env.BUILD_NUMBER}`;
 						}
+
+						if (targetBrowser === 'firefox') {
+							delete manifest.minimum_chrome_version;
+							manifest.background = {
+								scripts: ['background.js'],
+							};
+							if (Array.isArray(manifest.permissions)) {
+								manifest.permissions = manifest.permissions.filter(
+									(permission: string) => permission !== 'sidePanel' && permission !== 'offscreen',
+								);
+								if (!manifest.permissions.includes('downloads')) {
+									manifest.permissions.push('downloads');
+								}
+							}
+							if (Array.isArray(manifest.host_permissions)) {
+								manifest.host_permissions = manifest.host_permissions.filter(
+									(permission: string) => permission !== 'file://*/*',
+								);
+							}
+							if (manifest.side_panel) {
+								manifest.sidebar_action = {
+									default_panel: manifest.side_panel.default_path,
+									default_title: 'readit.dev',
+									default_icon: manifest.action?.default_icon || {
+										'16': 'assets/icon16.png',
+										'32': 'assets/icon32.png',
+										'48': 'assets/icon48.png',
+										'128': 'assets/icon128.png',
+									},
+								};
+								delete manifest.side_panel;
+							}
+							if (manifest.commands?.open_side_panel) {
+								manifest.commands._execute_sidebar_action = manifest.commands.open_side_panel;
+								delete manifest.commands.open_side_panel;
+							}
+							manifest.browser_specific_settings = {
+								gecko: {
+									id: 'readit-dev@readit.dev',
+									strict_min_version: '115.0',
+									data_collection_permissions: {
+										required: ['none'],
+									},
+								},
+							};
+						}
+
 						fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, '\t'));
 					}
 				};
-				api.onAfterBuild(syncVersion);
-				api.onDevCompileDone(syncVersion);
+				api.onAfterBuild(syncAndTransformManifest);
+				api.onDevCompileDone(syncAndTransformManifest);
 			},
 		},
 	],
 	performance: {
 		buildCache: {
-			cacheDirectory: '.tmp/rsbuild-cache',
-			cacheDigest: [process.env.READIT_VI_BENCHMARK],
+			cacheDirectory: `.tmp/rsbuild-cache-${targetBrowser}`,
+			cacheDigest: [process.env.READIT_VI_BENCHMARK, targetBrowser],
 		},
 	},
 	resolve: {
@@ -57,9 +104,9 @@ export default defineConfig({
 			popup: './src/popup/index.tsx',
 			sidepanel: './src/sidepanel/index.tsx',
 			reader: './src/reader/index.tsx',
-			offscreen: vietnameseBenchmark ? './tests/performance/vietnamese_offscreen_benchmark.ts' : './src/offscreen/offscreen.ts',
+			offscreen: vietnameseBenchmark ? './tests/performance/vietnamese_offscreen_benchmark.ts' : './src/offscreen/offscreen_entry.ts',
 			background: {
-				import: './src/background/background.ts',
+				import: targetBrowser === 'firefox' ? './src/background/firefox_background.ts' : './src/background/background.ts',
 				html: false,
 			},
 			content_script: {

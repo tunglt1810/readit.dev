@@ -26,6 +26,10 @@ import { IndexedSynthesisCoordinator, type SynthesisKey } from './synthesis_coor
 import { loadVietnameseNormalizerAssets } from './vietnamese/assets';
 import { normalizeVietnameseText } from './vietnamese/normalizer';
 import { computeReadableSurfaceWordTimings, findWordAtTime, type WordTimingWindow } from './word_timing';
+import {
+	emitAudioHostMessage,
+	requestAudioHostMessage,
+} from './audio_host_messages.ts';
 
 // Global Engine State
 let ttsEngine: TextToSpeech | null = null;
@@ -106,6 +110,13 @@ initStorage();
 const playbackMetrics = new PlaybackMetricsRecorder();
 const exportRunwayWaiters = new Set<() => void>();
 
+type AudioExportDownload = (blob: Blob, filename: string) => Promise<void>;
+let audioExportDownload: AudioExportDownload | null = null;
+
+export function configureAudioExportDownload(download: AudioExportDownload | null): void {
+	audioExportDownload = download;
+}
+
 function notifyExportRunway(): void {
 	for (const resolve of exportRunwayWaiters) {
 		resolve();
@@ -164,7 +175,7 @@ function reportProgress(status: PlaybackStatus, extra: Partial<PlaybackProgress>
 		...extra,
 	};
 
-	chrome.runtime.sendMessage({
+	emitAudioHostMessage({
 		action: 'PLAYBACK_PROGRESS_UPDATE',
 		sessionId: currentExtensionSessionId,
 		progress,
@@ -187,7 +198,7 @@ const loadModels = createSingleFlight(async () => {
 					graphOptimizationLevel: 'all',
 				},
 				(loaded, total, modelName) => {
-					chrome.runtime.sendMessage({
+					emitAudioHostMessage({
 						action: 'MODEL_LOADING_PROGRESS',
 						progress: { loaded, total, modelName },
 					});
@@ -204,7 +215,7 @@ const loadModels = createSingleFlight(async () => {
 					graphOptimizationLevel: 'all',
 				},
 				(loaded, total, modelName) => {
-					chrome.runtime.sendMessage({
+					emitAudioHostMessage({
 						action: 'MODEL_LOADING_PROGRESS',
 						progress: { loaded, total, modelName },
 					});
@@ -214,17 +225,17 @@ const loadModels = createSingleFlight(async () => {
 			executionProvider = 'wasm';
 		}
 		playbackMetrics.recordExecutionProvider(executionProvider);
-		chrome.runtime.sendMessage({ action: 'MODEL_LOADED', executionProvider });
+		emitAudioHostMessage({ action: 'MODEL_LOADED', executionProvider });
 	} catch (error) {
 		const err = error as Error;
-		chrome.runtime.sendMessage({ action: 'MODEL_LOAD_FAILED', error: err.message });
+		emitAudioHostMessage({ action: 'MODEL_LOAD_FAILED', error: err.message });
 		throw err;
 	}
 });
 
 function initModels(): Promise<void> {
 	if (ttsEngine) {
-		chrome.runtime.sendMessage({ action: 'MODEL_LOADED', executionProvider: 'cached' });
+		emitAudioHostMessage({ action: 'MODEL_LOADED', executionProvider: 'cached' });
 		return Promise.resolve();
 	}
 	return loadModels();
@@ -342,12 +353,19 @@ const audioExportEngine = new AudioExportEngine({
 	takeHandle: takeAudioExportHandle,
 	deleteHandle: deleteAudioExportHandle,
 	createEncoder: createAudioExportEncoder,
+	download: (blob, filename) => {
+		if (!audioExportDownload) {
+			return Promise.reject(new Error('Audio export download is unavailable'));
+		}
+		return audioExportDownload(blob, filename);
+	},
+	canDownload: () => audioExportDownload !== null,
 	synthesize: ({ unit, language, style, speed }) => synthesisArbiter.background({ unit, lang: language, style, speed, owner: 'export' }),
 	canStartBackgroundSynthesis: () => canStartBackgroundSynthesis(playbackRunway()),
 	waitForRunway: waitForExportRunway,
 	wakeRunway: notifyExportRunway,
 	onProgress: (progress) => {
-		chrome.runtime.sendMessage({ action: 'AUDIO_EXPORT_PROGRESS', progress });
+		emitAudioHostMessage({ action: 'AUDIO_EXPORT_PROGRESS', progress });
 	},
 	now: () => performance.now(),
 });
@@ -402,7 +420,7 @@ function resetHighlightTimer() {
 function clearWordHighlightTracking() {
 	resetHighlightTimer();
 	if (surfaceReady && currentExtensionSessionId) {
-		void chrome.runtime.sendMessage({ action: 'READABLE_SURFACE_CLEAR', sessionId: currentExtensionSessionId }).catch(() => undefined);
+		emitAudioHostMessage({ action: 'READABLE_SURFACE_CLEAR', sessionId: currentExtensionSessionId });
 	}
 	surfaceReady = false;
 }
@@ -421,12 +439,12 @@ async function initializeReadableSurface(session: number): Promise<void> {
 		return;
 	}
 	try {
-		const response = await chrome.runtime.sendMessage({
+		const response = (await requestAudioHostMessage({
 			action: 'READABLE_SURFACE_INIT',
 			sessionId: currentExtensionSessionId,
 			contentScope: currentReadableSurfaceContentScope,
 			words,
-		});
+		})) as { success?: unknown };
 		if (session === playbackSession) {
 			surfaceReady = response?.success === true;
 		}
@@ -826,13 +844,15 @@ function exportJobId(payload: unknown): string | null {
 }
 
 function prepareAudioExport(payload: unknown): { success: boolean; error?: string } {
-	const input = payload as { jobId?: unknown; playbackSessionId?: unknown; estimate?: unknown } | undefined;
+	const input = payload as { jobId?: unknown; playbackSessionId?: unknown; outputFilename?: unknown; estimate?: unknown } | undefined;
 	if (
 		!input ||
 		typeof input.jobId !== 'string' ||
 		input.jobId.length === 0 ||
 		typeof input.playbackSessionId !== 'string' ||
 		input.playbackSessionId !== currentExtensionSessionId ||
+		typeof input.outputFilename !== 'string' ||
+		input.outputFilename.length === 0 ||
 		!isAudioExportEstimate(input.estimate) ||
 		!currentPlaybackLanguage ||
 		!currentPlaybackStyle ||
@@ -845,6 +865,7 @@ function prepareAudioExport(payload: unknown): { success: boolean; error?: strin
 		audioExportEngine.prepare({
 			jobId: input.jobId,
 			playbackSessionId: input.playbackSessionId,
+			outputFilename: input.outputFilename,
 			units: speechUnits,
 			language: currentPlaybackLanguage,
 			voiceStyleId: currentVoiceStyleId,
@@ -858,9 +879,11 @@ function prepareAudioExport(payload: unknown): { success: boolean; error?: strin
 	}
 }
 
-// Runtime Message Listener
-chrome.runtime.onMessage.addListener(
-	(message: unknown, _sender: chrome.runtime.MessageSender, sendResponse: (response?: unknown) => void) => {
+export const handleOffscreenMessage = (
+	message: unknown,
+	_sender: chrome.runtime.MessageSender,
+	sendResponse: (response?: unknown) => void,
+) => {
 		if (!message || typeof message !== 'object') {
 			return undefined;
 		}
@@ -1197,5 +1220,8 @@ chrome.runtime.onMessage.addListener(
 			default:
 				return undefined;
 		}
-	},
-);
+};
+
+export function registerOffscreenMessageHandler(): void {
+	chrome.runtime.onMessage.addListener(handleOffscreenMessage);
+}
