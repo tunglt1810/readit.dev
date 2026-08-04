@@ -8,10 +8,13 @@ import {
 } from '../../src/content/google_docs_extractor.ts';
 import { GOOGLE_DOCS_EXPORT_UNAVAILABLE } from '../../src/shared/constants.ts';
 
+const SAMPLE_DOC_ID = '1faQUMpphvxQtChpbBxoaHGhefXwTmVXs-JyUVuEpZMo';
+const SAMPLE_DOC_URL = `https://docs.google.com/document/d/${SAMPLE_DOC_ID}/edit?tab=t.0`;
+
 test('parses only Docs document URLs', () => {
-	assert.equal(parseGoogleDocsDocumentId('https://docs.google.com/document/d/google-doc-id/edit?tab=t.0'), 'google-doc-id');
-	assert.equal(parseGoogleDocsDocumentId('https://docs.google.com/spreadsheets/d/google-doc-id/edit'), null);
-	assert.equal(parseGoogleDocsDocumentId('https://example.com/document/d/google-doc-id/edit'), null);
+	assert.equal(parseGoogleDocsDocumentId(SAMPLE_DOC_URL), SAMPLE_DOC_ID);
+	assert.equal(parseGoogleDocsDocumentId(`https://docs.google.com/spreadsheets/d/${SAMPLE_DOC_ID}/edit`), null);
+	assert.equal(parseGoogleDocsDocumentId(`https://example.com/document/d/${SAMPLE_DOC_ID}/edit`), null);
 	assert.equal(parseGoogleDocsDocumentId('https://docs.google.com/document/u/0/edit'), null);
 });
 
@@ -28,7 +31,7 @@ test('creates an Article from same-origin plain text without collapsing paragrap
 
 	const result = await extractGoogleDocsArticle(
 		{
-			url: 'https://docs.google.com/document/d/google-doc-id/edit?tab=t.0',
+			url: SAMPLE_DOC_URL,
 			title: 'Tài liệu thử nghiệm - Google Tài liệu',
 			lang: 'vi',
 		},
@@ -41,13 +44,13 @@ test('creates an Article from same-origin plain text without collapsing paragrap
 		article: {
 			title: 'Tài liệu thử nghiệm - Google Tài liệu',
 			content: 'Đoạn đầu.\n\nĐoạn sau.',
-			url: 'https://docs.google.com/document/d/google-doc-id/edit?tab=t.0',
+			url: SAMPLE_DOC_URL,
 			lang: 'vi',
 		},
 	});
 	assert.deepEqual(calls, [
 		{
-			url: 'https://docs.google.com/document/d/google-doc-id/export?format=txt',
+			url: `https://docs.google.com/document/d/${SAMPLE_DOC_ID}/export?format=txt`,
 			credentials: 'same-origin',
 		},
 	]);
@@ -61,7 +64,7 @@ test('tags a Vietnamese export as vi even when the page declares another languag
 	});
 
 	const result = await extractGoogleDocsArticle(
-		{ url: 'https://docs.google.com/document/d/google-doc-id/edit', title: 'Doc', lang: 'en' },
+		{ url: `https://docs.google.com/document/d/${SAMPLE_DOC_ID}/edit`, title: 'Doc', lang: 'en' },
 		fetcher,
 	);
 
@@ -78,7 +81,7 @@ test('returns the shared code for denied, non-text, empty, and rejected exports'
 		});
 	const rejected: GoogleDocsFetch = async () => Promise.reject(new Error('network unavailable'));
 	const abortRejected: GoogleDocsFetch = async () => Promise.reject(new DOMException('The operation was aborted', 'AbortError'));
-	const page = { url: 'https://docs.google.com/document/d/google-doc-id/edit', title: 'Doc', lang: 'en' };
+	const page = { url: `https://docs.google.com/document/d/${SAMPLE_DOC_ID}/edit`, title: 'Doc', lang: 'en' };
 
 	for (const fetcher of [
 		response(false, 'text/plain', ''),
@@ -103,7 +106,7 @@ test('fetchWithTimeout aborts a hung fetch once the timeout elapses', async () =
 		});
 
 	await assert.rejects(
-		fetchWithTimeout(hangingFetcher, 'https://docs.google.com/document/d/google-doc-id/export?format=txt', 20),
+		fetchWithTimeout(hangingFetcher, `https://docs.google.com/document/d/${SAMPLE_DOC_ID}/export?format=txt`, 20),
 		(error: unknown) => error instanceof DOMException && error.name === 'AbortError',
 	);
 	assert.equal(observedSignal?.aborted, true);

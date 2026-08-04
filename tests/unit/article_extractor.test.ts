@@ -299,3 +299,43 @@ test('filters out promo and ad noise blocks without dropping headings with menui
 	assert.ok(blocks.includes('Hành trình từ 1 triệu đến 10 triệu chỉ trong 6 năm'));
 	assert.equal(blocks.includes('Quảng cáo'), false);
 });
+
+test('filters out category metadata noise (e.g. Znews category badge) and preserves linear DOM order', () => {
+	const root = createFakeArticleRoot([
+		{
+			tagName: 'HEADER',
+			className: 'the-article-header',
+			children: [
+				{
+					tagName: 'P',
+					className: 'category',
+					children: [{ tagName: 'A', text: 'Xuất bản' }],
+				},
+				{
+					tagName: 'H1',
+					className: 'the-article-title',
+					text: 'Thấy gì từ thỏa thuận dàn xếp 1,5 tỷ USD của công ty mẹ Claude?',
+				},
+				{
+					tagName: 'UL',
+					className: 'the-article-meta',
+					children: [
+						{ tagName: 'LI', className: 'author', text: 'Đức An' },
+						{ tagName: 'LI', className: 'pubdate', text: 'Thứ ba, 4/8/2026 08:58 (GMT+7)' },
+					],
+				},
+			],
+		},
+		{
+			tagName: 'P',
+			className: 'the-article-summary',
+			text: 'Anthropic, công ty mẹ của Claude, đã chấp nhận dàn xếp...',
+		},
+	]);
+
+	cleanContentTree(root);
+	const blocks = getTextBlocks(root);
+
+	assert.equal(blocks.includes('Xuất bản'), false);
+	assert.equal(blocks[0], 'Thấy gì từ thỏa thuận dàn xếp 1,5 tỷ USD của công ty mẹ Claude?');
+});

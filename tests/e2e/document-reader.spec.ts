@@ -18,7 +18,7 @@ test('attaches once, renders source text, and highlights the current repeated wo
 		sessionId: 'reader-session',
 		contentScope: 'article',
 		readableSurface: 'document-reader',
-		source: { kind: 'tab', tabId: 42, title: 'Repeated words', url: 'https://docs.google.com/document/d/test/edit' },
+		source: { kind: 'tab', tabId: 42, title: 'Repeated words', url: 'https://docs.google.com/document/d/1faQUMpphvxQtChpbBxoaHGhefXwTmVXs-JyUVuEpZMo/edit' },
 		lang: 'en',
 		status: 'playing',
 		currentParagraphIndex: 0,

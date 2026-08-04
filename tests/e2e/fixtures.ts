@@ -3,9 +3,9 @@ import fs from 'fs';
 import path from 'path';
 
 import type { AudioExportStateResponse, PageInfoResponse, PlaybackStateResponse } from '../../src/shared/types';
+import { copyDirectoryTreeSync } from './cache_storage_copy';
 import { resolveExtensionId } from './extension_id';
 import { MODEL_CACHE_SEED_DIR, MODEL_CACHE_SEED_MARKER } from './model_cache_seed';
-import { copyDirectoryTreeSync } from './cache_storage_copy';
 
 export type RecordedRequest = Readonly<{
 	url: string;
@@ -285,10 +285,15 @@ export const test = base.extend<{
 			await context.close();
 			try {
 				if (fs.existsSync(userDataDir)) {
-					fs.rmSync(userDataDir, { recursive: true, force: true });
+					fs.rmSync(userDataDir, {
+						recursive: true,
+						force: true,
+						maxRetries: 5,
+						retryDelay: 500,
+					});
 				}
-			} catch (_err) {
-				// Bỏ qua lỗi dọn dẹp nếu có
+			} catch (err) {
+				console.warn(`[E2E Cleanup Warning] Failed to delete profile directory ${userDataDir}:`, err);
 			}
 		}
 	},

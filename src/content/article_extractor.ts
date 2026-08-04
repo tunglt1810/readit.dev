@@ -28,7 +28,7 @@ const STRUCTURAL_NOISE_SELECTOR = [
 ].join(',');
 
 const NOISE_IDENTITY_PATTERN =
-	/(?:advert|banner|comment|related|recommend|lienquan|xemnhieu|social|share|sidebar|navigation|menu(?!id)|toolbar|control|player|flip|promo)/i;
+	/(?:advert|banner|comment|related|recommend|lienquan|xemnhieu|social|share|sidebar|navigation|menu(?!id)|toolbar|control|player|flip|promo|category|breadcrumb|cate[-_]|meta[-_]header)/i;
 const ARTICLE_END_PATTERN = /article[-_]?end/i;
 const LONG_SPAN_MIN_LENGTH = 20;
 

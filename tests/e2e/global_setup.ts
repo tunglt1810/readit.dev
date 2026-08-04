@@ -39,6 +39,33 @@ async function waitForModelsCached(page: Page): Promise<void> {
 	throw new Error('Timed out waiting for Supertonic model files to warm into Cache Storage during e2e global setup.');
 }
 
+function cleanOrphanProfiles(): void {
+	const tempDir = path.join(process.cwd(), '.tmp');
+	if (!fs.existsSync(tempDir)) {
+		return;
+	}
+	try {
+		const entries = fs.readdirSync(tempDir);
+		for (const entry of entries) {
+			if (entry.startsWith('playwright-chrome-profile-')) {
+				const profilePath = path.join(tempDir, entry);
+				try {
+					fs.rmSync(profilePath, {
+						recursive: true,
+						force: true,
+						maxRetries: 5,
+						retryDelay: 500,
+					});
+				} catch (err) {
+					console.warn(`[E2E Setup Cleanup Warning] Failed to clean orphan profile ${profilePath}:`, err);
+				}
+			}
+		}
+	} catch (_err) {
+		// Ignore readdir errors
+	}
+}
+
 /**
  * Downloads the real Supertonic model files into a reusable Chrome profile
  * once, so per-test profiles (see fixtures.ts) can clone it instead of each
@@ -48,6 +75,8 @@ async function waitForModelsCached(page: Page): Promise<void> {
  * docs/plans/2026-07-24-e2e-model-cache-seed-fix.md for the full rationale.
  */
 export default async function globalSetup(): Promise<void> {
+	cleanOrphanProfiles();
+
 	if (isSeedFresh()) {
 		return;
 	}
