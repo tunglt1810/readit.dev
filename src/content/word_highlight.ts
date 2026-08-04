@@ -1,5 +1,6 @@
 import { STORAGE_KEYS } from '../shared/constants';
 import type { ReadableSurfaceWord } from '../shared/readable_surface.ts';
+import { performCenteredScroll, UserScrollPauseManager } from '../shared/scroll_helper.ts';
 import {
 	isWordHighlightEnabled,
 	isWordHighlightInitMessage,
@@ -122,6 +123,7 @@ let currentSessionId: string | null = null;
 let enabled = true;
 let visualUpdatesAllowed = document.visibilityState === 'visible';
 let styleInjected = false;
+const scrollPauseManager = new UserScrollPauseManager(3000);
 
 function ensureStyleInjected(): void {
 	if (styleInjected) {
@@ -139,6 +141,7 @@ function clearHighlight(): void {
 }
 
 function disposeCurrentHighlightSession(): void {
+	scrollPauseManager.setPlaybackState(false);
 	if (currentSessionId) {
 		clearActiveSelectionScope(currentSessionId);
 	}
@@ -234,16 +237,8 @@ function precomputeWordRanges(words: readonly ReadableSurfaceWord[], scopeRange:
 
 function scrollIntoViewIfNeeded(range: Range): void {
 	const rect = range.getBoundingClientRect();
-	if (rect.top < 0) {
-		// A tall paragraph can still intersect the viewport while its current word is above it.
-		// scrollIntoView({ block: 'nearest' }) then leaves the paragraph in place, so position the
-		// range itself below the top edge instead.
-		window.scrollBy({ top: rect.top - window.innerHeight * 0.2, behavior: 'auto' });
-		return;
-	}
-	if (rect.bottom > window.innerHeight || rect.right < 0 || rect.left > window.innerWidth) {
-		range.startContainer.parentElement?.scrollIntoView({ behavior: 'auto', block: 'nearest', inline: 'nearest' });
-	}
+	const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+	performCenteredScroll(rect, window.innerHeight, scrollPauseManager, (opts) => window.scrollBy(opts), prefersReducedMotion);
 }
 
 function applyHighlightForIndex(wordIndex: number): void {
@@ -281,6 +276,16 @@ export function installWordHighlight(): void {
 	if (typeof CSS === 'undefined' || !CSS.highlights) {
 		return;
 	}
+	const SCROLL_KEYS = new Set(['PageDown', 'PageUp', 'ArrowDown', 'ArrowUp', ' ']);
+	const handleUserScroll = () => scrollPauseManager.onUserInteraction();
+	const handleKeyScroll = (e: KeyboardEvent) => {
+		if (SCROLL_KEYS.has(e.key)) {
+			scrollPauseManager.onUserInteraction();
+		}
+	};
+	window.addEventListener('wheel', handleUserScroll, { passive: true });
+	window.addEventListener('touchmove', handleUserScroll, { passive: true });
+	window.addEventListener('keydown', handleKeyScroll, { passive: true });
 	document.addEventListener(
 		'contextmenu',
 		() => {
@@ -317,6 +322,7 @@ export function installWordHighlight(): void {
 					currentWordIndex = -1;
 					clearHighlight();
 				}
+				scrollPauseManager.setPlaybackState(true);
 				const selectionRange = message.contentScope === 'selection' ? getActiveSelectionRange(message.sessionId) : null;
 				wordRanges =
 					message.contentScope === 'selection' && !selectionRange

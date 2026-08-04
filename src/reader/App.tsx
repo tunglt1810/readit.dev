@@ -1,12 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { PlaybackIcon } from '../shared/components/PlaybackIcon.tsx';
-import {
-	DEFAULT_SPEED,
-	resolveStoredPlaybackSpeed,
-	STORAGE_KEYS,
-	VOICE_STYLES,
-} from '../shared/constants.ts';
+import { DEFAULT_SPEED, resolveStoredPlaybackSpeed, STORAGE_KEYS, VOICE_STYLES } from '../shared/constants.ts';
 import {
 	DOCUMENT_READER_PORT_NAME,
 	type DocumentReaderPortMessage,
@@ -15,6 +10,7 @@ import {
 } from '../shared/document_reader.ts';
 import { t } from '../shared/i18n.ts';
 import { requestPlaybackState, sendPlaybackCommand, subscribePlaybackState } from '../shared/playback_client.ts';
+import { performCenteredScroll, UserScrollPauseManager } from '../shared/scroll_helper.ts';
 import type { PlaybackSessionSnapshot, TabPlaybackSessionSnapshot } from '../shared/types.ts';
 import { getDisplayVersion } from '../shared/version.ts';
 
@@ -41,10 +37,12 @@ export default function App() {
 	const portRef = useRef<chrome.runtime.Port | null>(null);
 	const contentRef = useRef<HTMLDivElement>(null);
 	const snapshotSessionIdRef = useRef<string | null>(null);
+	const scrollPauseManagerRef = useRef(new UserScrollPauseManager(3000));
 	const wordRanges = useMemo(() => (snapshot ? mapDocumentReaderWords(snapshot.content, snapshot.words) : []), [snapshot]);
 	const documentSession = isDocumentSession(session) ? session : null;
 	const documentSessionId = documentSession?.sessionId ?? null;
 	const documentSourceTabId = documentSession?.source.tabId ?? null;
+	const playbackStatus = documentSession?.status;
 
 	useEffect(() => {
 		let latestSessionSpeed: number | undefined;
@@ -111,6 +109,33 @@ export default function App() {
 	}, [documentSessionId, documentSourceTabId]);
 
 	useEffect(() => {
+		const manager = scrollPauseManagerRef.current;
+		const isPlaying = playbackStatus === 'playing';
+		manager.setPlaybackState(isPlaying);
+
+		if (!isPlaying) {
+			return;
+		}
+
+		const SCROLL_KEYS = new Set(['PageDown', 'PageUp', 'ArrowDown', 'ArrowUp', ' ']);
+		const handleUserScroll = () => manager.onUserInteraction();
+		const handleKeyScroll = (e: KeyboardEvent) => {
+			if (SCROLL_KEYS.has(e.key)) {
+				manager.onUserInteraction();
+			}
+		};
+		window.addEventListener('wheel', handleUserScroll, { passive: true });
+		window.addEventListener('touchmove', handleUserScroll, { passive: true });
+		window.addEventListener('keydown', handleKeyScroll, { passive: true });
+
+		return () => {
+			window.removeEventListener('wheel', handleUserScroll);
+			window.removeEventListener('touchmove', handleUserScroll);
+			window.removeEventListener('keydown', handleKeyScroll);
+		};
+	}, [playbackStatus]);
+
+	useEffect(() => {
 		const registry = (CSS as unknown as { highlights?: HighlightRegistry }).highlights;
 		registry?.delete(HIGHLIGHT_NAME);
 		const rangeOffsets = wordRanges[currentWordIndex];
@@ -125,10 +150,14 @@ export default function App() {
 		registry.set(HIGHLIGHT_NAME, new HighlightConstructor(range));
 
 		const bounds = range.getBoundingClientRect();
-		if (bounds.top < window.innerHeight * 0.2 || bounds.bottom > window.innerHeight * 0.8) {
-			const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
-			window.scrollBy({ top: bounds.top - window.innerHeight / 2, behavior });
-		}
+		const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+		performCenteredScroll(
+			bounds,
+			window.innerHeight,
+			scrollPauseManagerRef.current,
+			(opts) => window.scrollBy(opts),
+			prefersReducedMotion,
+		);
 		return () => registry.delete(HIGHLIGHT_NAME);
 	}, [currentWordIndex, wordRanges]);
 

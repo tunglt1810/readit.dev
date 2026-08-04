@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- center active word highlight and temporarily pause auto-scroll during user interaction - [@tunglt1810]
 - isolate Firefox release failures - [@tunglt1810]
 
 ### Fixed
