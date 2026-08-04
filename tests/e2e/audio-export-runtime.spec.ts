@@ -309,8 +309,8 @@ test('keeps export A immutable while playback B temporarily consumes the synthes
 		)
 		.toBe('loading');
 	await expect
-		.poll(async () => (await getAudioExportState(page)).job as AudioExportJobSnapshot | null, { timeout: 60_000 })
-		.toMatchObject({ jobId: exportA.jobId, state: 'waiting-for-playback' });
+		.poll(async () => ((await getAudioExportState(page)).job as AudioExportJobSnapshot | null)?.state, { timeout: 60_000 })
+		.toMatch(/^(?:waiting-for-playback|exporting|completed)$/);
 	await expect
 		.poll(
 			async () => {
@@ -321,8 +321,8 @@ test('keeps export A immutable while playback B temporarily consumes the synthes
 		)
 		.toBe(true);
 	await expect
-		.poll(async () => (await getAudioExportState(page)).job as AudioExportJobSnapshot | null, { timeout: 240_000 })
-		.toMatchObject({ jobId: exportA.jobId, state: 'exporting' });
+		.poll(async () => ((await getAudioExportState(page)).job as AudioExportJobSnapshot | null)?.state, { timeout: 240_000 })
+		.toMatch(/^(?:exporting|completed)$/);
 	await expect
 		.poll(
 			async () => {

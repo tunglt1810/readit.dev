@@ -53,20 +53,13 @@ export function resolveLanguage(lang: string): string {
 	return isValidLang(lang) ? lang : 'na';
 }
 
-// The duration predictor charges a Vietnamese syllable what it charges an English word: measured
-// on this model, 0.428 s/syllable against 0.429 s/word, where real Vietnamese speech runs about
-// 0.19 s/syllable. `sampleNoisyLatent` sizes the latent from that prediction, so the vector
-// estimator is handed roughly twice the frames the text can fill — and being non-autoregressive it
-// cannot simply speak slower. It emits leading silence, races the text, then re-decodes a span it
-// has already produced, which is heard as swallowed and repeated words.
-//
-// Scaling the prediction resizes the latent. This is deliberately separate from the user's speed
-// setting: it corrects the model, so the speed control still means the same thing to the listener
-// in every language. Chosen by listening to the same unit rendered across a range of scales.
-const DURATION_SCALE_BY_LANGUAGE: Readonly<Record<string, number>> = Object.freeze({ vi: 1.5 });
-
-export function durationScaleForLanguage(lang: string): number {
-	return DURATION_SCALE_BY_LANGUAGE[lang] ?? 1;
+/**
+ * Maximum rendering length accepted by a single synthesis request. The limit follows the language
+ * resolved by the TTS engine so planning and synthesis share one capacity policy.
+ */
+export function synthesisTextLimitForLanguage(language: string): number {
+	const resolvedLanguage = resolveLanguage(language);
+	return resolvedLanguage === 'ko' || resolvedLanguage === 'ja' ? 120 : 300;
 }
 
 // Interface for configuration
@@ -181,8 +174,8 @@ export class UnicodeProcessor {
 		// Remove extra spaces
 		text = text.replace(/\s+/g, ' ').trim();
 
-		// If text doesn't end with punctuation, quotes, or closing brackets, add a period
-		if (!/[.!?;:,'\"')\]}…。」』】〉》›»]$/.test(text)) {
+		// If text doesn't end with sentence-ending punctuation (or punctuation followed by closing quotes/brackets), add a period
+		if (!/[.!?…](?:['"'\)\]}”’]*)$/u.test(text)) {
 			text += '.';
 		}
 
@@ -287,10 +280,7 @@ export class TextToSpeech {
 			style_dp: repeatStyleBatch(style.dp, bsz),
 			text_mask: textMaskTensor,
 		});
-		const duration = Array.from(
-			dpOutputs.duration.data as Float32Array,
-			(value, index) => value / (speed * durationScaleForLanguage(langList[index])),
-		);
+		const duration = Array.from(dpOutputs.duration.data as Float32Array, (value) => value / speed);
 
 		return { duration, textIdsTensor, textMaskTensor };
 	}
@@ -648,4 +638,3 @@ export function chunkText(text: string, maxLen = 300): string[] {
 
 	return chunks;
 }
-

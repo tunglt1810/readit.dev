@@ -31,7 +31,7 @@ export interface AudioExportEngineDependencies {
 	createEncoder(handle: FileSystemFileHandle | null): Promise<AudioExportEncoder>;
 	download?: (blob: Blob, filename: string) => Promise<void>;
 	canDownload?: () => boolean;
-	synthesize(input: { unit: SpeechUnit; language: string; style: Style; speed: number }): Promise<AudioBuffer>;
+	synthesize(input: { unit: SpeechUnit; language: string; style: Style; speed: number; playbackSessionId: string }): Promise<AudioBuffer>;
 	canStartBackgroundSynthesis(): boolean;
 	waitForRunway(): Promise<void>;
 	wakeRunway(): void;
@@ -60,8 +60,9 @@ type PreparedWork = {
 };
 
 function cloneUnits(units: readonly SpeechUnit[]): SpeechUnit[] {
-	return units.map((unit) => ({
+	return units.map((unit, synthesisIndex) => ({
 		...unit,
+		synthesisIndex,
 		wordMap: unit.wordMap?.map((entry) => ({ ...entry })),
 	}));
 }
@@ -241,6 +242,7 @@ export class AudioExportEngine implements AudioExportEngine {
 					language: work.input.language,
 					style: work.input.style,
 					speed: work.input.speed,
+					playbackSessionId: work.input.playbackSessionId,
 				});
 				this.throwIfCancelled(work);
 				await work.encoder.add(buffer);

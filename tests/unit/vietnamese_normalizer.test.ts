@@ -99,6 +99,20 @@ test('falls back to deterministic spans when the CRF is unavailable', async () =
 	assert.equal(result.diagnostics.usedCrf, false);
 });
 
+test('does not duplicate an existing month prefix while preserving standalone month-year expansion', async () => {
+	const dependencies = createTestNormalizationDependencies();
+	dependencies.assets.detector = {
+		detect(tokens) {
+			return tokens.map((token) => (/^(?:7\/2026|9\/2025)$/u.test(token.text) ? 'B-NMON' : 'O'));
+		},
+	};
+	const result = await normalizeVietnameseText('Ban hành tháng 9/2025. Kỳ 7/2026.', dependencies);
+	assert.equal(
+		result.text,
+		'Ban hành tháng chín năm hai nghìn không trăm hai mươi lăm. Kỳ tháng bảy năm hai nghìn không trăm hai mươi sáu.',
+	);
+});
+
 test('restores exact source spans for malformed labels and expansion failures', async () => {
 	const dependencies = createTestNormalizationDependencies();
 	dependencies.assets.detector = { detect: () => ['B-LABB'] };

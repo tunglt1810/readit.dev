@@ -23,6 +23,8 @@ export interface SegmentationPolicy<Kind extends string> {
 	interiorSplitKinds: readonly Kind[];
 	/** Shortest unit an interior split may produce, on either side of the split. */
 	interiorSplitMinLength: number;
+	/** Optional per-kind override for the shortest unit an interior split may produce. */
+	interiorSplitMinLengthByKind?: Readonly<Partial<Record<Kind, number>>>;
 	boundaryWeights: Readonly<Record<Kind, number>>;
 }
 
@@ -129,11 +131,14 @@ function interiorSplit<Kind extends string>(
 		if (boundary.end >= end) {
 			break;
 		}
-		if (end - boundary.end < policy.interiorSplitMinLength) {
-			// Every later boundary leaves an even shorter tail, so none of them qualify either.
-			break;
+		if (!policy.interiorSplitKinds.includes(boundary.kind)) {
+			continue;
 		}
-		if (boundary.end - start >= policy.interiorSplitMinLength && policy.interiorSplitKinds.includes(boundary.kind)) {
+		const minimumLength = policy.interiorSplitMinLengthByKind?.[boundary.kind] ?? policy.interiorSplitMinLength;
+		if (end - boundary.end < minimumLength) {
+			continue;
+		}
+		if (boundary.end - start >= minimumLength) {
 			return boundary;
 		}
 	}

@@ -10,6 +10,7 @@ import { warmCache } from '../shared/warm_cache';
 import { createModelCacheWarmer } from './model_cache_warmer';
 import { registerModelCacheWarmLifecycle } from './model_cache_lifecycle';
 import { createAudioExportCoordinator, isAudioExportPrepareRequest } from './audio_export.ts';
+import { AudioExportPreparationDiagnostics } from './audio_export_prepare_diagnostics.ts';
 import { isAudioExportProgressUpdate } from './audio_export_state.ts';
 import type {
 	Article,
@@ -462,7 +463,7 @@ async function publishExtractionFailure(
 export type AudioHost = {
 	ensure(): Promise<void>;
 	close(): Promise<void>;
-	send(command: OffscreenCommand): Promise<unknown>;
+	send(command: unknown): Promise<unknown>;
 };
 
 let configuredAudioHost: AudioHost | null = null;
@@ -550,9 +551,23 @@ async function closeOffscreen(): Promise<void> {
 	await closeChromeOffscreen();
 }
 
-function sendAudioHostCommand(command: OffscreenCommand): Promise<unknown> {
+function sendAudioHostCommand(command: unknown): Promise<unknown> {
 	return configuredAudioHost ? configuredAudioHost.send(command) : chrome.runtime.sendMessage(command);
 }
+
+const audioExportPreparationDiagnostics = new AudioExportPreparationDiagnostics();
+
+// Test-only CDP view. There is deliberately no extension message or product UI
+// route to preparation diagnostics, so public export behavior remains unchanged.
+(globalThis as unknown as {
+	__readitAudioExportPreparationDiagnostics?: {
+		read(jobId?: string): unknown;
+		clear(jobId?: string): void;
+	};
+}).__readitAudioExportPreparationDiagnostics = {
+	read: (jobId) => audioExportPreparationDiagnostics.read(jobId),
+	clear: (jobId) => audioExportPreparationDiagnostics.clear(jobId),
+};
 
 const audioExportCoordinator = createAudioExportCoordinator({
 	storage: {
@@ -570,6 +585,7 @@ const audioExportCoordinator = createAudioExportCoordinator({
 	getPlaybackSession: () => activeSession,
 	ensureOffscreen: setupOffscreen,
 	sendOffscreen: (command) => sendOffscreenCommand(command, sendAudioHostCommand),
+	preparationDiagnostics: audioExportPreparationDiagnostics,
 	deleteHandle: deleteAudioExportHandle,
 	broadcast: async (job) => {
 		try {

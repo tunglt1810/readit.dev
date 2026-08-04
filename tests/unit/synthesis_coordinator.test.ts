@@ -40,6 +40,24 @@ test('shares a late prefetch with the foreground request for the same unit', asy
 	assert.equal(calls, 1);
 });
 
+test('keeps a startup-prefetched successor ready when the first foreground reader consumes it', async () => {
+	const pending = deferred<string>();
+	let calls = 0;
+	const coordinator = new IndexedSynthesisCoordinator<string, string>((input) => {
+		calls++;
+		return input === 'unit-1' ? pending.promise : Promise.resolve(input);
+	});
+
+	await coordinator.get(key(0), 'unit-0');
+	coordinator.prefetch(key(1), 'unit-1');
+	const successor = coordinator.get(key(1), 'unit-1');
+	assert.equal(calls, 2);
+
+	pending.resolve('audio-1');
+	assert.equal(await successor, 'audio-1');
+	assert.equal(calls, 2);
+});
+
 test('retries once when an in-flight prefetch fails under a foreground reader', async () => {
 	const first = deferred<string>();
 	let calls = 0;
@@ -102,6 +120,30 @@ test('does not share work across unit, session, or speed identities', async () =
 		['session-1-unit-0', 'session-1-unit-1', 'session-2-unit-0', 'session-1-speed-1'],
 	);
 	assert.equal(calls, 4);
+});
+
+test('invalidates a 1.05 prefetch and resynthesizes only the unstarted successor at literal 1.5', async () => {
+	const stale = deferred<string>();
+	const synthesisInputs: { unitIndex: number; speed: number }[] = [];
+	const coordinator = new IndexedSynthesisCoordinator<{ unitIndex: number; speed: number }, string>((input) => {
+		synthesisInputs.push(input);
+		return input.speed === 1.05 ? stale.promise : Promise.resolve(`audio-${input.unitIndex}-${input.speed}`);
+	});
+	const staleKey = key(1, 7, 0);
+	const freshKey = key(1, 7, 1);
+
+	coordinator.prefetch(staleKey, { unitIndex: 1, speed: 1.05 });
+	coordinator.clear();
+	const fresh = coordinator.get(freshKey, { unitIndex: 1, speed: 1.5 });
+	stale.resolve('stale-audio');
+
+	assert.equal(await fresh, 'audio-1-1.5');
+	assert.deepEqual(synthesisInputs, [
+		{ unitIndex: 1, speed: 1.05 },
+		{ unitIndex: 1, speed: 1.5 },
+	]);
+	assert.equal(coordinator.has(staleKey), false);
+	assert.equal(coordinator.has(freshKey), true);
 });
 
 test('retains only requested keys and clear prevents stale reuse', async () => {

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { AUDIO_EXPORT_PREPARATION_TIMEOUT_MS, createAudioExportCoordinator } from '../../src/background/audio_export.ts';
+import { AudioExportPreparationDiagnostics } from '../../src/background/audio_export_prepare_diagnostics.ts';
 import { createAudioExportJob, transitionAudioExportJob } from '../../src/background/audio_export_state.ts';
 import { createPlaybackSession } from '../../src/background/playback_state.ts';
 
@@ -19,7 +20,7 @@ function createHarness(
 	options: {
 		stored?: unknown;
 		now?: number;
-		sendOffscreen?: (command: { action: string; target?: unknown; payload?: unknown }) => Promise<{ success: boolean }>;
+		sendOffscreen?: (command: { action: string; target?: unknown; payload?: unknown }) => Promise<{ success: boolean; error?: string }>;
 	} = {},
 ) {
 	let stored = options.stored;
@@ -28,6 +29,7 @@ function createHarness(
 	const offscreenCommands: { action: string; target?: unknown; payload?: unknown }[] = [];
 	const broadcasts: unknown[] = [];
 	const handleDeletes: string[] = [];
+	const preparationDiagnostics = new AudioExportPreparationDiagnostics();
 	let now = options.now ?? 1_000;
 	const coordinator = createAudioExportCoordinator({
 		storage: {
@@ -45,6 +47,7 @@ function createHarness(
 			offscreenCommands.push(command);
 			return options.sendOffscreen?.(command) ?? { success: true };
 		},
+		preparationDiagnostics,
 		deleteHandle: async (jobId) => {
 			handleDeletes.push(jobId);
 		},
@@ -63,6 +66,7 @@ function createHarness(
 		offscreenCommands,
 		broadcasts,
 		handleDeletes,
+		preparationDiagnostics,
 		get stored() {
 			return stored;
 		},
@@ -98,7 +102,43 @@ test('prepares one active session, persists strict metadata, and routes only mar
 	]);
 	assert.equal(harness.offscreenCommands[0]?.action, 'PREPARE_AUDIO_EXPORT');
 	assert.equal(typeof harness.offscreenCommands[0]?.target, 'string');
+	assert.deepEqual(harness.offscreenCommands[0]?.payload, {
+		jobId: 'job-1',
+		playbackSessionId: 'session-1',
+		outputFilename: 'an-article.mp3',
+		estimate: { durationSeconds: 60, estimatedBytes: 724_096 },
+	});
 	assert.deepEqual(await harness.coordinator.prepare({ ...request, jobId: 'job-2' }), { success: false, error: 'snapshot-unavailable' });
+});
+
+test('records a debugger-only immutable outcome after a successful offscreen snapshot', async () => {
+	const harness = createHarness();
+	assert.deepEqual(await harness.coordinator.prepare(request), { success: true });
+
+	const [record] = harness.preparationDiagnostics.read('job-1');
+	assert.deepEqual(record, {
+		jobId: 'job-1',
+		playbackSessionId: 'session-1',
+		outcome: 'prepared',
+		innerError: null,
+	});
+	assert.equal(Object.isFrozen(record), true);
+});
+
+test('preserves the exact rejected offscreen prepare reason only in diagnostics', async () => {
+	const harness = createHarness({
+		sendOffscreen: async () => ({ success: false, error: 'An audio export is already prepared' }),
+	});
+	assert.deepEqual(await harness.coordinator.prepare(request), { success: false, error: 'snapshot-unavailable' });
+	assert.equal(harness.coordinator.snapshot()?.errorCode, 'snapshot-unavailable');
+	assert.deepEqual(harness.preparationDiagnostics.read('job-1'), [
+		{
+			jobId: 'job-1',
+			playbackSessionId: 'session-1',
+			outcome: 'offscreen-rejected',
+			innerError: 'An audio export is already prepared',
+		},
+	]);
 });
 
 test('rejects preparation for a playback session that is not active', async () => {

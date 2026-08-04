@@ -188,6 +188,9 @@ async function expandParagraph(
 				if (span.type === 'NDAT' && paragraph.tokens[span.startToken - 1]?.text.toLocaleLowerCase('vi') === 'ngày') {
 					expansion = expansion?.replace(/^ngày\s+/u, '') ?? null;
 				}
+				if (span.type === 'NMON' && paragraph.tokens[span.startToken - 1]?.text.toLocaleLowerCase('vi') === 'tháng') {
+					expansion = expansion?.replace(/^tháng\s+/u, '') ?? null;
+				}
 			}
 		} catch {
 			expansion = null;

@@ -20,16 +20,67 @@ export const AUDIO_EXPORT_OFFSCREEN_ACTIONS = [
 
 export type AudioExportOffscreenAction = (typeof AUDIO_EXPORT_OFFSCREEN_ACTIONS)[number];
 
+type InternalAudioExportOffscreenCommand = {
+	action: AudioExportOffscreenAction;
+	payload?: unknown;
+	target: typeof OFFSCREEN_AUDIO_EXPORT_TARGET;
+};
+
+export type AudioExportOffscreenEnvelope = {
+	target: typeof OFFSCREEN_AUDIO_EXPORT_TARGET;
+	command: Omit<InternalAudioExportOffscreenCommand, 'target'>;
+};
+
 export function isAudioExportOffscreenAction(value: unknown): value is AudioExportOffscreenAction {
 	return typeof value === 'string' && (AUDIO_EXPORT_OFFSCREEN_ACTIONS as readonly string[]).includes(value);
 }
 
-export function isInternalAudioExportOffscreenCommand(value: unknown): boolean {
+function isLegacyInternalAudioExportOffscreenCommand(value: unknown): value is InternalAudioExportOffscreenCommand {
 	if (!value || typeof value !== 'object') {
 		return false;
 	}
 	const command = value as { action?: unknown; target?: unknown };
 	return command.target === OFFSCREEN_AUDIO_EXPORT_TARGET && isAudioExportOffscreenAction(command.action);
+}
+
+export function isAudioExportOffscreenEnvelope(value: unknown): value is AudioExportOffscreenEnvelope {
+	if (!value || typeof value !== 'object') {
+		return false;
+	}
+	const envelope = value as { target?: unknown; command?: unknown };
+	if (envelope.target !== OFFSCREEN_AUDIO_EXPORT_TARGET || !envelope.command || typeof envelope.command !== 'object') {
+		return false;
+	}
+	const command = envelope.command as { action?: unknown };
+	return isAudioExportOffscreenAction(command.action);
+}
+
+export function createAudioExportOffscreenEnvelope(command: InternalAudioExportOffscreenCommand): AudioExportOffscreenEnvelope {
+	return {
+		target: OFFSCREEN_AUDIO_EXPORT_TARGET,
+		command: {
+			action: command.action,
+			...(command.payload === undefined ? {} : { payload: command.payload }),
+		},
+	};
+}
+
+export function unwrapAudioExportOffscreenCommand(value: unknown): InternalAudioExportOffscreenCommand | null {
+	if (isLegacyInternalAudioExportOffscreenCommand(value)) {
+		return value;
+	}
+	if (!isAudioExportOffscreenEnvelope(value)) {
+		return null;
+	}
+	return {
+		target: OFFSCREEN_AUDIO_EXPORT_TARGET,
+		action: value.command.action,
+		...(value.command.payload === undefined ? {} : { payload: value.command.payload }),
+	};
+}
+
+export function isInternalAudioExportOffscreenCommand(value: unknown): value is InternalAudioExportOffscreenCommand | AudioExportOffscreenEnvelope {
+	return unwrapAudioExportOffscreenCommand(value) !== null;
 }
 
 const AUDIO_EXPORT_JOB_STATES = new Set<AudioExportJobState>([

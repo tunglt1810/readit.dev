@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { durationScaleForLanguage, TextToSpeech } from '../../src/offscreen/supertonic_helper.ts';
+import { TextToSpeech, UnicodeProcessor } from '../../src/offscreen/supertonic_helper.ts';
 
 test('predicts a speed-adjusted duration for each text in one duration-model batch', async () => {
 	const calls: unknown[] = [];
@@ -41,7 +41,7 @@ test('predicts a speed-adjusted duration for each text in one duration-model bat
 	assert.equal(calls.length, 2);
 });
 
-test('shortens the predicted duration per language, so a Vietnamese latent is not sized for English word lengths', async () => {
+test('uses the literal controller speed as the only duration divisor for Vietnamese and English', async () => {
 	const textProcessor = {
 		call() {
 			return {
@@ -55,7 +55,7 @@ test('shortens the predicted duration per language, so a Vietnamese latent is no
 	};
 	const durationPredictor = {
 		async run() {
-			return { duration: { data: new Float32Array([16, 16]) } };
+			return { duration: { data: new Float32Array([21, 21]) } };
 		},
 	};
 	const style = { dp: { type: 'float32', data: new Float32Array([0.25, -0.5]), dims: [1, 1, 2] } };
@@ -68,17 +68,14 @@ test('shortens the predicted duration per language, so a Vietnamese latent is no
 		{} as never,
 	);
 
-	// Same raw prediction, same speed: only the language differs. How far Vietnamese is shortened is
-	// a knob set by listening, so assert the relationship rather than pinning today's value.
-	const [vietnamese, english] = await engine.predictDurations(['a', 'b'], ['vi', 'en'], style as never, 1);
-	assert.equal(english, 16);
-	assert.equal(vietnamese, 16 / durationScaleForLanguage('vi'));
-	assert.ok(vietnamese < english);
+	assert.deepEqual(await engine.predictDurations(['Vũ', 'English short'], ['vi', 'en'], style as never, 1.5), [14, 14]);
+	assert.deepEqual(await engine.predictDurations(['Vũ', 'English short'], ['vi', 'en'], style as never, 1.05), [20, 20]);
+	assert.deepEqual(await engine.predictDurations(['Vũ', 'English short'], ['vi', 'en'], style as never, 1.25), [16.8, 16.8]);
 });
 
-test('leaves every uncalibrated language at the model prediction', () => {
-	assert.equal(durationScaleForLanguage('en'), 1);
-	assert.equal(durationScaleForLanguage('na'), 1);
-	assert.equal(durationScaleForLanguage('ko'), 1);
-	assert.ok(durationScaleForLanguage('vi') > 1);
+test('appends period to parenthesized and quoted text ending without sentence punctuation', () => {
+	const processor = new UnicodeProcessor({});
+	assert.equal(processor.preprocessText('Huyền Lê (Theo AFP, CNN)', 'vi').includes('.'), true);
+	assert.equal(processor.preprocessText('Nói rằng "Đồng ý"', 'vi').includes('.'), true);
 });
+

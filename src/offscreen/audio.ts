@@ -1,3 +1,6 @@
+import type { SpeechUnit } from './speech_unit.ts';
+import { type VoicedAudioContext, verifyRawVoicedSamples } from './voiced_audio.ts';
+
 export type SpeechSynthesisCall = (
 	text: string,
 	lang: string,
@@ -11,10 +14,16 @@ export async function synthesizeSpeechUnitSamples(
 	lang: string,
 	speed: number,
 	synthesize: SpeechSynthesisCall,
+	context: VoicedAudioContext = { unitText: unit.text },
+	onRawEngineSamples?: (samples: Float32Array) => void,
 ): Promise<Float32Array> {
 	const internalSilence = unit.pauseAfterMs === null ? 0.3 : 0;
-	const wav = await synthesize(unit.text, lang, 8, speed, internalSilence);
-	return wav instanceof Float32Array ? wav : Float32Array.from(wav);
+	const wav = await synthesize(unit.synthesisText ?? unit.text, lang, 8, speed, internalSilence);
+	const samples = wav instanceof Float32Array ? wav : Float32Array.from(wav);
+	// This runs directly after the engine result resolves, before verification or pause padding.
+	onRawEngineSamples?.(samples);
+	verifyRawVoicedSamples(samples, context);
+	return samples;
 }
 
 /** The minimal surface of an AudioContext this module needs, so it can be exercised without one. */
@@ -50,5 +59,3 @@ export function createSpeechAudioBuffer(
 	buffer.getChannelData(0).set(samples);
 	return buffer;
 }
-
-import type { SpeechUnit } from './speech_unit.ts';

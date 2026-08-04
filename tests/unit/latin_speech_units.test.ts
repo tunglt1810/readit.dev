@@ -32,13 +32,29 @@ test('rejects no-letter, exact-half, and non-Latin text', () => {
 	}
 });
 
-test('keeps short clauses together and applies paragraph pause precedence', () => {
+test('splits semicolon clauses and applies paragraph pause precedence', () => {
 	const first = 'Mệnh đề thứ nhất đủ dài, mệnh đề thứ hai cũng đủ dài; mệnh đề thứ ba vẫn đủ dài — mệnh đề thứ tư kết thúc.';
 	const second = 'Đoạn cuối cùng đủ dài!';
 
 	assert.deepEqual(planLatinSpeechUnits(`${first}\n\n${second}`), [
-		{ text: first, pauseAfterMs: 260 },
+		{ text: 'Mệnh đề thứ nhất đủ dài, mệnh đề thứ hai cũng đủ dài;', pauseAfterMs: 140 },
+		{ text: 'mệnh đề thứ ba vẫn đủ dài — mệnh đề thứ tư kết thúc.', pauseAfterMs: 260 },
 		{ text: second, pauseAfterMs: 165 },
+	]);
+});
+
+test('splits the reported semicolon-delimited paragraph into speech units', () => {
+	const source =
+		'Dự thảo đồng thời bổ sung nhóm chức danh được sử dụng thường xuyên một ôtô trong thời gian công tác, không quy định mức giá, gồm: Chủ nhiệm Ủy ban Kiểm tra Trung ương; trưởng các ban Đảng ở Trung ương; Chánh Văn phòng Trung ương Đảng; Giám đốc Học viện Chính trị quốc gia Hồ Chí Minh.';
+
+	assert.deepEqual(planLatinSpeechUnits(source), [
+		{
+			text: 'Dự thảo đồng thời bổ sung nhóm chức danh được sử dụng thường xuyên một ôtô trong thời gian công tác, không quy định mức giá, gồm: Chủ nhiệm Ủy ban Kiểm tra Trung ương;',
+			pauseAfterMs: 140,
+		},
+		{ text: 'trưởng các ban Đảng ở Trung ương;', pauseAfterMs: 140 },
+		{ text: 'Chánh Văn phòng Trung ương Đảng;', pauseAfterMs: 140 },
+		{ text: 'Giám đốc Học viện Chính trị quốc gia Hồ Chí Minh.', pauseAfterMs: 180 },
 	]);
 });
 
@@ -59,7 +75,7 @@ test('selects a weighted boundary in the preferred range', () => {
 });
 
 test('does not split punctuation inside protected structured forms', () => {
-	const protectedText = 'admin@example.com 192.168.1.10 v2.3.4 11-07-2026 10:30 3.5kg https://a-b.example ÅBC-123';
+	const protectedText = 'admin@example.com 192.168.1.10 v2.3.4 11-07-2026 10:30 3.5kg https://a-b.example/x;y ÅBC-123';
 	const source = `${'prefix '.repeat(22)}${protectedText} ${'additional content '.repeat(45).trim()}`;
 	const reconstructed = planLatinSpeechUnits(source)
 		.map(({ text }) => text)
@@ -69,7 +85,7 @@ test('does not split punctuation inside protected structured forms', () => {
 	assert.equal(reconstructed.includes('admin@example.com'), true);
 	assert.equal(reconstructed.includes('192.168.1.10'), true);
 	assert.equal(reconstructed.includes('v2.3.4'), true);
-	assert.equal(reconstructed.includes('https://a-b.example'), true);
+	assert.equal(reconstructed.includes('https://a-b.example/x;y'), true);
 	assert.equal(reconstructed.includes('ÅBC-123'), true);
 });
 
@@ -116,3 +132,11 @@ test('treats several consecutive single line breaks the same as paragraph breaks
 		{ text: 'Third line.', pauseAfterMs: 180 },
 	]);
 });
+
+test('assigns non-zero fallback pause to an unpunctuated final paragraph', () => {
+	assert.deepEqual(planLatinSpeechUnits('Đoạn đầu.\n\nHuyền Lê (Theo AFP, CNN)'), [
+		{ text: 'Đoạn đầu.', pauseAfterMs: 260 },
+		{ text: 'Huyền Lê (Theo AFP, CNN)', pauseAfterMs: 165 },
+	]);
+});
+

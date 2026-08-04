@@ -2,6 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { type AudioBufferFactory, createSpeechAudioBuffer, synthesizeSpeechUnitSamples } from '../../src/offscreen/audio.ts';
 
+function voicedSamples(prefix: readonly number[]): Float32Array {
+	const samples = new Float32Array(128).fill(0.5);
+	samples.set(prefix);
+	return samples;
+}
+
 function stubAudioContext(): AudioBufferFactory & { readonly created: { length: number; sampleRate: number }[] } {
 	const created: { length: number; sampleRate: number }[] = [];
 	return {
@@ -23,36 +29,54 @@ test('uses zero internal silence for a numeric Latin pause', async () => {
 	const calls: unknown[][] = [];
 	const output = await synthesizeSpeechUnitSamples({ text: 'Hello.', pauseAfterMs: 60 }, 'en', 1.15, async (...args) => {
 		calls.push(args);
-		return [0.5];
+		return voicedSamples([0.5]);
 	});
 	assert.deepEqual(calls, [['Hello.', 'en', 8, 1.15, 0]]);
-	assert.deepEqual(Array.from(output), [0.5]);
+	assert.equal(output[0], 0.5);
+	assert.equal(output.length, 128);
 });
 
 test('treats numeric zero as an explicit pause', async () => {
 	const calls: unknown[][] = [];
 	const output = await synthesizeSpeechUnitSamples({ text: 'No punctuation', pauseAfterMs: 0 }, 'fr', 1, async (...args) => {
 		calls.push(args);
-		return [0.25];
+		return voicedSamples([0.25]);
 	});
 	assert.deepEqual(calls, [['No punctuation', 'fr', 8, 1, 0]]);
-	assert.deepEqual(Array.from(output), [0.25]);
+	assert.equal(output[0], 0.25);
+	assert.equal(output.length, 128);
 });
 
 test('asks the engine for its own silence when the pause is a null compatibility marker', async () => {
 	const calls: unknown[][] = [];
 	const output = await synthesizeSpeechUnitSamples({ text: '中文内容', pauseAfterMs: null }, 'zh', 1.05, async (...args) => {
 		calls.push(args);
-		return [0.75, -0.25];
+		return voicedSamples([0.75, -0.25]);
 	});
 	assert.deepEqual(calls, [['中文内容', 'zh', 8, 1.05, 0.3]]);
-	assert.deepEqual(Array.from(output), [0.75, -0.25]);
+	assert.deepEqual(Array.from(output.slice(0, 2)), [0.75, -0.25]);
+	assert.equal(output.length, 128);
 });
 
 test('passes an engine Float32Array straight through instead of copying it', async () => {
-	const samples = new Float32Array([0.5, -0.5]);
+	const samples = voicedSamples([0.5, -0.5]);
 	const output = await synthesizeSpeechUnitSamples({ text: 'xin chào', pauseAfterMs: 80 }, 'vi', 1.15, async () => samples);
 	assert.equal(output, samples);
+});
+
+test('uses only synthesis text as the rendering override and forwards literal 1.5 controller speed', async () => {
+	const calls: unknown[][] = [];
+	await synthesizeSpeechUnitSamples(
+		{ text: 'Heading The article continues.', synthesisText: 'Heading. The article continues.', pauseAfterMs: 260 },
+		'en',
+		1.5,
+		async (...args) => {
+			calls.push(args);
+			return voicedSamples([0.5, -0.25]);
+		},
+	);
+
+	assert.deepEqual(calls, [['Heading. The article continues.', 'en', 8, 1.5, 0]]);
 });
 
 test('sizes the buffer for the pause and leaves that tail silent', () => {

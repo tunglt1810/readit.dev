@@ -5,6 +5,7 @@ import {
 	isManualCheckpointMetadata,
 	sendOffscreenCommand,
 } from '../../src/background/offscreen_transport.ts';
+import { unwrapAudioExportOffscreenCommand } from '../../src/shared/audio_export.ts';
 
 const audioExportEstimate = { durationSeconds: 12, estimatedBytes: 148_096 };
 
@@ -120,4 +121,36 @@ test('only sends audio export commands to offscreen through the internal channel
 
 	const command = createAudioExportOffscreenCommand('START_AUDIO_EXPORT', { jobId: 'job-1' });
 	assert.deepEqual(await sendOffscreenCommand(command, async () => ({ success: true })), { success: true });
+});
+
+
+test('serializes private prepare payloads inside the offscreen envelope without stripping outputFilename', async () => {
+	const command = createAudioExportOffscreenCommand('PREPARE_AUDIO_EXPORT', {
+		jobId: 'job-1',
+		playbackSessionId: 'session-1',
+		outputFilename: 'article.mp3',
+		estimate: audioExportEstimate,
+	});
+	let transmitted: unknown;
+
+	assert.deepEqual(
+		await sendOffscreenCommand(command, async (message) => {
+			transmitted = JSON.parse(JSON.stringify(message));
+			return { success: true };
+		}),
+		{ success: true },
+	);
+	assert.deepEqual(transmitted, {
+		target: 'readit-offscreen-audio-export',
+		command: {
+			action: 'PREPARE_AUDIO_EXPORT',
+			payload: {
+				jobId: 'job-1',
+				playbackSessionId: 'session-1',
+				outputFilename: 'article.mp3',
+				estimate: audioExportEstimate,
+			},
+		},
+	});
+	assert.deepEqual(unwrapAudioExportOffscreenCommand(transmitted), command);
 });

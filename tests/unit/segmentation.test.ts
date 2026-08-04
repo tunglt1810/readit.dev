@@ -13,8 +13,9 @@ const policy: SegmentationPolicy<Kind> = {
 	shortRemainderLength: 80,
 	shortRemainderPenalty: 30,
 	minimumScore: 0,
-	interiorSplitKinds: ['sentence'],
+	interiorSplitKinds: ['sentence', 'semicolon'],
 	interiorSplitMinLength: 60,
+	interiorSplitMinLengthByKind: { semicolon: 20 },
 	boundaryWeights: {
 		sentence: 40,
 		semicolon: 30,
@@ -78,6 +79,21 @@ test('does not split off a sentence too short to stand as its own unit', () => {
 		planTextSegments(source, boundaries, policy, 260).map((unit) => unit.text),
 		[source],
 	);
+});
+
+test('uses a boundary-kind minimum for eligible interior splits', () => {
+	const first = `${'a'.repeat(29)};`;
+	const second = `${'b'.repeat(29)}.`;
+	const source = `${first} ${second}`;
+	const boundaries: BoundaryCandidate<Kind>[] = [
+		{ end: first.length, kind: 'semicolon', pauseAfterMs: 140 },
+		{ end: source.length, kind: 'sentence', pauseAfterMs: 180 },
+	];
+
+	assert.deepEqual(planTextSegments(source, boundaries, policy, 260), [
+		{ text: first, pauseAfterMs: 140 },
+		{ text: second, pauseAfterMs: 260 },
+	]);
 });
 
 test('only ends a unit early on a kind listed for interior splits', () => {

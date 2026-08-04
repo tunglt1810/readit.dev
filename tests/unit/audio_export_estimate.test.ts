@@ -24,6 +24,12 @@ test('adds planned pauses after speed-scaled speech', () => {
 	assert.equal(estimate.durationSeconds, 1.25);
 });
 
+test('at literal 1.5 divides spoken export duration once and leaves a 500 ms pause unchanged', () => {
+	const unit = { text: 'one two three four', pauseAfterMs: 500, wordMap: [] };
+	assert.deepEqual(estimateSpeechUnitDurations([unit], 'en', 1.5), [1.5]);
+	assert.equal(estimateSpeechUnits([unit], 'en', 1.5).durationSeconds, 1.5);
+});
+
 test('adds each unit pause and returns durations that sum to the total', () => {
 	const units = [
 		{ text: 'one two', pauseAfterMs: 100, wordMap: [] },

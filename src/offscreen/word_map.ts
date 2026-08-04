@@ -31,6 +31,25 @@ function unitTextPattern(unitText: string): RegExp {
 	return new RegExp(escaped, 'u');
 }
 
+function canonicalOffsetForSpokenOffset(canonicalText: string, spokenText: string, spokenOffset: number): number {
+	let canonicalOffset = 0;
+	let currentSpokenOffset = 0;
+
+	while (currentSpokenOffset < spokenOffset && canonicalOffset < canonicalText.length) {
+		if (canonicalText[canonicalOffset] === ' ' && /\s/u.test(spokenText[currentSpokenOffset] ?? '')) {
+			canonicalOffset++;
+			do {
+				currentSpokenOffset++;
+			} while (currentSpokenOffset < spokenOffset && /\s/u.test(spokenText[currentSpokenOffset] ?? ''));
+			continue;
+		}
+		canonicalOffset++;
+		currentSpokenOffset++;
+	}
+
+	return canonicalOffset;
+}
+
 export function attachNormalizedWordMap(
 	units: readonly SpeechUnit[],
 	fullSpokenText: string,
@@ -49,8 +68,8 @@ export function attachNormalizedWordMap(
 			.filter((entry) => entry.spokenStart >= unitStart && entry.spokenEnd <= unitEnd)
 			.map((entry) => ({
 				text: entry.originalText,
-				start: entry.spokenStart - unitStart,
-				end: entry.spokenEnd - unitStart,
+				start: canonicalOffsetForSpokenOffset(unit.text, match[0], entry.spokenStart - unitStart),
+				end: canonicalOffsetForSpokenOffset(unit.text, match[0], entry.spokenEnd - unitStart),
 			}));
 		return { ...unit, wordMap: entries };
 	});

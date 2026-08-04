@@ -16,7 +16,13 @@
 			"!**/backend/.wrangler",
 			"!**/*.wasm",
 			"!**/pnpm-lock.yaml",
-			"!**/.pnpm-store"
+			"!**/.pnpm-store",
+			"!**/.claude",
+			"!**/.codex",
+			"!**/.kiro",
+			"!**/.tmp",
+			"!**/graphify-out",
+			"!**/.worktrees"
 		]
 	},
 	"formatter": {

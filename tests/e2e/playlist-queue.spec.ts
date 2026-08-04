@@ -2,6 +2,16 @@ import { expect, test } from './fixtures';
 
 test.describe('Playlist Queue', () => {
 	test.beforeEach(async ({ context }) => {
+		await context.route('https://en.wikipedia.org/**', (route) => {
+			const url = route.request().url();
+			const title = url.includes('Podcast') ? 'Podcast - Wikipedia' : 'Speech synthesis - Wikipedia';
+			const heading = url.includes('Podcast') ? 'Podcast' : 'Speech synthesis';
+			void route.fulfill({
+				status: 200,
+				contentType: 'text/html',
+				body: `<!DOCTYPE html><html><head><title>${title}</title></head><body><main id="content"><h1>${heading}</h1><p>Speech synthesis is a computer-generated simulation of human speech. It is used to convert written text into spoken words in applications like Readit for reading web pages and documents aloud efficiently.</p></main></body></html>`,
+			});
+		});
 		const workers = context.serviceWorkers();
 		const worker = workers[0];
 		if (worker) {
@@ -165,33 +175,34 @@ startxref
 		await sidePanel.locator('.queue-url-row button').click();
 		await expect(sidePanel.locator('.queue-item')).toHaveCount(2);
 
-		await sidePanel.locator('.queue-play-btn').click();
-		await expect(sidePanel.locator('.queue-item[data-status="playing"]')).toHaveCount(1);
-
 		const workers = context.serviceWorkers();
 		const worker = workers[0];
-		let activeSessionId: string | null = null;
 		if (worker) {
 			await worker.evaluate(() => {
 				if (chrome.extension) {
 					chrome.extension.isAllowedFileSchemeAccess = (cb: (isAllowed: boolean) => void) => cb(true);
 				}
 			});
-			for (let i = 0; i < 20; i++) {
-				const result = await worker.evaluate(async () => {
-					const res = await chrome.storage.session.get('readit_playback_session');
-					return (res as Record<string, { sessionId?: string }>).readit_playback_session?.sessionId ?? null;
-				});
-				if (result) {
-					activeSessionId = result;
-					break;
-				}
-				await sidePanel.waitForTimeout(500);
-			}
 		}
 
-		console.log('E2E Active Session ID:', activeSessionId);
-		expect(activeSessionId).not.toBeNull();
+		await sidePanel.locator('.queue-play-btn').click();
+		await expect(sidePanel.locator('.queue-item[data-status="playing"]')).toHaveCount(1);
+
+		let activeSessionId: string | null = null;
+		if (worker) {
+			await expect
+				.poll(
+					async () => {
+						activeSessionId = await worker.evaluate(async () => {
+							const res = await chrome.storage.session.get('readit_playback_session');
+							return (res as Record<string, { sessionId?: string }>).readit_playback_session?.sessionId ?? null;
+						});
+						return activeSessionId;
+					},
+					{ timeout: 30000 },
+				)
+				.not.toBeNull();
+		}
 		await expect.poll(
 			async () => {
 				const result = await worker?.evaluate(async () => {

@@ -1,5 +1,6 @@
 import {
 	type AudioExportOffscreenAction,
+	createAudioExportOffscreenEnvelope,
 	isAudioExportEstimate,
 	isAudioExportOffscreenAction,
 	isInternalAudioExportOffscreenCommand,
@@ -57,12 +58,13 @@ export function isManualCheckpointMetadata(value: unknown): value is ManualCheck
 
 export async function sendOffscreenCommand(
 	message: OffscreenCommand,
-	sendMessage: (message: OffscreenCommand) => Promise<unknown>,
+	sendMessage: (message: unknown) => Promise<unknown>,
 ): Promise<OffscreenCommandResponse> {
 	if (isAudioExportOffscreenAction(message.action) && !isInternalAudioExportOffscreenCommand(message)) {
 		return { success: false };
 	}
-	const response = await sendMessage(message);
+	const runtimeMessage = isInternalAudioExportOffscreenCommand(message) ? createAudioExportOffscreenEnvelope(message) : message;
+	const response = await sendMessage(runtimeMessage);
 	if (response && typeof response === 'object' && typeof (response as { success?: unknown }).success === 'boolean') {
 		const checkpoint = (response as { checkpoint?: unknown }).checkpoint;
 		const snapshot = (response as { snapshot?: unknown }).snapshot;

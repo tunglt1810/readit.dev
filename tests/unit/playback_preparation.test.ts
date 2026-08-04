@@ -129,3 +129,89 @@ test('attaches a word map for both normalized Vietnamese text and plain Latin te
 		['First', 'sentence.'],
 	);
 });
+
+
+test('consolidates bare Latin, Vietnamese, fallback, and compatibility units before attaching word maps', async () => {
+	const latinBody = 'The paragraph continues with enough content to be independently reliable.';
+	const [latin] = await preparePlaybackUnits(`Heading\n\n${latinBody}`, 'en', null);
+	assert.deepEqual(withoutWordMap([latin]), [
+		{
+			text: `Heading ${latinBody}`,
+			synthesisText: `Heading. ${latinBody}`,
+			pauseAfterMs: 180,
+		},
+	]);
+	assert.deepEqual(
+		latin.wordMap?.map((entry) => latin.text.slice(entry.start, entry.end)),
+		`Heading ${latinBody}`.split(' '),
+	);
+
+	const vietnameseHeading = 'Đề mục';
+	const vietnameseBody = 'Nội dung đã chuẩn hóa tiếp tục đủ dài để giữ ánh xạ theo thứ tự.';
+	const vietnameseSpoken = `${vietnameseHeading}\n\n${vietnameseBody}`;
+	const [normalized] = await preparePlaybackUnits('Nguồn gốc', 'vi', {
+		async normalize() {
+			return {
+				text: vietnameseSpoken,
+				wordMap: [
+					{ originalText: vietnameseHeading, originalStart: 0, originalEnd: 6, spokenStart: 0, spokenEnd: vietnameseHeading.length },
+					{
+						originalText: vietnameseBody,
+						originalStart: 7,
+						originalEnd: 7 + vietnameseBody.length,
+						spokenStart: vietnameseHeading.length + 2,
+						spokenEnd: vietnameseSpoken.length,
+					},
+				],
+				diagnostics,
+			};
+		},
+	});
+	assert.deepEqual(withoutWordMap([normalized]), [
+		{
+			text: `${vietnameseHeading} ${vietnameseBody}`,
+			synthesisText: `${vietnameseHeading}. ${vietnameseBody}`,
+			pauseAfterMs: 180,
+		},
+	]);
+	assert.deepEqual(normalized.wordMap, [
+		{ text: vietnameseHeading, start: 0, end: vietnameseHeading.length },
+		{
+			text: vietnameseBody,
+			start: vietnameseHeading.length + 1,
+			end: vietnameseHeading.length + 1 + vietnameseBody.length,
+		},
+	]);
+
+	const fallbackBody = 'Nội dung dự phòng tiếp tục đủ dài để giữ ánh xạ theo thứ tự.';
+	const [fallback] = await preparePlaybackUnits(`Tiêu đề\n\n${fallbackBody}`, 'vi', {
+		async normalize() {
+			throw new Error('expected fallback');
+		},
+	});
+	assert.deepEqual(withoutWordMap([fallback]), [
+		{
+			text: `Tiêu đề ${fallbackBody}`,
+			synthesisText: `Tiêu đề. ${fallbackBody}`,
+			pauseAfterMs: 180,
+		},
+	]);
+	assert.deepEqual(
+		fallback.wordMap?.map((entry) => fallback.text.slice(entry.start, entry.end)),
+		`Tiêu đề ${fallbackBody}`.split(' '),
+	);
+
+	const compatibilityBody = '兼容路径保留足够的字符以便稳定合成并保持原有顺序。';
+	const [compatibility] = await preparePlaybackUnits(`标题\n\n${compatibilityBody}`, 'zh', null);
+	assert.deepEqual(withoutWordMap([compatibility]), [
+		{
+			text: `标题 ${compatibilityBody}`,
+			synthesisText: `标题. ${compatibilityBody}`,
+			pauseAfterMs: null,
+		},
+	]);
+	assert.deepEqual(
+		compatibility.wordMap?.map((entry) => compatibility.text.slice(entry.start, entry.end)),
+		['标题', compatibilityBody],
+	);
+});

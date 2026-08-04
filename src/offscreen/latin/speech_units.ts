@@ -3,7 +3,8 @@ import type { SpeechUnit } from '../speech_unit.ts';
 
 export const LATIN_PAUSE_MS = Object.freeze({
 	comma: 60,
-	colonOrSemicolon: 90,
+	colon: 90,
+	semicolon: 140,
 	spacedDash: 105,
 	sentenceEnd: 165,
 	period: 180,
@@ -16,6 +17,7 @@ export const LATIN_MAX_UNIT_LENGTH = 300;
 // Sentences in real articles run about 90 characters, so this lets most of them stand as their own
 // unit while still gluing very short ones to their neighbour rather than emitting a scrap.
 export const LATIN_INTERIOR_SPLIT_MIN_LENGTH = 60;
+export const LATIN_SEMICOLON_INTERIOR_SPLIT_MIN_LENGTH = 20;
 
 type LatinBoundaryKind = 'sentence' | 'semicolon' | 'colon' | 'spacedDash' | 'comma';
 
@@ -28,8 +30,9 @@ const LATIN_SEGMENTATION_POLICY: SegmentationPolicy<LatinBoundaryKind> = Object.
 	shortRemainderLength: 80,
 	shortRemainderPenalty: 30,
 	minimumScore: 0,
-	interiorSplitKinds: Object.freeze(['sentence'] as const),
+	interiorSplitKinds: Object.freeze(['sentence', 'semicolon'] as const),
 	interiorSplitMinLength: LATIN_INTERIOR_SPLIT_MIN_LENGTH,
+	interiorSplitMinLengthByKind: Object.freeze({ semicolon: LATIN_SEMICOLON_INTERIOR_SPLIT_MIN_LENGTH }),
 	boundaryWeights: Object.freeze({
 		sentence: 40,
 		semicolon: 30,
@@ -95,9 +98,9 @@ function scanBoundaries(text: string): BoundaryCandidate<LatinBoundaryKind>[] {
 		if (character === ',' && !(/\d/u.test(text[index - 1] ?? '') && /\d/u.test(text[index + 1] ?? ''))) {
 			boundaries.push({ end: index + 1, kind: 'comma', pauseAfterMs: LATIN_PAUSE_MS.comma });
 		} else if (character === ':' && !(/\d/u.test(text[index - 1] ?? '') && /\d/u.test(text[index + 1] ?? ''))) {
-			boundaries.push({ end: index + 1, kind: 'colon', pauseAfterMs: LATIN_PAUSE_MS.colonOrSemicolon });
+			boundaries.push({ end: index + 1, kind: 'colon', pauseAfterMs: LATIN_PAUSE_MS.colon });
 		} else if (character === ';' && !(/\d/u.test(text[index - 1] ?? '') && /\d/u.test(text[index + 1] ?? ''))) {
-			boundaries.push({ end: index + 1, kind: 'semicolon', pauseAfterMs: LATIN_PAUSE_MS.colonOrSemicolon });
+			boundaries.push({ end: index + 1, kind: 'semicolon', pauseAfterMs: LATIN_PAUSE_MS.semicolon });
 		} else if ('-–—'.includes(character) && /\s/u.test(text[index - 1] ?? '') && /\s/u.test(text[index + 1] ?? '')) {
 			boundaries.push({ end: index + 1, kind: 'spacedDash', pauseAfterMs: LATIN_PAUSE_MS.spacedDash });
 		} else if (
@@ -134,7 +137,9 @@ export function planLatinSpeechUnits(text: string): SpeechUnit[] {
 		.filter(Boolean);
 	const units: SpeechUnit[] = [];
 	for (let index = 0; index < paragraphs.length; index++) {
-		units.push(...planParagraph(paragraphs[index], index < paragraphs.length - 1 ? LATIN_PAUSE_MS.paragraphEnd : 0));
+		const isLast = index === paragraphs.length - 1;
+		const paragraphPause = isLast ? LATIN_PAUSE_MS.sentenceEnd : LATIN_PAUSE_MS.paragraphEnd;
+		units.push(...planParagraph(paragraphs[index], paragraphPause));
 	}
 	return units;
 }

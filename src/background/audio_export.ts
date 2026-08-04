@@ -8,6 +8,7 @@ import {
 	transitionAudioExportJob,
 } from './audio_export_state.ts';
 import { createAudioExportOffscreenCommand, type OffscreenCommand, type OffscreenCommandResponse } from './offscreen_transport.ts';
+import type { AudioExportPreparationDiagnostics } from './audio_export_prepare_diagnostics.ts';
 
 export const AUDIO_EXPORT_PREPARATION_TIMEOUT_MS = 10 * 60 * 1_000;
 
@@ -27,6 +28,7 @@ type AudioExportCoordinatorDependencies = {
 	getPlaybackSession(): PlaybackSessionSnapshot | null;
 	ensureOffscreen(): Promise<void>;
 	sendOffscreen(command: OffscreenCommand): Promise<OffscreenCommandResponse>;
+	preparationDiagnostics?: AudioExportPreparationDiagnostics;
 	deleteHandle(jobId: string): Promise<void>;
 	broadcast(job: AudioExportJobSnapshot | null): Promise<void>;
 	now(): number;
@@ -140,11 +142,29 @@ export class AudioExportCoordinator {
 				}),
 			);
 			if (!response.success) {
+				this.dependencies.preparationDiagnostics?.record({
+					jobId: job.jobId,
+					playbackSessionId: job.playbackSessionId,
+					outcome: 'offscreen-rejected',
+					innerError: typeof response.error === 'string' ? response.error : null,
+				});
 				await this.fail(job.jobId, 'snapshot-unavailable');
 				return { success: false, error: 'snapshot-unavailable' };
 			}
+			this.dependencies.preparationDiagnostics?.record({
+				jobId: job.jobId,
+				playbackSessionId: job.playbackSessionId,
+				outcome: 'prepared',
+				innerError: null,
+			});
 			return { success: true };
-		} catch (_error) {
+		} catch (error) {
+			this.dependencies.preparationDiagnostics?.record({
+				jobId: job.jobId,
+				playbackSessionId: job.playbackSessionId,
+				outcome: 'offscreen-transport-failed',
+				innerError: error instanceof Error ? error.message : String(error),
+			});
 			await this.fail(job.jobId, 'snapshot-unavailable');
 			return { success: false, error: 'snapshot-unavailable' };
 		}

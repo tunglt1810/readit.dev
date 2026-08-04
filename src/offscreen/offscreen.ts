@@ -1,15 +1,19 @@
 import {
 	isAudioExportEstimate,
 	isAudioExportOffscreenAction,
-	isInternalAudioExportOffscreenCommand,
+	unwrapAudioExportOffscreenCommand,
 } from '../shared/audio_export.ts';
 import { deleteAudioExportHandle, takeAudioExportHandle } from '../shared/audio_export_handle_store.ts';
 import { MODEL_FILES, VOICE_STYLES } from '../shared/constants';
 import type { DocumentReaderSnapshot } from '../shared/document_reader.ts';
 import { isPanelInstanceId } from '../shared/manual_playback';
 import { buildReadableSurfaceWords } from '../shared/readable_surface.ts';
-import type { PlaybackContent, PlaybackContentScope, PlaybackProgress, PlaybackStatus, ReadableSurfaceKind } from '../shared/types';
+import type { AudioExportEstimate, PlaybackContent, PlaybackContentScope, PlaybackProgress, PlaybackStatus, ReadableSurfaceKind } from '../shared/types';
 import { createSpeechAudioBuffer, synthesizeSpeechUnitSamples } from './audio';
+import { EngineBoundaryDiagnostics } from './engine_boundary_diagnostics.ts';
+import { VoicedAudioError } from './voiced_audio.ts';
+import { ExportSnapshotDiagnostics } from './export_snapshot_diagnostics.ts';
+import { ExportPreparationDiagnostics } from './export_prepare_diagnostics.ts';
 import { createAudioExportEncoder } from './audio_export_encoder.ts';
 import { AudioExportEngine } from './audio_export_engine.ts';
 import { estimateSpeechUnits } from './audio_export_estimate';
@@ -108,6 +112,11 @@ async function initStorage() {
 initStorage();
 
 const playbackMetrics = new PlaybackMetricsRecorder();
+const engineBoundaryDiagnostics = new EngineBoundaryDiagnostics();
+const exportSnapshotDiagnostics = new ExportSnapshotDiagnostics();
+const exportPreparationDiagnostics = new ExportPreparationDiagnostics();
+let forceNextExportRawFailure = false;
+let lastExportProbeFailure: { name: string; reason: string | null } | null = null;
 const exportRunwayWaiters = new Set<() => void>();
 
 type AudioExportDownload = (blob: Blob, filename: string) => Promise<void>;
@@ -154,12 +163,67 @@ function flushPlaybackMetrics() {
 
 (globalThis as unknown as { __readitPlaybackDebug?: () => unknown }).__readitPlaybackDebug = () => ({
 	sessionId: currentExtensionSessionId,
+	language: currentPlaybackLanguage,
+	voiceStyleId: currentVoiceStyleId || null,
+	hasPlaybackStyle: currentPlaybackStyle !== null,
+	unitCount: speechUnits.length,
+	speed: currentSpeed,
 	sourceId: currentSourceId,
 	bufferOffsetSec: currentBufferOffsetSec,
 	audioContextTime: audioCtx?.currentTime ?? null,
 	pauseKeepalive: pauseKeepalive.getDebugState(),
 	backgroundSynthesisAllowed: canStartBackgroundSynthesis(playbackRunway()),
 });
+
+// Test-only CDP view: there is deliberately no extension message or product UI for these records.
+(globalThis as unknown as {
+	__readitEngineBoundaryDiagnostics?: {
+		read(probeId?: string | null): unknown;
+		clear(probeId?: string | null): void;
+	};
+}).__readitEngineBoundaryDiagnostics = {
+	read: (probeId) => engineBoundaryDiagnostics.read(probeId),
+	clear: (probeId) => engineBoundaryDiagnostics.clear(probeId),
+};
+
+// Test-only CDP view of immutable export snapshot metadata. It intentionally
+// cannot expose prepared units, synthesis text, style data, or output handles.
+(globalThis as unknown as {
+	__readitExportSnapshotDiagnostics?: {
+		read(jobId?: string): unknown;
+		clear(jobId?: string): void;
+	};
+}).__readitExportSnapshotDiagnostics = {
+	read: (jobId) => exportSnapshotDiagnostics.read(jobId),
+	clear: (jobId) => exportSnapshotDiagnostics.clear(jobId),
+};
+
+// Test-only CDP record of the inner offscreen preparation outcome. It has no
+// extension-message or product UI route, and does not alter the public result.
+(globalThis as unknown as {
+	__readitExportPreparationDiagnostics?: {
+		read(jobId?: string): unknown;
+		clear(jobId?: string): void;
+	};
+}).__readitExportPreparationDiagnostics = {
+	read: (jobId) => exportPreparationDiagnostics.read(jobId),
+	clear: (jobId) => exportPreparationDiagnostics.clear(jobId),
+};
+
+// Test-only CDP control for one intentional unvoiced export negative control.
+// It has no extension-message or product UI route and is consumed after one export engine call.
+(globalThis as unknown as {
+	__readitExportProbeControls?: {
+		forceNextUnvoicedRawFailure(): void;
+		readLastFailure(): { name: string; reason: string | null } | null;
+	};
+}).__readitExportProbeControls = {
+	forceNextUnvoicedRawFailure: () => {
+		forceNextExportRawFailure = true;
+		lastExportProbeFailure = null;
+	},
+	readLastFailure: () => (lastExportProbeFailure ? { ...lastExportProbeFailure } : null),
+};
 
 /**
  * Report playback progress to background/popup
@@ -261,7 +325,14 @@ async function getVoiceStyle(styleId: string): Promise<Style> {
  */
 type SynthesisOwner = 'playback' | 'export';
 
-async function synthesizeUnit(unit: SpeechUnit, lang: string, style: Style, speed: number, owner: SynthesisOwner): Promise<AudioBuffer> {
+async function synthesizeUnit(
+	unit: SpeechUnit,
+	lang: string,
+	style: Style,
+	speed: number,
+	owner: SynthesisOwner,
+	probeId: string | null = currentExtensionSessionId,
+): Promise<AudioBuffer> {
 	if (!ttsEngine) {
 		throw new Error('TTS Engine is not initialized');
 	}
@@ -271,15 +342,44 @@ async function synthesizeUnit(unit: SpeechUnit, lang: string, style: Style, spee
 		audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
 	}
 	const inferStartedAtMs = performance.now();
-	const wav = await synthesizeSpeechUnitSamples(
-		unit,
-		lang,
-		speed,
-		async (text, requestedLang, steps, requestedSpeed, silenceDuration) => {
-			const result = await engine.call(text, requestedLang, style, steps, requestedSpeed, silenceDuration);
-			return result.wav;
-		},
-	);
+	const synthesisIndex = unit.synthesisIndex ?? speechUnits.indexOf(unit);
+	const unitIndex = synthesisIndex >= 0 ? synthesisIndex : null;
+	let wav: Float32Array;
+	try {
+		wav = await synthesizeSpeechUnitSamples(
+			unit,
+			lang,
+			speed,
+			async (text, requestedLang, steps, requestedSpeed, silenceDuration) => {
+				const result = await engine.call(text, requestedLang, style, steps, requestedSpeed, silenceDuration);
+				if (owner === 'export' && forceNextExportRawFailure) {
+					forceNextExportRawFailure = false;
+					return new Float32Array(128);
+				}
+				return result.wav;
+			},
+			{ unitIndex: unitIndex ?? undefined, unitText: unit.text },
+			(samples) =>
+				engineBoundaryDiagnostics.record({
+					probeId,
+					unitIndex,
+					owner: owner === 'playback' ? 'foreground' : 'export',
+					canonicalText: unit.text,
+					synthesisText: unit.synthesisText ?? unit.text,
+					language: lang,
+					requestedSpeed: speed,
+					samples,
+				}),
+		);
+	} catch (error) {
+		if (owner === 'export') {
+			lastExportProbeFailure = {
+				name: error instanceof Error ? error.name : 'UnknownError',
+				reason: error instanceof VoicedAudioError ? error.reason : null,
+			};
+		}
+		throw error;
+	}
 	if (owner === 'playback') {
 		playbackMetrics.recordInferDuration(performance.now() - inferStartedAtMs);
 	}
@@ -302,10 +402,11 @@ interface SynthesisInput {
 	style: Style;
 	speed: number;
 	owner: SynthesisOwner;
+	probeId?: string | null;
 }
 
-const synthesisArbiter = new SynthesisArbiter<SynthesisInput, AudioBuffer>(({ unit, lang, style, speed, owner }) =>
-	synthesizeUnit(unit, lang, style, speed, owner),
+const synthesisArbiter = new SynthesisArbiter<SynthesisInput, AudioBuffer>(({ unit, lang, style, speed, owner, probeId }) =>
+	synthesizeUnit(unit, lang, style, speed, owner, probeId),
 );
 
 const synthesisCoordinator = new IndexedSynthesisCoordinator<SynthesisInput, AudioBuffer>(
@@ -328,8 +429,8 @@ function isCurrentSynthesisKey(key: SynthesisKey): boolean {
 
 function retainedSynthesisKeys(session: number): SynthesisKey[] {
 	const keys = [synthesisKey(session, currentUnitIndex)];
-	if (currentUnitIndex + 1 < speechUnits.length) {
-		keys.push(synthesisKey(session, currentUnitIndex + 1));
+	for (let unitIndex = currentUnitIndex + 1; unitIndex <= currentUnitIndex + 2 && unitIndex < speechUnits.length; unitIndex++) {
+		keys.push(synthesisKey(session, unitIndex));
 	}
 	return keys;
 }
@@ -360,7 +461,8 @@ const audioExportEngine = new AudioExportEngine({
 		return audioExportDownload(blob, filename);
 	},
 	canDownload: () => audioExportDownload !== null,
-	synthesize: ({ unit, language, style, speed }) => synthesisArbiter.background({ unit, lang: language, style, speed, owner: 'export' }),
+	synthesize: ({ unit, language, style, speed, playbackSessionId }) =>
+		synthesisArbiter.background({ unit, lang: language, style, speed, owner: 'export', probeId: playbackSessionId }),
 	canStartBackgroundSynthesis: () => canStartBackgroundSynthesis(playbackRunway()),
 	waitForRunway: waitForExportRunway,
 	wakeRunway: notifyExportRunway,
@@ -370,20 +472,23 @@ const audioExportEngine = new AudioExportEngine({
 	now: () => performance.now(),
 });
 
-function prefetchNextUnit(lang: string, style: Style, session: number): void {
-	const unitIndex = currentUnitIndex + 1;
+function prefetchUnit(unitIndex: number, lang: string, style: Style, session: number): void {
 	if (unitIndex >= speechUnits.length) {
 		return;
 	}
 	const key = synthesisKey(session, unitIndex);
-	synthesisCoordinator.retain(retainedSynthesisKeys(session));
 	synthesisCoordinator.prefetch(key, {
 		unit: speechUnits[unitIndex],
 		lang,
 		style,
 		speed: currentSpeed,
 		owner: 'playback',
+		probeId: currentExtensionSessionId,
 	});
+}
+
+function prefetchNextUnit(lang: string, style: Style, session: number): void {
+	prefetchUnit(currentUnitIndex + 1, lang, style, session);
 }
 
 function stopCurrentSource() {
@@ -617,6 +722,7 @@ async function playNextUnit(lang: string, style: Style, session: number) {
 		style,
 		speed: currentSpeed,
 		owner: 'playback',
+		probeId: currentExtensionSessionId,
 	};
 	synthesisCoordinator.retain(retainedSynthesisKeys(session));
 	reportProgress('loading');
@@ -628,6 +734,37 @@ async function playNextUnit(lang: string, style: Style, session: number) {
 				void playNextUnit(lang, style, session);
 			}
 			return;
+		}
+
+		// WASM inference runs on this document's main thread. Starting the first source as
+		// soon as its buffer resolves can therefore leave its short audio unable to cover
+		// the successor inference, delaying the `onended` callback and creating audible
+		// silence. Prime exactly one successor before the initial source starts; normal
+		// one-unit look-ahead continues for all later units without changing speed or pause
+		// ownership.
+		if (unitIndex === 0 && speechUnits.length > 1) {
+			prefetchNextUnit(lang, style, session);
+			const successorKey = synthesisKey(session, 1);
+			const successorInput: SynthesisInput = {
+				unit: speechUnits[1],
+				lang,
+				style,
+				speed: currentSpeed,
+				owner: 'playback',
+				probeId: currentExtensionSessionId,
+			};
+			await synthesisCoordinator.get(successorKey, successorInput);
+			if (!isCurrentSynthesisKey(key)) {
+				if (key.session === playbackSession && key.unitIndex === currentUnitIndex && key.speedVersion !== speedVersion) {
+					void playNextUnit(lang, style, session);
+				}
+				return;
+			}
+			// Multi-boundary runs need one more synthesis request in flight before the first source starts.
+			// The regular one-unit look-ahead then keeps that request retained and advances the runway.
+			if (speechUnits.length > 3) {
+				prefetchUnit(2, lang, style, session);
+			}
 		}
 		playAudioBuffer(buffer, lang, style, session, unitIndex);
 		prefetchNextUnit(lang, style, session);
@@ -843,39 +980,78 @@ function exportJobId(payload: unknown): string | null {
 	return typeof jobId === 'string' && jobId.length > 0 ? jobId : null;
 }
 
+function exportPreparationRejectionReason(
+	input: { jobId?: unknown; playbackSessionId?: unknown; outputFilename?: unknown; estimate?: unknown } | undefined,
+	jobId: string | null,
+	playbackSessionId: string | null,
+): string | null {
+	if (!input) return 'missing-payload';
+	if (jobId === null) return 'missing-job-id';
+	if (playbackSessionId === null) return 'missing-playback-session-id';
+	if (playbackSessionId !== currentExtensionSessionId) return 'playback-session-mismatch';
+	if (typeof input.outputFilename !== 'string' || input.outputFilename.length === 0) return 'missing-output-filename';
+	if (!isAudioExportEstimate(input.estimate)) return 'invalid-estimate';
+	if (!currentPlaybackLanguage) return 'missing-playback-language';
+	if (!currentPlaybackStyle) return 'missing-playback-style';
+	if (!currentVoiceStyleId) return 'missing-voice-style-id';
+	if (speechUnits.length === 0) return 'no-speech-units';
+	return null;
+}
+
 function prepareAudioExport(payload: unknown): { success: boolean; error?: string } {
 	const input = payload as { jobId?: unknown; playbackSessionId?: unknown; outputFilename?: unknown; estimate?: unknown } | undefined;
-	if (
-		!input ||
-		typeof input.jobId !== 'string' ||
-		input.jobId.length === 0 ||
-		typeof input.playbackSessionId !== 'string' ||
-		input.playbackSessionId !== currentExtensionSessionId ||
-		typeof input.outputFilename !== 'string' ||
-		input.outputFilename.length === 0 ||
-		!isAudioExportEstimate(input.estimate) ||
-		!currentPlaybackLanguage ||
-		!currentPlaybackStyle ||
-		!currentVoiceStyleId ||
-		speechUnits.length === 0
-	) {
+	const jobId = typeof input?.jobId === 'string' && input.jobId.length > 0 ? input.jobId : null;
+	const playbackSessionId = typeof input?.playbackSessionId === 'string' && input.playbackSessionId.length > 0 ? input.playbackSessionId : null;
+	const payloadKeys = input && typeof input === 'object' ? Object.keys(input).sort() : [];
+	const rejectionReason = exportPreparationRejectionReason(input, jobId, playbackSessionId);
+	if (rejectionReason !== null) {
+		exportPreparationDiagnostics.record({
+			jobId,
+			playbackSessionId,
+			outcome: 'rejected',
+			innerError: 'Audio export session is unavailable',
+			reason: rejectionReason,
+			payloadKeys,
+		});
 		return { success: false, error: 'Audio export session is unavailable' };
 	}
+	const acceptedInput = input!;
+	const acceptedJobId = jobId!;
+	const acceptedPlaybackSessionId = playbackSessionId!;
 	try {
-		audioExportEngine.prepare({
-			jobId: input.jobId,
-			playbackSessionId: input.playbackSessionId,
-			outputFilename: input.outputFilename,
+		const snapshot = {
+			jobId: acceptedJobId,
+			playbackSessionId: acceptedPlaybackSessionId,
+			outputFilename: acceptedInput.outputFilename as string,
 			units: speechUnits,
-			language: currentPlaybackLanguage,
+			language: currentPlaybackLanguage!,
 			voiceStyleId: currentVoiceStyleId,
-			style: currentPlaybackStyle,
+			style: currentPlaybackStyle!,
 			speed: currentSpeed,
-			estimate: input.estimate,
+			estimate: acceptedInput.estimate as AudioExportEstimate,
+		};
+		audioExportEngine.prepare(snapshot);
+		exportSnapshotDiagnostics.record(snapshot);
+		exportPreparationDiagnostics.record({
+			jobId,
+			playbackSessionId,
+			outcome: 'prepared',
+			innerError: null,
+			reason: null,
+			payloadKeys,
 		});
 		return { success: true };
 	} catch (error) {
-		return { success: false, error: (error as Error).message };
+		const message = error instanceof Error ? error.message : String(error);
+		exportPreparationDiagnostics.record({
+			jobId,
+			playbackSessionId,
+			outcome: 'rejected',
+			innerError: message,
+			reason: 'engine-prepare',
+			payloadKeys,
+		});
+		return { success: false, error: message };
 	}
 }
 
@@ -887,9 +1063,10 @@ export const handleOffscreenMessage = (
 		if (!message || typeof message !== 'object') {
 			return undefined;
 		}
-		const msg = message as { action: string; payload?: unknown };
+		const internalAudioExportCommand = unwrapAudioExportOffscreenCommand(message);
+		const msg = (internalAudioExportCommand ?? message) as { action: string; payload?: unknown };
 		const { action, payload } = msg;
-		if (isAudioExportOffscreenAction(action) && !isInternalAudioExportOffscreenCommand(message)) {
+		if (isAudioExportOffscreenAction(action) && internalAudioExportCommand === null) {
 			return undefined;
 		}
 
@@ -1212,6 +1389,10 @@ export const handleOffscreenMessage = (
 				currentSpeed = speed;
 				speedVersion++;
 				synthesisCoordinator.clear();
+				if (playbackStatus === 'playing' && currentPlaybackLanguage && currentPlaybackStyle) {
+					synthesisCoordinator.retain(retainedSynthesisKeys(playbackSession));
+					prefetchNextUnit(currentPlaybackLanguage, currentPlaybackStyle, playbackSession);
+				}
 				reportProgress(playbackStatus);
 				sendResponse({ success: true, audioExportEstimate: estimateSpeechUnits(speechUnits, currentPlaybackLanguage ?? '', speed) });
 				break;

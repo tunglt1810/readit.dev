@@ -497,7 +497,10 @@ test.describe('Reading state lifecycle', () => {
 			(window as any).offscreenExportCommands = [];
 			chrome.runtime.onMessage.addListener((message) => {
 				if (message?.target === 'readit-offscreen-audio-export') {
-					(window as any).offscreenExportCommands.push(message.action);
+					const action = message.command?.action || message.action;
+					if (action) {
+						(window as any).offscreenExportCommands.push(action);
+					}
 				}
 			});
 		});
