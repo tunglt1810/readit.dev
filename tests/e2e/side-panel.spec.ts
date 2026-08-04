@@ -47,7 +47,7 @@ const manualSession: PlaybackSessionSnapshot = {
 	totalParagraphs: 2,
 	progressPercentage: 25,
 	voiceStyleId: 'M1',
-	speed: 1.05,
+	speed: 1.1,
 	updatedAt: 1000,
 };
 
@@ -62,7 +62,7 @@ const documentSession: PlaybackSessionSnapshot = {
 	totalParagraphs: 2,
 	progressPercentage: 25,
 	voiceStyleId: 'M1',
-	speed: 1.05,
+	speed: 1.5,
 	updatedAt: 1000,
 };
 
@@ -370,7 +370,7 @@ test('hydrates and persists shared voice and speed preferences', async ({ page, 
 	await installExtensionUiRuntimeMock(page, { session: null }, pageInfo);
 	await openSidePanel(page);
 	await page.evaluate(async () => {
-		await chrome.storage.local.set({ readit_active_voice: 'F2', readit_speed: 1.3 });
+		await chrome.storage.local.set({ readit_active_voice: 'F2', readit_speed: 1.3, readit_has_custom_speed_override: true });
 	});
 	await page.reload();
 	await page.locator('.settings-card-header').click();

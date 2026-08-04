@@ -24,7 +24,7 @@ function joinUnitText(left: string, right: string): string {
 }
 
 function hasNaturalTerminalCadence(text: string): boolean {
-	return /[.!?…;:,\-–—]$/u.test(text.trimEnd());
+	return /[.!?…;:,\-–—。！？；：，、]$/u.test(text.trimEnd());
 }
 
 function renderingTextForMerge(left: SpeechUnit, right: SpeechUnit): string {
@@ -111,6 +111,28 @@ export function consolidateShortSpeechUnits(units: readonly SpeechUnit[], langua
 			continue;
 		}
 
+		index++;
+	}
+
+	return consolidated;
+}
+
+export function consolidateUnpunctuatedListUnits(units: readonly SpeechUnit[], language: string): SpeechUnit[] {
+	const consolidated = units.slice();
+	const limit = synthesisTextLimitForLanguage(language);
+	let index = 0;
+
+	while (index < consolidated.length - 1) {
+		const current = consolidated[index];
+		const next = consolidated[index + 1];
+
+		if (!hasNaturalTerminalCadence(current.text) && nonWhitespaceCodePointCount(current.text) <= 120) {
+			const merged = mergeCandidate(current, next, limit);
+			if (merged) {
+				consolidated.splice(index, 2, merged);
+				continue;
+			}
+		}
 		index++;
 	}
 

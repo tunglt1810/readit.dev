@@ -46,10 +46,41 @@ export const STORAGE_KEYS = {
 	WORD_HIGHLIGHT_ENABLED: 'readit_word_highlight_enabled',
 	PLAYLIST_QUEUE: 'readit_playlist_queue',
 	PENDING_QUEUE_NAVIGATION: 'readit_pending_queue_navigation',
+	HAS_CUSTOM_SPEED_OVERRIDE: 'readit_has_custom_speed_override',
 };
 
 export const PRIVACY_POLICY_URL = 'https://tunglt1810.github.io/readit.dev/privacy-policy/';
 
 export const BUY_ME_A_COFFEE_URL = 'https://buymeacoffee.com/bbeeezzzzz';
 
-export const DEFAULT_SPEED = 1.05;
+export const DEFAULT_FALLBACK_SPEED = 1.1;
+export const DEFAULT_VIETNAMESE_SPEED = 1.5;
+export const DEFAULT_SPEED = DEFAULT_FALLBACK_SPEED;
+
+export function getDefaultSpeedForLanguage(lang?: string): number {
+	if (typeof lang === 'string' && /^vi(?:$|[-_])/iu.test(lang.trim())) {
+		return DEFAULT_VIETNAMESE_SPEED;
+	}
+	return DEFAULT_FALLBACK_SPEED;
+}
+
+function isFiniteSpeed(value: unknown): value is number {
+	return typeof value === 'number' && Number.isFinite(value);
+}
+
+/** A stored speed from before the explicit override marker was introduced. */
+export function isLegacySpeedPreference(storedSpeed: unknown, hasCustomSpeedOverride: unknown): boolean {
+	return hasCustomSpeedOverride === undefined && isFiniteSpeed(storedSpeed);
+}
+
+/** Resolve an explicit or migrated speed preference, otherwise use the content language default. */
+export function resolveStoredPlaybackSpeed(
+	lang: string | undefined,
+	storedSpeed: unknown,
+	hasCustomSpeedOverride: unknown,
+): number {
+	if ((hasCustomSpeedOverride === true || isLegacySpeedPreference(storedSpeed, hasCustomSpeedOverride)) && isFiniteSpeed(storedSpeed)) {
+		return storedSpeed;
+	}
+	return getDefaultSpeedForLanguage(lang);
+}

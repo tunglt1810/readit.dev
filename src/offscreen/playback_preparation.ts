@@ -1,5 +1,5 @@
 import { isPredominantlyLatinText, planLatinSpeechUnits } from './latin/speech_units.ts';
-import { consolidateShortSpeechUnits } from './short_segment_consolidation.ts';
+import { consolidateShortSpeechUnits, consolidateUnpunctuatedListUnits } from './short_segment_consolidation.ts';
 import type { SpeechUnit } from './speech_unit.ts';
 import { chunkText } from './supertonic_helper.ts';
 import type { NormalizationResult } from './vietnamese/types.ts';
@@ -33,21 +33,25 @@ function vietnameseFallback(text: string): SpeechUnit[] {
 	return plannedUnits(text, 0);
 }
 
+function consolidate(units: SpeechUnit[], lang: string): SpeechUnit[] {
+	return consolidateUnpunctuatedListUnits(consolidateShortSpeechUnits(units, lang), lang);
+}
+
 export async function preparePlaybackUnits(text: string, lang: string, normalizer: VietnameseTextNormalizer | null): Promise<SpeechUnit[]> {
 	if (!isVietnameseLanguage(lang)) {
 		const planned = isPredominantlyLatinText(text) ? plannedUnits(text, null) : compatibilityUnits(text, null);
-		return attachPlainWordMap(consolidateShortSpeechUnits(planned, lang));
+		return attachPlainWordMap(consolidate(planned, lang));
 	}
 	if (!normalizer) {
-		return attachPlainWordMap(consolidateShortSpeechUnits(vietnameseFallback(text), lang));
+		return attachPlainWordMap(consolidate(vietnameseFallback(text), lang));
 	}
 	try {
 		const result = await normalizer.normalize(text);
 		const planned = planLatinSpeechUnits(result.text).filter(({ text: unit }) => unit.trim().length > 0);
 		return planned.length > 0
-			? attachNormalizedWordMap(consolidateShortSpeechUnits(planned, lang), result.text, result.wordMap)
-			: attachPlainWordMap(consolidateShortSpeechUnits(vietnameseFallback(text), lang));
+			? attachNormalizedWordMap(consolidate(planned, lang), result.text, result.wordMap)
+			: attachPlainWordMap(consolidate(vietnameseFallback(text), lang));
 	} catch {
-		return attachPlainWordMap(consolidateShortSpeechUnits(vietnameseFallback(text), lang));
+		return attachPlainWordMap(consolidate(vietnameseFallback(text), lang));
 	}
 }

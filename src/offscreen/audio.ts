@@ -1,6 +1,8 @@
 import type { SpeechUnit } from './speech_unit.ts';
 import { type VoicedAudioContext, verifyRawVoicedSamples } from './voiced_audio.ts';
 
+export const ACOUSTIC_TAIL_PADDING_MS = 60;
+
 export type SpeechSynthesisCall = (
 	text: string,
 	lang: string,
@@ -32,10 +34,11 @@ export interface AudioBufferFactory {
 }
 
 /**
- * A unit's audio followed by its trailing pause, as one AudioBuffer.
+ * A unit's audio followed by fixed acoustic-tail padding and its requested trailing pause, as one
+ * AudioBuffer.
  *
- * The pause is the zero-filled tail of the allocation rather than a separate array concatenated on,
- * and the samples go in as float32 rather than through a 16-bit WAV that `decodeAudioData` then had
+ * The zero-filled tail and pause are part of the allocation rather than separate arrays concatenated
+ * on. The samples go in as float32 rather than through a 16-bit WAV that `decodeAudioData` then had
  * to parse back out. That removes two full copies of every unit and the 16-bit quantization with
  * them. The buffer keeps the engine's sample rate: `AudioBufferSourceNode` resamples on playback if
  * the context runs at a different one.
@@ -52,8 +55,9 @@ export function createSpeechAudioBuffer(
 	if (!Number.isFinite(pauseAfterMs) || pauseAfterMs < 0) {
 		throw new RangeError('pause must be non-negative and finite');
 	}
+	const acousticTailSamples = Math.round((sampleRate * ACOUSTIC_TAIL_PADDING_MS) / 1_000);
 	const silenceSamples = Math.round((sampleRate * pauseAfterMs) / 1_000);
-	const buffer = audioCtx.createBuffer(1, samples.length + silenceSamples, sampleRate);
+	const buffer = audioCtx.createBuffer(1, samples.length + acousticTailSamples + silenceSamples, sampleRate);
 	// Written through the channel rather than copyToChannel, which insists on a Float32Array backed
 	// by a plain ArrayBuffer — the engine's output makes no such promise about its backing store.
 	buffer.getChannelData(0).set(samples);

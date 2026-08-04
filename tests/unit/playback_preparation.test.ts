@@ -215,3 +215,38 @@ test('consolidates bare Latin, Vietnamese, fallback, and compatibility units bef
 		['标题', compatibilityBody],
 	);
 });
+
+test('consolidates short English lines into merged speech units with proper synthesisText punctuation', async () => {
+	const text = `DATA STRATEGY\n\nData & Analytics Enablement for Business Growth\n\n1. Purpose\n\nThe Data Strategy provides the analytics.`;
+	const units = await preparePlaybackUnits(text, 'en', null);
+	assert.ok(units.length < 4, `Expected fewer than 4 units due to consolidation, got ${units.length}`);
+	assert.ok(units[0].synthesisText?.includes('DATA STRATEGY. Data & Analytics Enablement'));
+	// Verify "1. Purpose" is kept intact as one unit or merged without splitting "1."
+	assert.ok(!units.some((u) => u.text === '1.' || u.text === '1'));
+
+	const listText = `monitor performance across Personal, Private, Corporate and Intermediaries segments\n\ntrack deposit growth and funding mix\n\nmanage lending portfolio risk and profitability\n\nimprove RM productivity\n\nstrengthen AML lifecycle monitoring\n\nprovide consistent management reporting`;
+	const listUnits = await preparePlaybackUnits(listText, 'en', null);
+	assert.ok(listUnits.length <= 3, `Expected at most 3 units for list items, got ${listUnits.length}`);
+	assert.ok(listUnits[0].synthesisText?.includes('.'));
+});
+
+
+test('preserves CJK sentence boundaries without injecting ASCII punctuation', async () => {
+	const text =
+		'这是第一段，包含足够多的中文字符以避免短片段合并，并且以中文句号结束。\n\n这是第二段，包含足够多的中文字符以避免短片段合并，并且也以中文句号结束。';
+	const units = await preparePlaybackUnits(text, 'zh', null);
+
+	assert.deepEqual(withoutWordMap(units), [
+		{ text: '这是第一段，包含足够多的中文字符以避免短片段合并，并且以中文句号结束。', pauseAfterMs: null },
+		{ text: '这是第二段，包含足够多的中文字符以避免短片段合并，并且也以中文句号结束。', pauseAfterMs: null },
+	]);
+	assert.ok(units.every((unit) => !unit.synthesisText?.includes('。.')));
+});
+test('preserves Japanese terminal punctuation without treating it as an unpunctuated list', async () => {
+	const text =
+		'最初の段落は十分に長く、短い断片として結合されるべきではありません！\n\n次の段落も十分に長く、独立した文として保持されるべきです。';
+	const units = await preparePlaybackUnits(text, 'ja', null);
+
+	assert.equal(units.length, 2);
+	assert.ok(units.every((unit) => !unit.synthesisText?.includes('！.')));
+});

@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createSpeechAudioBuffer, type AudioBufferFactory, synthesizeSpeechUnitSamples } from '../../src/offscreen/audio.ts';
+import {
+	ACOUSTIC_TAIL_PADDING_MS,
+	type AudioBufferFactory,
+	createSpeechAudioBuffer,
+	synthesizeSpeechUnitSamples,
+} from '../../src/offscreen/audio.ts';
 
 /** Validates: Requirements 1.1, 2.3, 2.6, 2.8, 3.6 */
 
@@ -36,7 +41,11 @@ test('expected bug condition: isolated short unit rejects an empty raw waveform 
 test('expected bug condition: isolated short unit rejects a materially silent raw waveform before padding', async () => {
 	const raw = new Float32Array(32);
 	const padded = createSpeechAudioBuffer(stubAudioContext(), raw, 1_000, 180);
-	assert.equal(padded.length, raw.length + 180, 'explicit trailing silence is appended only after the raw waveform');
+	assert.equal(
+		padded.length,
+		raw.length + ACOUSTIC_TAIL_PADDING_MS + 180,
+		'fixed acoustic-tail padding and explicit trailing silence are appended after the raw waveform',
+	);
 	await expectTypedVoicedFailure(raw, 'all-zero waveform with a separate 180-sample padding tail');
 });
 

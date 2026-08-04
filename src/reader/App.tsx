@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { PlaybackIcon } from '../shared/components/PlaybackIcon.tsx';
-import { DEFAULT_SPEED, STORAGE_KEYS, VOICE_STYLES } from '../shared/constants.ts';
+import {
+	DEFAULT_SPEED,
+	resolveStoredPlaybackSpeed,
+	STORAGE_KEYS,
+	VOICE_STYLES,
+} from '../shared/constants.ts';
 import {
 	DOCUMENT_READER_PORT_NAME,
 	type DocumentReaderPortMessage,
@@ -42,14 +47,16 @@ export default function App() {
 	const documentSourceTabId = documentSession?.source.tabId ?? null;
 
 	useEffect(() => {
-		chrome.storage.local.get([STORAGE_KEYS.ACTIVE_VOICE, STORAGE_KEYS.SPEED], (result) => {
+		let latestSessionSpeed: number | undefined;
+		let latestSessionLanguage: string | undefined;
+		chrome.storage.local.get([STORAGE_KEYS.ACTIVE_VOICE, STORAGE_KEYS.SPEED, STORAGE_KEYS.HAS_CUSTOM_SPEED_OVERRIDE], (result) => {
 			const storedVoice = result[STORAGE_KEYS.ACTIVE_VOICE];
 			const storedSpeed = result[STORAGE_KEYS.SPEED];
 			if (typeof storedVoice === 'string') {
 				setActiveVoice(storedVoice);
 			}
-			if (typeof storedSpeed === 'number') {
-				setSpeed(storedSpeed);
+			if (latestSessionSpeed === undefined) {
+				setSpeed(resolveStoredPlaybackSpeed(latestSessionLanguage, storedSpeed, result[STORAGE_KEYS.HAS_CUSTOM_SPEED_OVERRIDE]));
 			}
 		});
 
@@ -68,8 +75,22 @@ export default function App() {
 		};
 		port.onMessage.addListener(handlePortMessage);
 
-		void requestPlaybackState().then((response) => setSession(response.session));
-		const unsubscribe = subscribePlaybackState(chrome.runtime, setSession);
+		void requestPlaybackState().then((response) => {
+			setSession(response.session);
+			latestSessionLanguage = response.session?.lang;
+			if (response.session && typeof response.session.speed === 'number' && Number.isFinite(response.session.speed)) {
+				latestSessionSpeed = response.session.speed;
+				setSpeed(response.session.speed);
+			}
+		});
+		const unsubscribe = subscribePlaybackState(chrome.runtime, (nextSession) => {
+			setSession(nextSession);
+			latestSessionLanguage = nextSession?.lang;
+			if (nextSession && typeof nextSession.speed === 'number' && Number.isFinite(nextSession.speed)) {
+				latestSessionSpeed = nextSession.speed;
+				setSpeed(nextSession.speed);
+			}
+		});
 		return () => {
 			unsubscribe();
 			port.onMessage.removeListener(handlePortMessage);
@@ -118,7 +139,10 @@ export default function App() {
 
 	const handleSpeedChange = (nextSpeed: number) => {
 		setSpeed(nextSpeed);
-		void chrome.storage.local.set({ [STORAGE_KEYS.SPEED]: nextSpeed });
+		void chrome.storage.local.set({
+			[STORAGE_KEYS.SPEED]: nextSpeed,
+			[STORAGE_KEYS.HAS_CUSTOM_SPEED_OVERRIDE]: true,
+		});
 		void sendPlaybackCommand({ action: 'CHANGE_SPEED', payload: { speed: nextSpeed } });
 	};
 

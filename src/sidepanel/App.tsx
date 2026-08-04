@@ -4,7 +4,12 @@ import { PlaybackControlButton } from '../shared/components/PlaybackControlButto
 import { AudioExportButton } from '../shared/components/AudioExportButton.tsx';
 import { PlaybackIcon } from '../shared/components/PlaybackIcon.tsx';
 import { SettingsCard } from '../shared/components/SettingsCard.tsx';
-import { BUY_ME_A_COFFEE_URL, DEFAULT_SPEED, STORAGE_KEYS } from '../shared/constants.ts';
+import {
+	BUY_ME_A_COFFEE_URL,
+	DEFAULT_SPEED,
+	resolveStoredPlaybackSpeed,
+	STORAGE_KEYS,
+} from '../shared/constants.ts';
 import { getLocalizedPlaybackError, t } from '../shared/i18n.ts';
 import { normalizeManualText } from '../shared/manual_text.ts';
 import { requestPlaybackState, sendPlaybackCommand, sendRuntimeRequest, subscribePlaybackState } from '../shared/playback_client.ts';
@@ -81,10 +86,13 @@ export default function App() {
 	};
 
 	useEffect(() => {
+		let latestSessionSpeed: number | undefined;
+		let latestSessionLanguage: string | undefined;
 		chrome.storage.local.get(
 			[
 				STORAGE_KEYS.ACTIVE_VOICE,
 				STORAGE_KEYS.SPEED,
+				STORAGE_KEYS.HAS_CUSTOM_SPEED_OVERRIDE,
 				STORAGE_KEYS.THEME,
 				STORAGE_KEYS.SELECTION_BUTTON_ENABLED,
 				STORAGE_KEYS.WORD_HIGHLIGHT_ENABLED,
@@ -96,8 +104,8 @@ export default function App() {
 				if (typeof storedVoice === 'string') {
 					setActiveVoice(storedVoice);
 				}
-				if (typeof storedSpeed === 'number') {
-					setSpeed(storedSpeed);
+				if (latestSessionSpeed === undefined) {
+					setSpeed(resolveStoredPlaybackSpeed(latestSessionLanguage, storedSpeed, result[STORAGE_KEYS.HAS_CUSTOM_SPEED_OVERRIDE]));
 				}
 				if (storedTheme === 'default' || storedTheme === 'winamp' || storedTheme === 'wmp12') {
 					setTheme(storedTheme);
@@ -114,11 +122,25 @@ export default function App() {
 			}
 		});
 
-		void requestPlaybackState().then((response) => setSession(response.session));
+		void requestPlaybackState().then((response) => {
+			setSession(response.session);
+			latestSessionLanguage = response.session?.lang;
+			if (response.session && typeof response.session.speed === 'number' && Number.isFinite(response.session.speed)) {
+				latestSessionSpeed = response.session.speed;
+				setSpeed(response.session.speed);
+			}
+		});
 		void sendRuntimeRequest<PageInfoResponse>({ action: 'GET_CURRENT_PAGE_INFO' }).then(setPageInfo, () =>
 			setPageInfo(EMPTY_PAGE_INFO),
 		);
-		const unsubscribePlayback = subscribePlaybackState(chrome.runtime, setSession);
+		const unsubscribePlayback = subscribePlaybackState(chrome.runtime, (nextSession) => {
+			setSession(nextSession);
+			latestSessionLanguage = nextSession?.lang;
+			if (nextSession && typeof nextSession.speed === 'number' && Number.isFinite(nextSession.speed)) {
+				latestSessionSpeed = nextSession.speed;
+				setSpeed(nextSession.speed);
+			}
+		});
 		const handleQueueMessage = (message: unknown) => {
 			if (!message || typeof message !== 'object') {
 				return;
@@ -439,7 +461,10 @@ export default function App() {
 
 	const handleSpeedChange = (nextSpeed: number) => {
 		setSpeed(nextSpeed);
-		void chrome.storage.local.set({ [STORAGE_KEYS.SPEED]: nextSpeed });
+		void chrome.storage.local.set({
+			[STORAGE_KEYS.SPEED]: nextSpeed,
+			[STORAGE_KEYS.HAS_CUSTOM_SPEED_OVERRIDE]: true,
+		});
 		void sendPlaybackCommand({ action: 'CHANGE_SPEED', payload: { speed: nextSpeed } });
 	};
 

@@ -26,7 +26,7 @@ const activeSession = {
 	totalParagraphs: 8,
 	progressPercentage: 37.5,
 	voiceStyleId: 'M1',
-	speed: 1.05,
+	speed: 1.1,
 	updatedAt: 1000,
 };
 
@@ -257,7 +257,7 @@ test('manual session popup shows localized metadata without tab actions', async 
 			totalParagraphs: 2,
 			progressPercentage: 50,
 			voiceStyleId: 'F1',
-			speed: 1.05,
+			speed: 1.1,
 			updatedAt: 1000,
 		},
 		currentTabId: 7,
@@ -694,7 +694,7 @@ test.describe('Reading state lifecycle', () => {
 			totalParagraphs: 1,
 			progressPercentage: 10,
 			voiceStyleId: 'M1',
-			speed: 1.05,
+			speed: 1.1,
 			updatedAt: Date.now(),
 		};
 		await controlPage.evaluate(async (session) => {
@@ -753,7 +753,7 @@ test.describe('Reading state lifecycle', () => {
 			totalParagraphs: 1,
 			progressPercentage: 10,
 			voiceStyleId: 'M1',
-			speed: 1.05,
+			speed: 1.1,
 			updatedAt: Date.now(),
 		};
 		await controlPage.evaluate(async (session) => {

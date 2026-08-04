@@ -10,7 +10,7 @@ const playingSession = {
 	totalParagraphs: 5,
 	progressPercentage: 20,
 	voiceStyleId: 'M1',
-	speed: 1.05,
+	speed: 1.1,
 	updatedAt: 1000,
 };
 
@@ -52,7 +52,7 @@ for (const [label, theme] of [
 		await expect.poll(() => page.evaluate(() => (window as any).sentMessages.at(-1)?.action)).toBe('RESUME_READING');
 
 		const speedControl = page.getByRole('slider', { name: 'Tốc độ' });
-		for (let step = 0; step < 5; step += 1) {
+		for (let step = 0; step < 4; step += 1) {
 			await speedControl.press('ArrowRight');
 		}
 		await expect(speedControl).toHaveValue('1.3');

@@ -14,7 +14,7 @@ test('shows privacy-safe support links and the exact extension version', async (
 			totalParagraphs: 3,
 			progressPercentage: 33,
 			voiceStyleId: 'M1',
-			speed: 1.05,
+			speed: 1.1,
 			updatedAt: 1000,
 		},
 		currentTabId: 7,

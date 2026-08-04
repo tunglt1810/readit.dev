@@ -141,8 +141,10 @@ export class UnicodeProcessor {
 		// Remove special symbols
 		text = text.replace(/[♥☆♡©\\]/g, '');
 
-		// Replace known expressions
+		// Replace known expressions and symbols
+		const andReplacement = lang === 'vi' ? ' và ' : ' and ';
 		const exprReplacements: Record<string, string> = {
+			'&': andReplacement,
 			'@': ' at ',
 			'e.g.,': 'for example, ',
 			'i.e.,': 'that is, ',
@@ -184,8 +186,8 @@ export class UnicodeProcessor {
 			throw new Error(`Invalid language: ${lang}. Available: ${AVAILABLE_LANGS.join(', ')}`);
 		}
 
-		// Wrap text with language tags
-		text = `<${lang}>${text}</${lang}>`;
+		// Wrap text with language tags (with space before closing tag to ensure tail decay frames in duration predictor)
+		text = `<${lang}>${text} </${lang}>`;
 
 		return text;
 	}

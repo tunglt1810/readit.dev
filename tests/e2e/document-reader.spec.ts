@@ -25,7 +25,7 @@ test('attaches once, renders source text, and highlights the current repeated wo
 		totalParagraphs: 1,
 		progressPercentage: 50,
 		voiceStyleId: 'M1',
-		speed: 1.05,
+		speed: 1.1,
 		updatedAt: 1000,
 	};
 	const snapshot: DocumentReaderSnapshot = {
@@ -109,7 +109,7 @@ test('uses shared playback controls with toolbar and content aligned', async ({ 
 		totalParagraphs: 1,
 		progressPercentage: 50,
 		voiceStyleId: 'M1',
-		speed: 1.05,
+		speed: 1.1,
 		updatedAt: 1000,
 	};
 	const snapshot: DocumentReaderSnapshot = {

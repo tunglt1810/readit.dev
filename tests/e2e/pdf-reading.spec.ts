@@ -45,7 +45,7 @@ test('Side Panel localizes a persisted PDF session error and offers Re-add for f
 				totalParagraphs: 0,
 				progressPercentage: 0,
 				voiceStyleId: 'M1',
-				speed: 1.05,
+				speed: 1.1,
 				error: 'pdfFileAccessRequired',
 				updatedAt: 1,
 			},

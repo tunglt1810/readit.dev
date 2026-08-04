@@ -1,4 +1,13 @@
-import { DEFAULT_SPEED, GOOGLE_DOCS_EXPORT_UNAVAILABLE, MODEL_FILES, PDF_ERROR_CODES, STORAGE_KEYS, type PdfErrorCode } from '../shared/constants';
+import {
+	DEFAULT_SPEED,
+	isLegacySpeedPreference,
+	resolveStoredPlaybackSpeed,
+	GOOGLE_DOCS_EXPORT_UNAVAILABLE,
+	MODEL_FILES,
+	PDF_ERROR_CODES,
+	STORAGE_KEYS,
+	type PdfErrorCode,
+} from '../shared/constants';
 import { t } from '../shared/i18n.ts';
 import { isInternalAudioExportOffscreenCommand } from '../shared/audio_export.ts';
 import { deleteAudioExportHandle } from '../shared/audio_export_handle_store.ts';
@@ -821,11 +830,23 @@ async function startPlayback(input: StartPlaybackInput): Promise<CommandResponse
 		await saveAndBroadcastQueue();
 	}
 
-	const preferences = (await chrome.storage.local.get([STORAGE_KEYS.ACTIVE_VOICE, STORAGE_KEYS.SPEED])) as Record<string, unknown>;
+	const preferences = (await chrome.storage.local.get([
+		STORAGE_KEYS.ACTIVE_VOICE,
+		STORAGE_KEYS.SPEED,
+		STORAGE_KEYS.HAS_CUSTOM_SPEED_OVERRIDE,
+	])) as Record<string, unknown>;
 	const storedVoiceStyleId = preferences[STORAGE_KEYS.ACTIVE_VOICE];
 	const storedSpeed = preferences[STORAGE_KEYS.SPEED];
+	const speedOverrideMarker = preferences[STORAGE_KEYS.HAS_CUSTOM_SPEED_OVERRIDE];
+	if (isLegacySpeedPreference(storedSpeed, speedOverrideMarker)) {
+		try {
+			await chrome.storage.local.set({ [STORAGE_KEYS.HAS_CUSTOM_SPEED_OVERRIDE]: true });
+		} catch (_error) {
+			// A failed best-effort migration must not prevent playback at the saved speed.
+		}
+	}
 	const voiceStyleId = typeof storedVoiceStyleId === 'string' ? storedVoiceStyleId : DEFAULT_VOICE_STYLE_ID;
-	const speed = isFiniteNumber(storedSpeed) ? storedSpeed : DEFAULT_SPEED;
+	const speed = resolveStoredPlaybackSpeed(input.content.lang, storedSpeed, speedOverrideMarker);
 	const sessionInput = {
 		sessionId: crypto.randomUUID(),
 		lang: input.content.lang,
@@ -1167,6 +1188,10 @@ async function changeSpeed(payload: unknown): Promise<CommandResponse> {
 		const response = await sendOffscreenCommand({ action: 'CHANGE_SPEED', payload: { speed } }, sendAudioHostCommand);
 		const session = activeSession;
 		if (response.success && session) {
+			await chrome.storage.local.set({
+				[STORAGE_KEYS.SPEED]: speed,
+				[STORAGE_KEYS.HAS_CUSTOM_SPEED_OVERRIDE]: true,
+			});
 			const speedChangedSession = { ...session, speed, updatedAt: Date.now() };
 			const audioExportEstimate = response.audioExportEstimate;
 			const updatedSession = audioExportEstimate

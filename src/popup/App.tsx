@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { BUY_ME_A_COFFEE_URL, DEFAULT_SPEED, PRIVACY_POLICY_URL, STORAGE_KEYS } from '../shared/constants';
+import {
+	BUY_ME_A_COFFEE_URL,
+	DEFAULT_SPEED,
+	PRIVACY_POLICY_URL,
+	resolveStoredPlaybackSpeed,
+	STORAGE_KEYS,
+} from '../shared/constants';
 import { openSidebarOrPanel } from '../shared/browser';
 import { getLocalizedPlaybackError, t } from '../shared/i18n';
 import { requestPlaybackState, sendPlaybackCommand, subscribePlaybackState } from '../shared/playback_client';
@@ -51,11 +57,14 @@ export default function App() {
 
 	// Fetch initial states on mount
 	useEffect(() => {
+		let latestSessionSpeed: number | undefined;
+		let latestSessionLanguage: string | undefined;
 		// Get stored voice, speed and theme
 		chrome.storage.local.get(
 			[
 				STORAGE_KEYS.ACTIVE_VOICE,
 				STORAGE_KEYS.SPEED,
+				STORAGE_KEYS.HAS_CUSTOM_SPEED_OVERRIDE,
 				STORAGE_KEYS.THEME,
 				STORAGE_KEYS.SELECTION_BUTTON_ENABLED,
 				STORAGE_KEYS.WORD_HIGHLIGHT_ENABLED,
@@ -64,8 +73,14 @@ export default function App() {
 				if (result[STORAGE_KEYS.ACTIVE_VOICE]) {
 					setActiveVoice(result[STORAGE_KEYS.ACTIVE_VOICE] as string);
 				}
-				if (result[STORAGE_KEYS.SPEED]) {
-					setSpeed(result[STORAGE_KEYS.SPEED] as number);
+				if (latestSessionSpeed === undefined) {
+					setSpeed(
+						resolveStoredPlaybackSpeed(
+							latestSessionLanguage,
+							result[STORAGE_KEYS.SPEED],
+							result[STORAGE_KEYS.HAS_CUSTOM_SPEED_OVERRIDE],
+						),
+					);
 				}
 				if (result[STORAGE_KEYS.THEME]) {
 					setActiveTheme(result[STORAGE_KEYS.THEME] as ThemeName);
@@ -77,6 +92,11 @@ export default function App() {
 
 		void requestPlaybackState().then((response) => {
 			setSession(response.session);
+			latestSessionLanguage = response.session?.lang;
+			if (response.session && typeof response.session.speed === 'number' && Number.isFinite(response.session.speed)) {
+				latestSessionSpeed = response.session.speed;
+				setSpeed(response.session.speed);
+			}
 			setCurrentTabId(response.currentTabId);
 			if (response.session === null) {
 				setModelError('');
@@ -85,6 +105,11 @@ export default function App() {
 		});
 		const unsubscribePlayback = subscribePlaybackState(chrome.runtime, (nextSession) => {
 			setSession(nextSession);
+			latestSessionLanguage = nextSession?.lang;
+			if (nextSession && typeof nextSession.speed === 'number' && Number.isFinite(nextSession.speed)) {
+				latestSessionSpeed = nextSession.speed;
+				setSpeed(nextSession.speed);
+			}
 			setCommandError('');
 			if (nextSession === null) {
 				setModelError('');
@@ -252,7 +277,10 @@ export default function App() {
 	// Handler: Change Speed
 	const handleSpeedChange = (val: number) => {
 		setSpeed(val);
-		chrome.storage.local.set({ [STORAGE_KEYS.SPEED]: val });
+		chrome.storage.local.set({
+			[STORAGE_KEYS.SPEED]: val,
+			[STORAGE_KEYS.HAS_CUSTOM_SPEED_OVERRIDE]: true,
+		});
 		void sendPlaybackCommand({ action: 'CHANGE_SPEED', payload: { speed: val } });
 	};
 

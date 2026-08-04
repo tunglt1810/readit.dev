@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - sentence tail truncation and short unit consolidation for Vietnamese TTS - [@tunglt1810]
 - filter category metadata noise and preserve DOM order for Znews articles - [@tunglt1810]
+- sync language speed defaults and resolve audio cutoff in list consolidation - [@tunglt1810]
+
 
 ## [1.1.1] - 2026-08-01
 

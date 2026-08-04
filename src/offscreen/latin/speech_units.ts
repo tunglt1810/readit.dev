@@ -54,6 +54,7 @@ const PROTECTED_PATTERNS = [
 	/\d{1,2}:\d{2}(?:\s*[-–]\s*\d{1,2}:\d{2})?/gu,
 	/\d+(?:[.,]\d+)*(?:\s?[-–]\s?\d+(?:[.,]\d+)*)?\s?(?:km\/h|m²|m3|%|₫|đ|mm|cm|km|kg|mg|ml|ha|m|g|l)/giu,
 	/\p{Lu}+-\d+(?:-\p{Lu}+)*/gu,
+	/(?:^|\s)\d+\.(?=\s+[\p{L}\p{N}])/gu,
 ] as const;
 
 export function isPredominantlyLatinText(text: string): boolean {

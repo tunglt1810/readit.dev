@@ -10,7 +10,7 @@ const session = {
 	totalParagraphs: 5,
 	progressPercentage: 0,
 	voiceStyleId: 'M1',
-	speed: 1.05,
+	speed: 1.1,
 	updatedAt: 1000,
 };
 
@@ -88,6 +88,12 @@ test.describe('Kịch bản 3: Điều khiển TTS (TTS Controls)', () => {
 			});
 		});
 		expect(savedVoice).toBe('F1');
+	});
+
+	test('hiển thị mặc định 1.50x cho Tiếng Việt và 1.10x cho các ngôn ngữ khác', async ({ page }) => {
+		const speedValueText = page.locator('.slider-value');
+		// Popup mở với idle session mặc định 1.10x
+		await expect(speedValueText).toHaveText('1.10x');
 	});
 
 	test('opens the Side Panel from a labeled secondary action', async ({ page }) => {
