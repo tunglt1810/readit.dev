@@ -1,3 +1,4 @@
+import { detectContentLanguage } from '../shared/language_detection.ts';
 import type { Article } from '../shared/types';
 
 export interface SelectedTextInput {
@@ -21,7 +22,15 @@ export function createSelectedTextArticle(input: SelectedTextInput): Article | n
 		return null;
 	}
 
-	const content = input.selectionText.replace(/\s+/g, ' ').trim();
+	// Collapse horizontal whitespace per line but keep the line breaks: they are the only paragraph
+	// signal the offscreen normalizer has, and flattening them merges neighbouring paragraphs into
+	// one run-on sentence that then loses its sentence-terminal pauses.
+	const content = input.selectionText
+		.replace(/\r\n?/gu, '\n')
+		.split('\n')
+		.map((line) => line.replace(/[^\S\n]+/gu, ' ').trim())
+		.join('\n')
+		.trim();
 	if (!content) {
 		return null;
 	}
@@ -30,6 +39,11 @@ export function createSelectedTextArticle(input: SelectedTextInput): Article | n
 		title: input.title || input.url,
 		content,
 		url: input.url,
-		lang: normalizePageLanguage(input.pageLanguage),
+		// A page's declared language is weak evidence about the passage the reader selected, and on the
+		// context-menu path it is often missing entirely: that language comes from a
+		// `chrome.scripting.executeScript` that fails silently on any page the extension cannot inject
+		// into. Falling through to `na` there costs Vietnamese text its whole normalization pass, since
+		// `preparePlaybackUnits` selects the Vietnamese path from this field alone.
+		lang: detectContentLanguage(content, normalizePageLanguage(input.pageLanguage)),
 	};
 }

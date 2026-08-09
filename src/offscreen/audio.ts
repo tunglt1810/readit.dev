@@ -1,4 +1,5 @@
 import type { SpeechUnit } from './speech_unit.ts';
+import { assertWithinSynthesisCapacity } from './supertonic_helper.ts';
 import { type VoicedAudioContext, verifyRawVoicedSamples } from './voiced_audio.ts';
 
 export const ACOUSTIC_TAIL_PADDING_MS = 60;
@@ -19,8 +20,10 @@ export async function synthesizeSpeechUnitSamples(
 	context: VoicedAudioContext = { unitText: unit.text },
 	onRawEngineSamples?: (samples: Float32Array) => void,
 ): Promise<Float32Array> {
+	assertWithinSynthesisCapacity(unit, lang);
 	const internalSilence = unit.pauseAfterMs === null ? 0.3 : 0;
 	const wav = await synthesize(unit.synthesisText ?? unit.text, lang, 8, speed, internalSilence);
+
 	const samples = wav instanceof Float32Array ? wav : Float32Array.from(wav);
 	// This runs directly after the engine result resolves, before verification or pause padding.
 	onRawEngineSamples?.(samples);

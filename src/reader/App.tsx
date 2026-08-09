@@ -10,6 +10,7 @@ import {
 } from '../shared/document_reader.ts';
 import { t } from '../shared/i18n.ts';
 import { requestPlaybackState, sendPlaybackCommand, subscribePlaybackState } from '../shared/playback_client.ts';
+import { resolvePlaybackStatus } from '../shared/playback_status.ts';
 import { performCenteredScroll, UserScrollPauseManager } from '../shared/scroll_helper.ts';
 import type { PlaybackSessionSnapshot, TabPlaybackSessionSnapshot } from '../shared/types.ts';
 import { getDisplayVersion } from '../shared/version.ts';
@@ -175,7 +176,7 @@ export default function App() {
 		void sendPlaybackCommand({ action: 'CHANGE_SPEED', payload: { speed: nextSpeed } });
 	};
 
-	const status = documentSession?.status ?? 'stopped';
+	const status = resolvePlaybackStatus(documentSession);
 
 	const displayVersion = getDisplayVersion();
 

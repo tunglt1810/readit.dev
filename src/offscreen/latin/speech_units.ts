@@ -1,4 +1,4 @@
-import { type BoundaryCandidate, planTextSegments, type SegmentationPolicy } from '../segmentation.ts';
+import { type BoundaryCandidate, planTextSegments } from '../segmentation.ts';
 import type { SpeechUnit } from '../speech_unit.ts';
 
 export const LATIN_PAUSE_MS = Object.freeze({
@@ -10,40 +10,13 @@ export const LATIN_PAUSE_MS = Object.freeze({
 	period: 180,
 	paragraphEnd: 260,
 });
-export const LATIN_PREFERRED_MIN_LENGTH = 140;
-export const LATIN_PREFERRED_CENTER_LENGTH = 190;
-export const LATIN_PREFERRED_MAX_LENGTH = 240;
 export const LATIN_MAX_UNIT_LENGTH = 300;
-// Sentences in real articles run about 90 characters, so this lets most of them stand as their own
-// unit while still gluing very short ones to their neighbour rather than emitting a scrap.
-export const LATIN_INTERIOR_SPLIT_MIN_LENGTH = 60;
-export const LATIN_SEMICOLON_INTERIOR_SPLIT_MIN_LENGTH = 20;
 
-type LatinBoundaryKind = 'sentence' | 'semicolon' | 'colon' | 'spacedDash' | 'comma';
-
-const LATIN_SEGMENTATION_POLICY: SegmentationPolicy<LatinBoundaryKind> = Object.freeze({
-	preferredMin: LATIN_PREFERRED_MIN_LENGTH,
-	preferredCenter: LATIN_PREFERRED_CENTER_LENGTH,
-	preferredMax: LATIN_PREFERRED_MAX_LENGTH,
-	hardMax: LATIN_MAX_UNIT_LENGTH,
-	outsidePreferredPenalty: 10,
-	shortRemainderLength: 80,
-	shortRemainderPenalty: 30,
-	minimumScore: 0,
-	interiorSplitKinds: Object.freeze(['sentence', 'semicolon'] as const),
-	interiorSplitMinLength: LATIN_INTERIOR_SPLIT_MIN_LENGTH,
-	interiorSplitMinLengthByKind: Object.freeze({ semicolon: LATIN_SEMICOLON_INTERIOR_SPLIT_MIN_LENGTH }),
-	boundaryWeights: Object.freeze({
-		sentence: 40,
-		semicolon: 30,
-		colon: 28,
-		spacedDash: 24,
-		comma: 20,
-	}),
-});
+type LatinBoundaryKind = 'sentence' | 'semicolon' | 'colon' | 'spacedDash' | 'comma' | 'whitespace';
 
 const LETTER_PATTERN = /\p{L}/u;
 const LATIN_LETTER_PATTERN = /\p{Script=Latin}/u;
+const CLOSING_MARK_PATTERN = /['"”’»)\]}]/u;
 
 const PROTECTED_PATTERNS = [
 	/https?:\/\/[^\s<>"'“”‘’]+/giu,
@@ -55,6 +28,9 @@ const PROTECTED_PATTERNS = [
 	/\d+(?:[.,]\d+)*(?:\s?[-–]\s?\d+(?:[.,]\d+)*)?\s?(?:km\/h|m²|m3|%|₫|đ|mm|cm|km|kg|mg|ml|ha|m|g|l)/giu,
 	/\p{Lu}+-\d+(?:-\p{Lu}+)*/gu,
 	/(?:^|\s)\d+\.(?=\s+[\p{L}\p{N}])/gu,
+	/\b(?:IRGC|AFP|CNN|TP\.HCM|VnExpress|PGS\.TS|P\.TS)\b/gu,
+	/\b(?:TS|Mr|Mrs|Ms|Dr|Prof|Sr|Jr|Ph\.D|etc|e\.g|i\.e|vs|Inc|Ltd|Co|Corp|St|Ave|Blvd)\.(?=\s|$)/gu,
+	/\b[A-Z0-9]{2,}\b/gu,
 ] as const;
 
 export function isPredominantlyLatinText(text: string): boolean {
@@ -96,7 +72,9 @@ function scanBoundaries(text: string): BoundaryCandidate<LatinBoundaryKind>[] {
 			continue;
 		}
 		const character = text[index];
-		if (character === ',' && !(/\d/u.test(text[index - 1] ?? '') && /\d/u.test(text[index + 1] ?? ''))) {
+		if (/\s/u.test(character)) {
+			boundaries.push({ end: index, kind: 'whitespace', pauseAfterMs: 0 });
+		} else if (character === ',' && !(/\d/u.test(text[index - 1] ?? '') && /\d/u.test(text[index + 1] ?? ''))) {
 			boundaries.push({ end: index + 1, kind: 'comma', pauseAfterMs: LATIN_PAUSE_MS.comma });
 		} else if (character === ':' && !(/\d/u.test(text[index - 1] ?? '') && /\d/u.test(text[index + 1] ?? ''))) {
 			boundaries.push({ end: index + 1, kind: 'colon', pauseAfterMs: LATIN_PAUSE_MS.colon });
@@ -112,6 +90,11 @@ function scanBoundaries(text: string): BoundaryCandidate<LatinBoundaryKind>[] {
 			while (text[end] === '.') {
 				end++;
 			}
+			// A closing quote or bracket belongs to the sentence it terminates, so keep it on the left
+			// of the boundary instead of orphaning it at the head of the next unit.
+			while (CLOSING_MARK_PATTERN.test(text[end] ?? '')) {
+				end++;
+			}
 			boundaries.push({
 				end,
 				kind: 'sentence',
@@ -123,24 +106,18 @@ function scanBoundaries(text: string): BoundaryCandidate<LatinBoundaryKind>[] {
 	return boundaries;
 }
 
-function planParagraph(text: string, paragraphPauseAfterMs: number): SpeechUnit[] {
-	const boundaries = scanBoundaries(text);
-	const trailingBoundary = boundaries.at(-1);
-	const trailingPauseAfterMs = trailingBoundary?.end === text.length ? trailingBoundary.pauseAfterMs : 0;
-	return planTextSegments(text, boundaries, LATIN_SEGMENTATION_POLICY, Math.max(trailingPauseAfterMs, paragraphPauseAfterMs));
-}
-
-export function planLatinSpeechUnits(text: string): SpeechUnit[] {
-	const paragraphs = text
-		.normalize('NFC')
-		.split(/\n[\t ]*\n*/u)
-		.map((paragraph) => paragraph.replace(/\s+/gu, ' ').trim())
-		.filter(Boolean);
+/**
+ * Plan already-normalized paragraphs. Paragraph membership is the hard-boundary metadata the
+ * source-neutral normalizer produced, so this never re-derives boundaries from line breaks.
+ */
+export function planLatinSpeechUnits(paragraphs: readonly string[], maximumUnitLength = LATIN_MAX_UNIT_LENGTH): SpeechUnit[] {
+	const hardMax = Math.min(maximumUnitLength, LATIN_MAX_UNIT_LENGTH);
 	const units: SpeechUnit[] = [];
 	for (let index = 0; index < paragraphs.length; index++) {
+		const paragraph = paragraphs[index];
 		const isLast = index === paragraphs.length - 1;
 		const paragraphPause = isLast ? LATIN_PAUSE_MS.sentenceEnd : LATIN_PAUSE_MS.paragraphEnd;
-		units.push(...planParagraph(paragraphs[index], paragraphPause));
+		units.push(...planTextSegments(paragraph, scanBoundaries(paragraph), hardMax, paragraphPause));
 	}
 	return units;
 }

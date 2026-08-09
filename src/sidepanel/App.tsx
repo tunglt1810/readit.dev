@@ -13,6 +13,7 @@ import {
 import { getLocalizedPlaybackError, t } from '../shared/i18n.ts';
 import { normalizeManualText } from '../shared/manual_text.ts';
 import { requestPlaybackState, sendPlaybackCommand, sendRuntimeRequest, subscribePlaybackState } from '../shared/playback_client.ts';
+import { resolvePlaybackStatus } from '../shared/playback_status.ts';
 import { isSelectionButtonEnabled } from '../shared/selection_button.ts';
 import type { ManualTextLanguage, PageInfoResponse, PlaybackSessionSnapshot, PlaybackStatus, PlaylistQueue, ThemeName } from '../shared/types.ts';
 import { isWordHighlightEnabled } from '../shared/word_highlight.ts';
@@ -35,16 +36,17 @@ function getStatusText(session: PlaybackSessionSnapshot | null): string {
 	if (!session) {
 		return t('readyStatus');
 	}
-	if (session.status === 'loading') {
+	const status = resolvePlaybackStatus(session);
+	if (status === 'loading') {
 		return t('preparingState');
 	}
-	if (session.status === 'playing') {
+	if (status === 'playing') {
 		return `${t('playingStatus')} ${session.currentParagraphIndex + 1}/${session.totalParagraphs}`;
 	}
-	if (session.status === 'paused') {
+	if (status === 'paused') {
 		return t('pauseState');
 	}
-	if (session.status === 'error') {
+	if (status === 'error') {
 		return getLocalizedPlaybackError(session.error) ?? t('errorState');
 	}
 	return t('readyStatus');
@@ -492,9 +494,7 @@ export default function App() {
 	const readerActiveHighlight = manualHighlight ? manualReaderText?.slice(manualHighlight.start, manualHighlight.end) : null;
 	const readerAfterHighlight = manualHighlight ? manualReaderText?.slice(manualHighlight.end) : null;
 
-	const rawStatus: PlaybackStatus = session?.status ?? 'stopped';
-	const status: PlaybackStatus =
-		rawStatus === 'loading' && session !== null && session.currentParagraphIndex > 0 ? 'playing' : rawStatus;
+	const status: PlaybackStatus = resolvePlaybackStatus(session);
 	const displayVersion = getDisplayVersion();
 
 	return (
@@ -668,28 +668,28 @@ export default function App() {
 								<span>{t('manualSession')}</span>
 							</div>
 						</div>
-						{session.status !== 'stopped' && session.status !== 'error' && (
+						{status !== 'stopped' && status !== 'error' && (
 							<div className="progress-bar-container">
 								<div className="progress-bar" style={{ width: `${session.progressPercentage}%` }} />
 							</div>
 						)}
 						<div className="playback-controls">
-							{(session.status === 'playing' || session.status === 'paused') && (
+							{(status === 'playing' || status === 'paused') && (
 								<button
 									ref={primaryButtonRef}
 									className="btn btn-secondary btn-icon-only btn-playpause"
 									type="button"
-									aria-label={session.status === 'playing' ? t('pauseState') : t('resumeStatus')}
-									title={session.status === 'playing' ? t('pauseState') : t('resumeStatus')}
-									onClick={() => handlePlaybackCommand(session.status === 'playing' ? 'PAUSE_READING' : 'RESUME_READING')}
+									aria-label={status === 'playing' ? t('pauseState') : t('resumeStatus')}
+									title={status === 'playing' ? t('pauseState') : t('resumeStatus')}
+									onClick={() => handlePlaybackCommand(status === 'playing' ? 'PAUSE_READING' : 'RESUME_READING')}
 								>
-									<PlaybackIcon name={session.status === 'playing' ? 'pause' : 'resume'} />
+									<PlaybackIcon name={status === 'playing' ? 'pause' : 'resume'} />
 								</button>
 							)}
 							<PlaybackControlButton
-								status={session.status}
+								status={status}
 								onClick={() => handlePlaybackCommand('STOP_READING')}
-								buttonRef={session.status === 'playing' || session.status === 'paused' ? undefined : primaryButtonRef}
+								buttonRef={status === 'playing' || status === 'paused' ? undefined : primaryButtonRef}
 							/>
 							<AudioExportButton session={session} />
 						</div>

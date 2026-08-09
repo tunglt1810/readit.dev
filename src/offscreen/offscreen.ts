@@ -22,7 +22,7 @@ import { captureManualCheckpoint, isCheckpointOwner, type ManualCheckpoint, resu
 import { createPauseKeepalive } from './pause_keepalive';
 import { METRICS_STORAGE_KEY, PlaybackMetricsRecorder, summarizePlaybackMetrics } from './playback_metrics';
 import { isVietnameseLanguage, preparePlaybackUnits, VietnameseTextNormalizer } from './playback_preparation';
-import { createSingleFlight } from './single_flight';
+import { createSingleFlight } from '../shared/single_flight';
 import type { SpeechUnit } from './speech_unit';
 import { SynthesisArbiter } from './synthesis_arbiter';
 import { loadTextToSpeech, loadVoiceStyle, Style, TextToSpeech } from './supertonic_helper';

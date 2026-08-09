@@ -84,6 +84,38 @@ test('uses only synthesis text as the rendering override and forwards literal 1.
 	assert.deepEqual(calls, [['Heading. The article continues.', 'en', 8, 1.5, 0]]);
 });
 
+test('rejects an over-capacity Final Rendering before reaching the engine', async () => {
+	// Capacity is measured on the Final Rendering, so a unit whose canonical text fits but whose
+	// synthesis rendering does not must still be refused — and refused before any engine call.
+	const cases: Array<{ language: string; limit: number }> = [
+		{ language: 'en', limit: 300 },
+		{ language: 'vi', limit: 300 },
+		{ language: 'ko', limit: 120 },
+		{ language: 'ja', limit: 120 },
+	];
+
+	for (const { language, limit } of cases) {
+		let calls = 0;
+		const synthesize = async () => {
+			calls++;
+			return voicedSamples([0.5]);
+		};
+
+		const atLimit = { text: 'a'.repeat(limit), pauseAfterMs: 180 };
+		await synthesizeSpeechUnitSamples(atLimit, language, 1, synthesize);
+		assert.equal(calls, 1, `${language} must accept exactly ${limit} code units`);
+
+		const overByOne = { text: 'a'.repeat(limit - 1), synthesisText: 'a'.repeat(limit + 1), pauseAfterMs: 180 };
+		await assert.rejects(
+			() => synthesizeSpeechUnitSamples(overByOne, language, 1, synthesize),
+			(error: unknown) => error instanceof RangeError && (error as { code?: string }).code === 'SYNTHESIS_CAPACITY_EXCEEDED',
+			`${language} must reject ${limit + 1} code units`,
+		);
+		assert.equal(calls, 1, `${language} must not call the engine after a capacity failure`);
+		assert.deepEqual(overByOne, { text: 'a'.repeat(limit - 1), synthesisText: 'a'.repeat(limit + 1), pauseAfterMs: 180 });
+	}
+});
+
 test('adds a fixed acoustic tail before the requested pause and leaves both tails silent', () => {
 	const audioCtx = stubAudioContext();
 	const buffer = createSpeechAudioBuffer(audioCtx, new Float32Array([0.25, -0.5]), 1_000, 80);

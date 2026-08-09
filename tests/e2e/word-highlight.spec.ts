@@ -327,7 +327,9 @@ test('scrolls only when the mapped range is outside the viewport', async ({ cont
 
 	await sendWordHighlightMessage(serviceWorker, tabId, { action: 'WORD_HIGHLIGHT_UPDATE', sessionId: 'e2e-scroll', wordIndex: 1 });
 	await expect.poll(() => currentHighlightText(page)).toBe('Far');
-	expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+	// Centred scrolling animates unless the user prefers reduced motion, so the offset lands over
+	// several frames rather than on the same tick the highlight is applied.
+	await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
 });
 
 test('scrolls a word above the viewport from within a tall paragraph into view', async ({ context }) => {

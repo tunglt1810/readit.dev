@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { preparePlaybackUnits } from '../../src/offscreen/playback_preparation.ts';
 import { attachNormalizedWordMap, attachPlainWordMap, buildPlainWordMap } from '../../src/offscreen/word_map.ts';
 
 test('builds a plain word map by splitting on whitespace runs', () => {
@@ -23,6 +24,63 @@ test('attaches a plain word map to each unit using the unit own text', () => {
 		{ text: 'Second', start: 0, end: 6 },
 		{ text: 'one.', start: 7, end: 11 },
 	]);
+});
+
+test('indexes canonical text, never the cadence-preserving synthesis rendering', () => {
+	const [attached] = attachPlainWordMap([
+		{ text: 'Heading The article continues.', synthesisText: 'Heading. The article continues.', pauseAfterMs: 260 },
+	]);
+
+	assert.deepEqual(attached.wordMap, [
+		{ text: 'Heading', start: 0, end: 7 },
+		{ text: 'The', start: 8, end: 11 },
+		{ text: 'article', start: 12, end: 19 },
+		{ text: 'continues.', start: 20, end: 30 },
+	]);
+	// The synthetic period exists only in the rendering, so nothing may map to it.
+	assert.equal(
+		(attached.wordMap ?? []).some((entry) => entry.text === 'Heading.'),
+		false,
+	);
+	for (const entry of attached.wordMap ?? []) {
+		assert.equal(attached.text.slice(entry.start, entry.end), entry.text);
+	}
+});
+
+test('attaches word maps only after consolidation, so every entry resolves against the merged unit', async () => {
+	const prepared = await preparePlaybackUnits(
+		'Heading\n\nThe paragraph continues with enough content to be independently reliable.',
+		'en',
+		null,
+	);
+
+	// The short heading fuses into the paragraph, so a map attached before consolidation would now
+	// be pointing at text that no longer exists as its own unit.
+	assert.equal(prepared.length, 1);
+	assert.equal(prepared[0].text.startsWith('Heading The paragraph'), true);
+	for (const entry of prepared[0].wordMap ?? []) {
+		assert.equal(prepared[0].text.slice(entry.start, entry.end), entry.text);
+	}
+	assert.deepEqual(
+		(prepared[0].wordMap ?? []).map((entry) => entry.text),
+		prepared[0].text.split(' '),
+	);
+});
+
+test('resolves a merged unit whose canonical join replaced a paragraph break in the spoken text', () => {
+	const fullText = 'Tiêu đề\n\nNội dung đoạn văn.';
+	const units = [{ text: 'Tiêu đề Nội dung đoạn văn.', pauseAfterMs: 180 }];
+	const wordMap = [
+		{ originalText: 'Tiêu', originalStart: 0, originalEnd: 4, spokenStart: 0, spokenEnd: 4 },
+		{ originalText: 'Nội', originalStart: 9, originalEnd: 12, spokenStart: 9, spokenEnd: 12 },
+	];
+	const [attached] = attachNormalizedWordMap(units, fullText, wordMap);
+
+	assert.deepEqual(attached.wordMap, [
+		{ text: 'Tiêu', start: 0, end: 4 },
+		{ text: 'Nội', start: 8, end: 11 },
+	]);
+	assert.equal(attached.text.slice(8, 11), 'Nội');
 });
 
 test('slices a document-level word map into unit-relative offsets in order', () => {

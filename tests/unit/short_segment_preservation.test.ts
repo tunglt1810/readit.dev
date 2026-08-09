@@ -1,20 +1,21 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-
 import { createPlaybackSession } from '../../src/background/playback_state.ts';
 import { synthesizeSpeechUnitSamples } from '../../src/offscreen/audio.ts';
 import { AudioExportEngine } from '../../src/offscreen/audio_export_engine.ts';
 import { estimateSpeechUnitDurations, estimateSpeechUnits } from '../../src/offscreen/audio_export_estimate.ts';
 import { planLatinSpeechUnits } from '../../src/offscreen/latin/speech_units.ts';
 import { preparePlaybackUnits } from '../../src/offscreen/playback_preparation.ts';
+import { consolidateShortSpeechUnits } from '../../src/offscreen/short_segment_consolidation.ts';
 import type { SpeechUnit } from '../../src/offscreen/speech_unit.ts';
 import { TextToSpeech } from '../../src/offscreen/supertonic_helper.ts';
 import { IndexedSynthesisCoordinator } from '../../src/offscreen/synthesis_coordinator.ts';
+import { normalizeSourceText } from '../../src/offscreen/text_normalization.ts';
 import { attachPlainWordMap } from '../../src/offscreen/word_map.ts';
 
 /** Validates: Requirements 3.1, 3.2, 3.3, 3.4, 3.5, 3.6 */
 
-const MIN_RELIABLE_SYNTHESIS_CHARACTERS = 20;
+const MIN_RELIABLE_SYNTHESIS_CHARACTERS = 50;
 
 const diagnostics = {
 	tokenCount: 2,
@@ -39,6 +40,11 @@ function assertAbsentSynthesisText(units: readonly SpeechUnit[]): void {
 	}
 }
 
+/** The Latin path as `preparePlaybackUnits` runs it: normalize, plan per sentence, then consolidate. */
+function planAndConsolidate(source: string, language = 'en'): SpeechUnit[] {
+	return attachPlainWordMap(consolidateShortSpeechUnits(planLatinSpeechUnits(normalizeSourceText(source).paragraphs), language));
+}
+
 function assertMappedTokens(units: readonly SpeechUnit[], expected: readonly string[]): void {
 	const actual = units.flatMap((unit) =>
 		(unit.wordMap ?? []).map((entry) => {
@@ -58,8 +64,11 @@ test('preserves all-above-threshold canonical Latin planning field-for-field', a
 	];
 
 	for (const source of sources) {
-		const planned = attachPlainWordMap(planLatinSpeechUnits(source));
-		assert.ok(planned.every((unit) => nonWhitespaceCodePointCount(unit.text) >= MIN_RELIABLE_SYNTHESIS_CHARACTERS), source);
+		const planned = planAndConsolidate(source);
+		assert.ok(
+			planned.every((unit) => nonWhitespaceCodePointCount(unit.text) >= MIN_RELIABLE_SYNTHESIS_CHARACTERS),
+			source,
+		);
 
 		const prepared = await preparePlaybackUnits(source, 'en', null);
 		assert.deepEqual(prepared, planned, source);
@@ -70,15 +79,22 @@ test('preserves all-above-threshold canonical Latin planning field-for-field', a
 test('preserves observed sentence, semicolon, colon, paragraph, fallback, and protected-token planning boundaries', async () => {
 	const semicolonSource =
 		'Dự thảo đồng thời bổ sung nhóm chức danh được sử dụng thường xuyên một ôtô trong thời gian công tác, không quy định mức giá, gồm: Chủ nhiệm Ủy ban Kiểm tra Trung ương; trưởng các ban Đảng ở Trung ương; Chánh Văn phòng Trung ương Đảng; Giám đốc Học viện Chính trị quốc gia Hồ Chí Minh.';
-	assert.deepEqual(planLatinSpeechUnits(semicolonSource).map(({ pauseAfterMs }) => pauseAfterMs), [140, 140, 140, 180]);
+	assert.deepEqual(
+		planLatinSpeechUnits(normalizeSourceText(semicolonSource).paragraphs).map(({ pauseAfterMs }) => pauseAfterMs),
+		[180],
+	);
 
 	const colonPrefix = 'alpha '.repeat(31).trim();
 	const colonSource = `${colonPrefix}: ${'tail '.repeat(40).trim()}.`;
-	const colonUnits = planLatinSpeechUnits(colonSource);
+	const colonUnits = planLatinSpeechUnits(normalizeSourceText(colonSource).paragraphs);
 	assert.equal(colonUnits[0]?.text, `${colonPrefix}:`);
 	assert.equal(colonUnits[0]?.pauseAfterMs, 90);
 
-	const paragraphUnits = planLatinSpeechUnits('First paragraph is long enough to keep its boundary explicit.\n\nSecond paragraph is also long enough to remain independent.');
+	const paragraphUnits = planLatinSpeechUnits(
+		normalizeSourceText(
+			'First paragraph is long enough to keep its boundary explicit.\n\nSecond paragraph is also long enough to remain independent.',
+		).paragraphs,
+	);
 	assert.equal(paragraphUnits[0]?.pauseAfterMs, 260);
 	assert.equal(paragraphUnits.at(-1)?.pauseAfterMs, 180);
 
@@ -144,7 +160,7 @@ test('property: protected forms and all-above-threshold units preserve canonical
 	const protectedForms = ['https://example.test/v1.2.3', 'reader@example.test', '11/07/2026', 'v2.3.4', '10:30', '3.5kg'];
 	for (const [index, protectedForm] of protectedForms.entries()) {
 		const source = `${'leading content '.repeat(12)}${protectedForm} ${'trailing content '.repeat(12)}case${index}.`;
-		const planned = attachPlainWordMap(planLatinSpeechUnits(source));
+		const planned = planAndConsolidate(source);
 		assert.ok(planned.every((unit) => nonWhitespaceCodePointCount(unit.text) >= MIN_RELIABLE_SYNTHESIS_CHARACTERS));
 
 		const prepared = await preparePlaybackUnits(source, 'en', null);
@@ -238,7 +254,7 @@ test('property: every observed controller speed, including exact 1.5, is passed 
 			schedulerSpeeds.push(input.speed);
 			return synthesizeSpeechUnitSamples(input.unit, 'en', input.speed, async (_text, _lang, _steps, requestedSpeed) => {
 				engineSpeeds.push(requestedSpeed);
-			return new Float32Array(128).fill(0.1);
+				return new Float32Array(128).fill(0.1);
 			});
 		});
 		await coordinator.get({ session: 1, unitIndex: 0, speedVersion: 0 }, { unit, speed: session.speed });

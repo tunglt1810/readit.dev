@@ -1,167 +1,94 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { type BoundaryCandidate, planTextSegments, type SegmentationPolicy } from '../../src/offscreen/segmentation.ts';
+import { type BoundaryCandidate, planTextSegments, SegmentationCapacityError } from '../../src/offscreen/segmentation.ts';
 
-type Kind = 'sentence' | 'semicolon' | 'comma';
+type Kind = 'sentence' | 'semicolon' | 'colon' | 'spacedDash' | 'comma' | 'whitespace';
 
-const policy: SegmentationPolicy<Kind> = {
-	preferredMin: 140,
-	preferredCenter: 190,
-	preferredMax: 240,
-	hardMax: 300,
-	outsidePreferredPenalty: 10,
-	shortRemainderLength: 80,
-	shortRemainderPenalty: 30,
-	minimumScore: 0,
-	interiorSplitKinds: ['sentence', 'semicolon'],
-	interiorSplitMinLength: 60,
-	interiorSplitMinLengthByKind: { semicolon: 20 },
-	boundaryWeights: {
-		sentence: 40,
-		semicolon: 30,
-		comma: 20,
-	},
-};
+const HARD_MAX = 300;
 
 function boundary(text: string, marker: string, kind: Kind, pauseAfterMs: number): BoundaryCandidate<Kind> {
 	return { end: text.indexOf(marker) + marker.length, kind, pauseAfterMs };
 }
 
-function assertSourceCoverage(source: string, units: readonly { text: string }[]): void {
-	let cursor = 0;
-	for (const unit of units) {
-		assert.notEqual(unit.text, '');
-		const start = source.indexOf(unit.text, cursor);
-		assert.notEqual(start, -1);
-		assert.match(source.slice(cursor, start), /^\s*$/u);
-		cursor = start + unit.text.length;
-	}
-	assert.match(source.slice(cursor), /^\s*$/u);
-}
+test('plans one unit per complete sentence instead of filling up to capacity', () => {
+	const source = 'Một câu ngắn. Câu thứ hai cũng ngắn.';
+	const boundaries = [boundary(source, '.', 'sentence', 180), { end: source.length, kind: 'sentence' as const, pauseAfterMs: 180 }];
 
-function orphanSource(firstBoundaryEnd: number, secondBoundaryEnd: number, remainderLength: number): string {
-	return `${'a'.repeat(firstBoundaryEnd - 1)}; ${'b'.repeat(secondBoundaryEnd - firstBoundaryEnd - 2)}. ${'c'.repeat(remainderLength)}`;
-}
-
-test('ends a unit at a sentence even when everything left would fit in one unit', () => {
-	// Both sentences clear the interior minimum, so the pause between them becomes appended silence
-	// instead of a pause the model has to produce inside a single unit.
-	const first = `${'a'.repeat(78)}.`;
-	const second = `${'b'.repeat(78)}.`;
-	const source = `${first} ${second}`;
-	assert.ok(source.length <= policy.hardMax);
-	const boundaries: BoundaryCandidate<Kind>[] = [
-		{ end: first.length, kind: 'sentence', pauseAfterMs: 180 },
-		{ end: source.length, kind: 'sentence', pauseAfterMs: 180 },
-	];
-
-	const units = planTextSegments(source, boundaries, policy, 260);
-
-	assert.deepEqual(
-		units.map((unit) => unit.text),
-		[first, second],
-	);
-	assert.equal(units[0].pauseAfterMs, 180);
-	assert.equal(units[1].pauseAfterMs, 260);
-	assertSourceCoverage(source, units);
-});
-
-test('does not split off a sentence too short to stand as its own unit', () => {
-	// The tail clears nothing near the interior minimum, so gluing it on beats emitting a scrap.
-	const first = `${'a'.repeat(78)}.`;
-	const source = `${first} ${'b'.repeat(19)}.`;
-	const boundaries: BoundaryCandidate<Kind>[] = [
-		{ end: first.length, kind: 'sentence', pauseAfterMs: 180 },
-		{ end: source.length, kind: 'sentence', pauseAfterMs: 180 },
-	];
-
-	assert.deepEqual(
-		planTextSegments(source, boundaries, policy, 260).map((unit) => unit.text),
-		[source],
-	);
-});
-
-test('uses a boundary-kind minimum for eligible interior splits', () => {
-	const first = `${'a'.repeat(29)};`;
-	const second = `${'b'.repeat(29)}.`;
-	const source = `${first} ${second}`;
-	const boundaries: BoundaryCandidate<Kind>[] = [
-		{ end: first.length, kind: 'semicolon', pauseAfterMs: 140 },
-		{ end: source.length, kind: 'sentence', pauseAfterMs: 180 },
-	];
-
-	assert.deepEqual(planTextSegments(source, boundaries, policy, 260), [
-		{ text: first, pauseAfterMs: 140 },
-		{ text: second, pauseAfterMs: 260 },
+	assert.deepEqual(planTextSegments(source, boundaries, HARD_MAX, 165), [
+		{ text: 'Một câu ngắn.', pauseAfterMs: 180 },
+		{ text: 'Câu thứ hai cũng ngắn.', pauseAfterMs: 180 },
 	]);
 });
 
-test('only ends a unit early on a kind listed for interior splits', () => {
-	// A comma is not a sentence end: splitting there would cut a clause in half.
-	const first = `${'a'.repeat(78)},`;
-	const source = `${first} ${'b'.repeat(78)}.`;
+test('keeps fitting semicolon and comma clauses inside their sentence', () => {
+	const source = `${'a '.repeat(30).trim()}; ${'b '.repeat(20).trim()}, ${'c '.repeat(20).trim()}.`;
+	const boundaries = [
+		boundary(source, ';', 'semicolon', 140),
+		boundary(source, ',', 'comma', 60),
+		{ end: source.length, kind: 'sentence' as const, pauseAfterMs: 180 },
+	];
+
+	assert.deepEqual(planTextSegments(source, boundaries, HARD_MAX, 180), [{ text: source, pauseAfterMs: 180 }]);
+});
+
+test('replaces the last unit pause with the paragraph pause', () => {
+	const source = 'First sentence. Second sentence.';
+	const boundaries = [boundary(source, '.', 'sentence', 180), { end: source.length, kind: 'sentence' as const, pauseAfterMs: 180 }];
+
+	assert.deepEqual(planTextSegments(source, boundaries, HARD_MAX, 260), [
+		{ text: 'First sentence.', pauseAfterMs: 180 },
+		{ text: 'Second sentence.', pauseAfterMs: 260 },
+	]);
+});
+
+test('gives a paragraph without terminal punctuation the paragraph pause', () => {
+	assert.deepEqual(planTextSegments('A bare heading', [], HARD_MAX, 260), [{ text: 'A bare heading', pauseAfterMs: 260 }]);
+});
+
+test('uses the ordered fallback only for an oversized sentence', () => {
+	const part1 = 'word '.repeat(35).trim();
+	const part2 = 'clause '.repeat(25).trim();
+	const source = `${part1}; ${part2}.`;
+	const boundaries = [
+		{ end: part1.length + 1, kind: 'semicolon' as const, pauseAfterMs: 140 },
+		{ end: source.length, kind: 'sentence' as const, pauseAfterMs: 180 },
+	];
+
+	const units = planTextSegments(source, boundaries, HARD_MAX, 180);
+	assert.equal(units[0].text.endsWith(';'), true);
+	assert.ok(units.every((unit) => unit.text.length <= HARD_MAX));
+});
+
+test('prefers the rightmost candidate of the first non-empty fallback class', () => {
+	const filler = 'w'.repeat(90);
+	const source = `${filler}, ${filler}: ${filler}, ${filler}.`;
 	const boundaries: BoundaryCandidate<Kind>[] = [
-		{ end: first.length, kind: 'comma', pauseAfterMs: 60 },
+		{ end: filler.length + 1, kind: 'comma', pauseAfterMs: 60 },
+		{ end: filler.length * 2 + 3, kind: 'colon', pauseAfterMs: 90 },
+		{ end: filler.length * 3 + 5, kind: 'comma', pauseAfterMs: 60 },
 		{ end: source.length, kind: 'sentence', pauseAfterMs: 180 },
 	];
 
-	assert.deepEqual(
-		planTextSegments(source, boundaries, policy, 260).map((unit) => unit.text),
-		[source],
+	// The colon outranks both commas even though a comma sits further right within capacity.
+	const units = planTextSegments(source, boundaries, HARD_MAX, 180);
+	assert.equal(units[0].text.endsWith(':'), true);
+});
+
+test('uses the final safe whitespace when no fallback punctuation fits', () => {
+	const left = 'a'.repeat(200);
+	const right = 'b'.repeat(150);
+	const source = `${left} ${right}`;
+	const boundaries = [{ end: left.length, kind: 'whitespace' as const, pauseAfterMs: 0 }];
+
+	assert.deepEqual(planTextSegments(source, boundaries, HARD_MAX, 0), [
+		{ text: left, pauseAfterMs: 0 },
+		{ text: right, pauseAfterMs: 0 },
+	]);
+});
+
+test('rejects an oversized unbreakable token instead of splitting it', () => {
+	assert.throws(
+		() => planTextSegments('a'.repeat(301), [], HARD_MAX, 0),
+		(error: unknown) => error instanceof SegmentationCapacityError,
 	);
-});
-
-test('keeps a complete paragraph under the hard limit in one unit', () => {
-	const source = 'Một câu ngắn. Câu thứ hai cũng ngắn.';
-	const boundaries = [boundary(source, '.', 'sentence', 165), { end: source.length, kind: 'sentence' as const, pauseAfterMs: 165 }];
-
-	assert.deepEqual(planTextSegments(source, boundaries, policy, 165), [{ text: source, pauseAfterMs: 165 }]);
-});
-
-test('lets a well-positioned comma beat a very short sentence boundary', () => {
-	const source = `${'a '.repeat(30).trim()}. ${'b '.repeat(55).trim()}, ${'c '.repeat(100).trim()}`;
-	const boundaries = [boundary(source, '.', 'sentence', 165), boundary(source, ',', 'comma', 60)];
-	const units = planTextSegments(source, boundaries, policy, 0);
-
-	assert.equal(units[0].text.endsWith(','), true);
-	assert.ok(units[0].text.length >= policy.preferredMin);
-	assert.ok(units[0].text.length <= policy.preferredMax);
-});
-
-test('applies the full configured penalty to a remainder below the short-orphan threshold', () => {
-	const source = orphanSource(110, 222, 79);
-	const boundaries = [boundary(source, ';', 'semicolon', 90), boundary(source, '.', 'sentence', 165)];
-
-	assert.equal(planTextSegments(source, boundaries, policy, 0)[0].text.endsWith(';'), true);
-});
-
-test('does not apply the short-orphan penalty at the configured threshold', () => {
-	const source = orphanSource(110, 222, 80);
-	const boundaries = [boundary(source, ';', 'semicolon', 90), boundary(source, '.', 'sentence', 165)];
-
-	assert.equal(planTextSegments(source, boundaries, policy, 0)[0].text.endsWith('.'), true);
-});
-
-test('does not apply more than the configured short-orphan penalty', () => {
-	const source = orphanSource(105, 225, 79);
-	const boundaries = [boundary(source, ';', 'semicolon', 90), boundary(source, '.', 'sentence', 165)];
-
-	assert.equal(planTextSegments(source, boundaries, policy, 0)[0].text.endsWith('.'), true);
-});
-
-test('falls back to whitespace near the scoring center and preserves all text', () => {
-	const source = Array.from({ length: 120 }, (_, index) => `word${index}`).join(' ');
-	const units = planTextSegments(source, [], policy, 0);
-
-	assert.ok(units[0].text.length >= 180 && units[0].text.length <= 200);
-	assert.ok(units.every(({ text }) => text.length <= policy.hardMax));
-	assertSourceCoverage(source, units);
-});
-
-test('moves a hard split before a UTF-16 surrogate pair', () => {
-	const source = `${'a'.repeat(299)}😀${'b'.repeat(20)}`;
-	const units = planTextSegments(source, [], policy, 0);
-
-	assert.equal(units[0].text.length, 299);
-	assertSourceCoverage(source, units);
 });

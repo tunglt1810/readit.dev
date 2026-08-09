@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createSingleFlight } from '../../src/offscreen/single_flight.ts';
+import { createSingleFlight } from '../../src/shared/single_flight.ts';
 
 test('shares concurrent work and permits retry after failure', async () => {
 	let calls = 0;

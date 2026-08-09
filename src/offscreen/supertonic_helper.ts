@@ -62,6 +62,26 @@ export function synthesisTextLimitForLanguage(language: string): number {
 	return resolvedLanguage === 'ko' || resolvedLanguage === 'ja' ? 120 : 300;
 }
 
+export function finalRenderingText(unit: { text: string; synthesisText?: string }): string {
+	return unit.synthesisText ?? unit.text;
+}
+
+export class SynthesisCapacityError extends RangeError {
+	readonly code = 'SYNTHESIS_CAPACITY_EXCEEDED';
+
+	constructor(renderingLength: number, limit: number, language: string) {
+		super(`Unit Final Rendering length (${renderingLength}) exceeds synthesis capacity limit of ${limit} for language '${language}'`);
+		this.name = 'SynthesisCapacityError';
+	}
+}
+
+export function assertWithinSynthesisCapacity(unit: { text: string; synthesisText?: string }, language: string): void {
+	const limit = synthesisTextLimitForLanguage(language);
+	const rendering = finalRenderingText(unit);
+	if (rendering.length > limit) {
+		throw new SynthesisCapacityError(rendering.length, limit, language);
+	}
+}
 // Interface for configuration
 export interface TTSConfig {
 	ae: {

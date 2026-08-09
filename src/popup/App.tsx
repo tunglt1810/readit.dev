@@ -10,6 +10,7 @@ import {
 import { openSidebarOrPanel } from '../shared/browser';
 import { getLocalizedPlaybackError, t } from '../shared/i18n';
 import { requestPlaybackState, sendPlaybackCommand, subscribePlaybackState } from '../shared/playback_client';
+import { resolvePlaybackStatus } from '../shared/playback_status';
 import { isSelectionButtonEnabled } from '../shared/selection_button';
 import type { PlaybackSessionSnapshot, PlaybackStatus, ThemeName } from '../shared/types';
 import { isWordHighlightEnabled } from '../shared/word_highlight';
@@ -43,9 +44,7 @@ export default function App() {
 	const [loadingProgress, setLoadingProgress] = useState({ loaded: 0, total: 0, modelName: '' });
 	const [modelError, setModelError] = useState('');
 	const [commandError, setCommandError] = useState('');
-	const rawStatus: PlaybackStatus = session?.status ?? 'stopped';
-	const status: PlaybackStatus =
-		rawStatus === 'loading' && session !== null && session.currentParagraphIndex > 0 ? 'playing' : rawStatus;
+	const status: PlaybackStatus = resolvePlaybackStatus(session);
 	const tabSource = session?.source.kind === 'tab' ? session.source : null;
 	const isSessionOnAnotherTab = tabSource !== null && tabSource.tabId !== currentTabId;
 	const sessionTitle = session?.contentScope === 'manual' ? t('pastedText') : (tabSource?.title ?? '');

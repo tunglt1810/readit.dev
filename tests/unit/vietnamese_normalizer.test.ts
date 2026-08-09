@@ -288,3 +288,27 @@ test('normalizes rate units and numeric ranges properly', async () => {
 	const result = await normalizeVietnameseText(source, dependencies);
 	assert.equal(result.text, 'Tốc độ bốn nghìn tám trăm xe trên ngày và hai phẩy ba năm đến hai phẩy ba bảy năm triệu xe trên năm.');
 });
+
+test('never voices a sentence terminal that a detected span swallowed', async () => {
+	const dependencies = createTestNormalizationDependencies();
+	dependencies.assets.detector = {
+		detect(tokens) {
+			return tokens.map((token) => (token.text === '"' ? 'B-LSEQ' : token.text === '.' ? 'I-LSEQ' : 'O'));
+		},
+	};
+	const source = 'Ông nói đó là điều "hoàn toàn sai sự thật". Fars đưa tin.';
+	const result = await normalizeVietnameseText(source, dependencies);
+	assert.equal(result.text, source);
+});
+
+test('keeps expanding a span whose punctuation is interior rather than on its edges', async () => {
+	const dependencies = createTestNormalizationDependencies();
+	dependencies.assets.abbreviations = new Map([['TP.HCM', ['thành phố Hồ Chí Minh']]]);
+	dependencies.assets.detector = {
+		detect(tokens) {
+			return tokens.map((token) => (token.text === 'TP' ? 'B-LABB' : token.text === '.' || token.text === 'HCM' ? 'I-LABB' : 'O'));
+		},
+	};
+	const result = await normalizeVietnameseText('Ở TP.HCM.', dependencies);
+	assert.equal(result.text, 'Ở thành phố Hồ Chí Minh.');
+});

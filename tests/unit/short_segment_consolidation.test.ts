@@ -3,12 +3,14 @@ import test from 'node:test';
 
 import { synthesizeSpeechUnitSamples } from '../../src/offscreen/audio.ts';
 import { planLatinSpeechUnits } from '../../src/offscreen/latin/speech_units.ts';
+import { normalizeSourceText } from '../../src/offscreen/text_normalization.ts';
 import { preparePlaybackUnits } from '../../src/offscreen/playback_preparation.ts';
 import type { SpeechUnit } from '../../src/offscreen/speech_unit.ts';
 
 /** Validates: Requirements 1.1, 1.2, 1.3, 1.5, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6 */
 
-const MIN_RELIABLE_SYNTHESIS_CHARACTERS = 20;
+const MIN_RELIABLE_SYNTHESIS_CHARACTERS = 50;
+
 const VOICED_SAMPLES = new Float32Array([0.04, -0.06, 0.08, -0.05]);
 
 type Scenario = {
@@ -171,7 +173,7 @@ const scenarios: readonly Scenario[] = [
 
 for (const scenario of scenarios) {
 	test(`expected bug condition: ${scenario.name} is consolidated before synthesis`, async () => {
-		const planned = planLatinSpeechUnits(scenario.source);
+		const planned = planLatinSpeechUnits(normalizeSourceText(scenario.source).paragraphs);
 		assert.ok(planned.some((unit) => nonWhitespaceCodePointCount(unit.text) < MIN_RELIABLE_SYNTHESIS_CHARACTERS));
 		assertExpectedBehavior(scenario, planned, await runScenario(scenario));
 	});
@@ -188,7 +190,7 @@ test('expected bug condition property: Unicode short units merge without changin
 				language,
 				source: `${short};\n\n${protectedForm} remains in source order with sufficient surrounding text.`,
 			};
-			const planned = planLatinSpeechUnits(scenario.source);
+			const planned = planLatinSpeechUnits(normalizeSourceText(scenario.source).paragraphs);
 			assertExpectedBehavior(scenario, planned, await runScenario(scenario));
 		}
 	}
@@ -201,7 +203,7 @@ test('expected bug condition: capacity-blocked normal and Korean/Japanese units 
 		{ name: 'Japanese capacity-blocked', language: 'ja', source: `short-frag\n\n${longText(110)}` },
 	];
 	for (const scenario of cases) {
-		const planned = planLatinSpeechUnits(scenario.source);
+		const planned = planLatinSpeechUnits(normalizeSourceText(scenario.source).paragraphs);
 		const result = await runScenario(scenario);
 		assert.equal(mergeableShortIndexes(result.prepared, synthesisLimit(scenario.language)).length, 0, scenario.name);
 		assertExpectedBehavior(scenario, planned, result);

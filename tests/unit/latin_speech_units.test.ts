@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {
-	isPredominantlyLatinText,
-	LATIN_MAX_UNIT_LENGTH,
-	LATIN_PREFERRED_MAX_LENGTH,
-	LATIN_PREFERRED_MIN_LENGTH,
-	planLatinSpeechUnits,
-} from '../../src/offscreen/latin/speech_units.ts';
+import { isPredominantlyLatinText, LATIN_MAX_UNIT_LENGTH, planLatinSpeechUnits } from '../../src/offscreen/latin/speech_units.ts';
+import { SegmentationCapacityError } from '../../src/offscreen/segmentation.ts';
+import { normalizeSourceText } from '../../src/offscreen/text_normalization.ts';
+
+function plan(source: string) {
+	return planLatinSpeechUnits(normalizeSourceText(source).paragraphs);
+}
 
 function normalizeWhitespace(value: string): string {
 	return value.replace(/\s+/gu, ' ').trim();
@@ -32,52 +32,30 @@ test('rejects no-letter, exact-half, and non-Latin text', () => {
 	}
 });
 
-test('splits semicolon clauses and applies paragraph pause precedence', () => {
+test('keeps a fitting semicolon-delimited sentence intact and applies paragraph pause precedence', () => {
 	const first = 'Mệnh đề thứ nhất đủ dài, mệnh đề thứ hai cũng đủ dài; mệnh đề thứ ba vẫn đủ dài — mệnh đề thứ tư kết thúc.';
 	const second = 'Đoạn cuối cùng đủ dài!';
 
-	assert.deepEqual(planLatinSpeechUnits(`${first}\n\n${second}`), [
-		{ text: 'Mệnh đề thứ nhất đủ dài, mệnh đề thứ hai cũng đủ dài;', pauseAfterMs: 140 },
-		{ text: 'mệnh đề thứ ba vẫn đủ dài — mệnh đề thứ tư kết thúc.', pauseAfterMs: 260 },
+	assert.deepEqual(plan(`${first}\n\n${second}`), [
+		{ text: first, pauseAfterMs: 260 },
 		{ text: second, pauseAfterMs: 165 },
 	]);
 });
 
-test('splits the reported semicolon-delimited paragraph into speech units', () => {
-	const source =
-		'Dự thảo đồng thời bổ sung nhóm chức danh được sử dụng thường xuyên một ôtô trong thời gian công tác, không quy định mức giá, gồm: Chủ nhiệm Ủy ban Kiểm tra Trung ương; trưởng các ban Đảng ở Trung ương; Chánh Văn phòng Trung ương Đảng; Giám đốc Học viện Chính trị quốc gia Hồ Chí Minh.';
-
-	assert.deepEqual(planLatinSpeechUnits(source), [
-		{
-			text: 'Dự thảo đồng thời bổ sung nhóm chức danh được sử dụng thường xuyên một ôtô trong thời gian công tác, không quy định mức giá, gồm: Chủ nhiệm Ủy ban Kiểm tra Trung ương;',
-			pauseAfterMs: 140,
-		},
-		{ text: 'trưởng các ban Đảng ở Trung ương;', pauseAfterMs: 140 },
-		{ text: 'Chánh Văn phòng Trung ương Đảng;', pauseAfterMs: 140 },
-		{ text: 'Giám đốc Học viện Chính trị quốc gia Hồ Chí Minh.', pauseAfterMs: 180 },
+test('plans one Source Unit per sentence with its own terminal pause', () => {
+	assert.deepEqual(plan('A sentence. A question? An exclamation! An ellipsis…'), [
+		{ text: 'A sentence.', pauseAfterMs: 180 },
+		{ text: 'A question?', pauseAfterMs: 165 },
+		{ text: 'An exclamation!', pauseAfterMs: 165 },
+		{ text: 'An ellipsis…', pauseAfterMs: 165 },
 	]);
-});
-
-test('uses a slightly longer pause after a period without changing other sentence endings', () => {
-	assert.deepEqual(planLatinSpeechUnits('A sentence. A question? An exclamation! An ellipsis…'), [
-		{ text: 'A sentence. A question? An exclamation! An ellipsis…', pauseAfterMs: 165 },
-	]);
-	assert.deepEqual(planLatinSpeechUnits('A sentence.'), [{ text: 'A sentence.', pauseAfterMs: 180 }]);
-});
-
-test('selects a weighted boundary in the preferred range', () => {
-	const source = `${'word '.repeat(18).trim()}. ${'phrase '.repeat(14).trim()}, ${'long '.repeat(90).trim()}`;
-	const units = planLatinSpeechUnits(source);
-
-	assert.equal(units[0].text.endsWith(','), true);
-	assert.ok(units[0].text.length >= LATIN_PREFERRED_MIN_LENGTH);
-	assert.ok(units[0].text.length <= LATIN_PREFERRED_MAX_LENGTH);
+	assert.deepEqual(plan('A sentence.'), [{ text: 'A sentence.', pauseAfterMs: 180 }]);
 });
 
 test('does not split punctuation inside protected structured forms', () => {
 	const protectedText = 'admin@example.com 192.168.1.10 v2.3.4 11-07-2026 10:30 3.5kg https://a-b.example/x;y ÅBC-123';
 	const source = `${'prefix '.repeat(22)}${protectedText} ${'additional content '.repeat(45).trim()}`;
-	const reconstructed = planLatinSpeechUnits(source)
+	const reconstructed = plan(source)
 		.map(({ text }) => text)
 		.join(' ');
 
@@ -89,54 +67,107 @@ test('does not split punctuation inside protected structured forms', () => {
 	assert.equal(reconstructed.includes('ÅBC-123'), true);
 });
 
-test('does not split a standalone decimal at its punctuation', () => {
-	const source = 'word '.repeat(45) + '3.14 ' + 'content '.repeat(35);
-	const units = planLatinSpeechUnits(source);
-	const splitsDecimal = units.some(({ text }, index) => text.endsWith('3.') && units[index + 1]?.text.startsWith('14'));
+// Every form is placed inside a single sentence that cannot fit, so planning has to take the R6
+// ordered fallback and actually choose a boundary near it rather than keeping the sentence whole.
+const PROTECTED_FORMS = [
+	'https://example.test/v1.2.3?q=a;b',
+	'reader@example.test',
+	'192.0.2.1',
+	'v10.4.27',
+	'ABC-123',
+	'11/07/2026',
+	'10:30',
+	'3,5',
+	'12-15',
+	'1.500.000₫',
+	'99,9%',
+	'120km/h',
+	'IRGC',
+	'AFP',
+	'CNN',
+	'TP.HCM',
+	'VnExpress',
+	'PGS.TS',
+	'Dr.',
+];
 
-	assert.equal(splitsDecimal, false);
-	assert.equal(normalizeWhitespace(units.map(({ text }) => text).join(' ')), normalizeWhitespace(source));
+for (const form of PROTECTED_FORMS) {
+	test(`keeps ${form} whole while splitting the oversized sentence around it`, () => {
+		const filler = 'padding word '.repeat(14).trim();
+		const source = `${filler} ${form} ${filler} ${filler}.`;
+		const units = plan(source);
+
+		assert.ok(units.length > 1, 'the sentence must be oversized enough to exercise the fallback');
+		assert.ok(units.every(({ text }) => text.length <= LATIN_MAX_UNIT_LENGTH));
+		assert.equal(normalizeWhitespace(units.map(({ text }) => text).join(' ')), normalizeWhitespace(source));
+		assert.equal(
+			units.filter(({ text }) => text.includes(form)).length,
+			1,
+			`${form} must survive inside exactly one unit: ${JSON.stringify(units.map(({ text }) => text))}`,
+		);
+	});
+}
+
+test('permits a boundary immediately outside a protected form', () => {
+	const filler = 'padding word '.repeat(12).trim();
+	// The comma directly after the protected date is outside it, so the fallback may still use it.
+	const source = `${filler} 11/07/2026, ${filler} ${filler}.`;
+	const units = plan(source);
+
+	assert.ok(units.some(({ text }) => text.endsWith('11/07/2026,')));
 });
 
-test('keeps every unit within the hard limit and preserves all normalized text', () => {
+test('never splits between the halves of a surrogate pair', () => {
+	const source = `${'𐐷'.repeat(80)} ${'𐐷'.repeat(80)} ${'𐐷'.repeat(80)}.`;
+	const units = plan(source);
+
+	assert.ok(units.length > 1);
+	assert.ok(units.every(({ text }) => text.length <= LATIN_MAX_UNIT_LENGTH));
+	for (const { text } of units) {
+		assert.equal(text.replace(/𐐷/gu, '').replace(/[\s.]/gu, ''), '', `lone surrogate in ${JSON.stringify(text)}`);
+	}
+});
+
+test('keeps every planned unit within capacity and preserves normalized text', () => {
 	const source = Array.from({ length: 140 }, (_, index) => `word${index}`).join(' ');
-	const units = planLatinSpeechUnits(source);
+	const units = plan(source);
 
 	assert.ok(units.length > 1);
 	assert.ok(units.every(({ text }) => text.length <= LATIN_MAX_UNIT_LENGTH));
 	assert.equal(normalizeWhitespace(units.map(({ text }) => text).join(' ')), normalizeWhitespace(source));
 });
 
-test('returns no empty units', () => {
-	assert.deepEqual(planLatinSpeechUnits(' \n\n '), []);
-});
-
-test('keeps consecutive short sentences in one synthesis unit', () => {
-	assert.deepEqual(planLatinSpeechUnits('Câu đầu… Câu sau.'), [{ text: 'Câu đầu… Câu sau.', pauseAfterMs: 180 }]);
-});
-
-test('treats a single line break as a paragraph boundary instead of erasing it to a plain space', () => {
-	// Google Docs' plain-text export puts headings and standalone citation lines on their own line
-	// separated by a single \n (only genuine new-paragraph breaks get \n\n+). Collapsing that single
-	// \n to a bare space fused unrelated lines together with zero pause between them.
-	assert.deepEqual(planLatinSpeechUnits('First line\nSecond line.'), [
-		{ text: 'First line', pauseAfterMs: 260 },
-		{ text: 'Second line.', pauseAfterMs: 180 },
+test('treats a single line break as a soft wrap and a blank line as a paragraph break', () => {
+	assert.deepEqual(plan('First line\nSecond line.'), [{ text: 'First line Second line.', pauseAfterMs: 180 }]);
+	assert.deepEqual(plan('First paragraph.\n \t\nSecond paragraph.'), [
+		{ text: 'First paragraph.', pauseAfterMs: 260 },
+		{ text: 'Second paragraph.', pauseAfterMs: 180 },
 	]);
 });
 
-test('treats several consecutive single line breaks the same as paragraph breaks', () => {
-	assert.deepEqual(planLatinSpeechUnits('First line\nSecond line\nThird line.'), [
-		{ text: 'First line', pauseAfterMs: 260 },
-		{ text: 'Second line', pauseAfterMs: 260 },
-		{ text: 'Third line.', pauseAfterMs: 180 },
-	]);
+test('does not emit a period-ending title as a standalone sentence', () => {
+	const source = `Mr. ${'word '.repeat(70)}tail.`;
+	const units = plan(source);
+
+	assert.notEqual(units[0]?.text, 'Mr.');
+	assert.equal(normalizeWhitespace(units.map(({ text }) => text).join(' ')), normalizeWhitespace(source));
+	assert.ok(units.every(({ text }) => text.length <= LATIN_MAX_UNIT_LENGTH));
 });
 
-test('assigns non-zero fallback pause to an unpunctuated final paragraph', () => {
-	assert.deepEqual(planLatinSpeechUnits('Đoạn đầu.\n\nHuyền Lê (Theo AFP, CNN)'), [
-		{ text: 'Đoạn đầu.', pauseAfterMs: 260 },
-		{ text: 'Huyền Lê (Theo AFP, CNN)', pauseAfterMs: 165 },
-	]);
+test('rejects an oversized unbreakable token without splitting it', () => {
+	assert.throws(
+		() => plan('a'.repeat(LATIN_MAX_UNIT_LENGTH + 1)),
+		(error: unknown) => error instanceof SegmentationCapacityError,
+	);
 });
 
+test('keeps a closing quote with the sentence it terminates', () => {
+	assert.deepEqual(plan('Ông nói "Xin chào." Rồi ông đi.'), [
+		{ text: 'Ông nói "Xin chào."', pauseAfterMs: 180 },
+		{ text: 'Rồi ông đi.', pauseAfterMs: 180 },
+	]);
+	assert.deepEqual(plan('(Một ghi chú.) Câu tiếp theo.'), [
+		{ text: '(Một ghi chú.)', pauseAfterMs: 180 },
+		{ text: 'Câu tiếp theo.', pauseAfterMs: 180 },
+	]);
+});

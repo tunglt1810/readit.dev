@@ -21,6 +21,8 @@ import { registerModelCacheWarmLifecycle } from './model_cache_lifecycle';
 import { createAudioExportCoordinator, isAudioExportPrepareRequest } from './audio_export.ts';
 import { AudioExportPreparationDiagnostics } from './audio_export_prepare_diagnostics.ts';
 import { isAudioExportProgressUpdate } from './audio_export_state.ts';
+import { createCommandLane } from './command_queue.ts';
+import { createSingleFlight } from '../shared/single_flight.ts';
 import type {
 	Article,
 	CommandResponse,
@@ -126,18 +128,20 @@ let activeSession: PlaybackSessionSnapshot | null = null;
 let suspendedManualCheckpoint: ManualCheckpointMetadata | null = null;
 let suspendedManualSession: ManualPlaybackSessionSnapshot | null = null;
 let hydrated = false;
+let pendingStart: Promise<void> | null = null;
 let playlistQueue: PlaylistQueue = createPlaylistQueue();
 let pendingQueueNavigation: PendingQueueNavigation | null = null;
-let stateQueue = Promise.resolve();
+/**
+ * Every playback input — article, selected text, manual text, PDF, playlist — shares this one lane,
+ * so session transitions stay mutually exclusive no matter which surface started them.
+ */
+const sessionLane = createCommandLane();
+const { enqueue, runQueuedEvent } = sessionLane;
 
-function enqueue<T>(operation: () => Promise<T>): Promise<T> {
-	const next = stateQueue.then(operation);
-	stateQueue = next.then(
-		() => undefined,
-		() => undefined,
-	);
-	return next;
-}
+// Word-highlight relays deliberately share this lane. They look like independent per-tab UI traffic,
+// but `deliverWebsiteUpdate` drops any update arriving before `READABLE_SURFACE_INIT` has set
+// `websiteReady`, and that init runs as a session-lane operation. Relaying on a separate lane lets a
+// relay overtake the init and silently lose the highlight.
 
 const readableSurface = createReadableSurfaceCoordinator({
 	sendTabMessage: (tabId, message) => chrome.tabs.sendMessage(tabId, message),
@@ -156,7 +160,7 @@ const readableSurface = createReadableSurfaceCoordinator({
 		);
 	},
 	enqueue: (operation) => {
-		void enqueue(operation);
+		runQueuedEvent(operation);
 	},
 });
 
@@ -544,13 +548,18 @@ async function closeChromeOffscreen(): Promise<void> {
 	}
 }
 
-async function setupOffscreen(): Promise<void> {
+/**
+ * Single-flighted because document creation is no longer serialized by the session lane: the
+ * detached start phase and `dispatchOffscreenCommand`'s retries can now ask for it concurrently, and
+ * `chrome.offscreen.createDocument` has no dedupe of its own.
+ */
+const setupOffscreen = createSingleFlight(async (): Promise<void> => {
 	if (configuredAudioHost) {
 		await configuredAudioHost.ensure();
 		return;
 	}
 	await setupChromeOffscreen();
-}
+});
 
 async function closeOffscreen(): Promise<void> {
 	if (configuredAudioHost) {
@@ -606,7 +615,7 @@ const audioExportCoordinator = createAudioExportCoordinator({
 	now: () => Date.now(),
 	setTimeout: (callback, delayMs) =>
 		setTimeout(() => {
-			void enqueue(callback);
+			runQueuedEvent(callback);
 		}, delayMs),
 	clearTimeout: (handle) => clearTimeout(handle),
 });
@@ -685,6 +694,7 @@ const modelCacheWarmer = createModelCacheWarmer(async () => {
 });
 
 async function stopActiveSession(_reason: string): Promise<void> {
+	await settlePendingStart();
 	const activePlaybackSession = activeSession;
 	const queueItemId = getQueueItemId(activePlaybackSession);
 	if (queueItemId) {
@@ -760,6 +770,7 @@ function isRestrictedUrl(url: string): boolean {
 }
 
 async function preemptManualForWeb(): Promise<CommandResponse> {
+	await settlePendingStart();
 	const manual = activeSession;
 	if (manual?.contentScope !== 'manual') {
 		return { success: true };
@@ -883,46 +894,82 @@ async function startPlayback(input: StartPlaybackInput): Promise<CommandResponse
 	readableSurface.activate(session);
 	await publishSession(session);
 
-	try {
-		if (input.contentScope === 'selection' && input.source.kind === 'tab') {
-			try {
-				await chrome.tabs.sendMessage(input.source.tabId, {
-					action: 'WORD_HIGHLIGHT_SET_SELECTION_SCOPE',
-					sessionId: session.sessionId,
-					selectionText: input.content.content,
-				});
-			} catch (_error) {
-				// Selected-text audio still plays when the page cannot bind a safe DOM range.
-			}
-		}
-		try {
-			await modelCacheWarmer.waitForCurrentWarm();
-		} catch (_error) {
-			// A failed best-effort warm must not prevent the normal offscreen load path.
-		}
-		await setupOffscreen();
-		const playPayload: OffscreenPlayPayload = {
-			sessionId: session.sessionId,
-			article: input.content,
-			voiceStyleId,
-			speed,
-			readableSurface: input.readableSurface,
-			...(input.source.kind === 'tab' ? { contentScope: input.contentScope } : {}),
-			...(input.contentScope === 'manual' ? { panelInstanceId: input.source.panelInstanceId } : {}),
-			...(input.readableSurface === 'document-reader'
-				? { documentTitle: input.source.title?.trim() || (input.content as { title?: string }).title?.trim() || 'Document' }
-				: {}),
-		};
-		observeOffscreenPlay(session.sessionId, {
-			action: 'PLAY',
-			payload: playPayload,
-		});
-		return { success: true };
-	} catch (_error) {
-		await failSession(ERROR_MESSAGES.setup);
-		await closeOffscreenWhenIdle();
-		return { success: false, error: ERROR_MESSAGES.setup };
+	const playPayload: OffscreenPlayPayload = {
+		sessionId: session.sessionId,
+		article: input.content,
+		voiceStyleId,
+		speed,
+		readableSurface: input.readableSurface,
+		...(input.source.kind === 'tab' ? { contentScope: input.contentScope } : {}),
+		...(input.contentScope === 'manual' ? { panelInstanceId: input.source.panelInstanceId } : {}),
+		...(input.readableSurface === 'document-reader'
+			? { documentTitle: input.source.title?.trim() || (input.content as { title?: string }).title?.trim() || 'Document' }
+			: {}),
+	};
+	// The session is live and published, so the command is answered here. Everything below waits on
+	// the model cache and the offscreen document — seconds on a cold start — and must not hold the
+	// session lane, or every surface's state read and control command would block behind it.
+	pendingStart = loadAndPlay(session, playPayload, input).catch(() => undefined);
+	return { success: true };
+}
+
+/**
+ * Waits for the detached phase of the previous start. A read or a PAUSE never needs this, but a
+ * session *transition* does: stopping or checkpointing talks to the offscreen document, and that
+ * document may still be loading for the start this transition is about to replace.
+ */
+async function settlePendingStart(): Promise<void> {
+	const inFlight = pendingStart;
+	if (!inFlight) {
+		return;
 	}
+	await inFlight;
+	if (pendingStart === inFlight) {
+		pendingStart = null;
+	}
+}
+
+/**
+ * Runs outside the session lane. `activeSession` may have moved on by the time each await settles —
+ * a newer start or a STOP can win — so every step is guarded by the session id it was started for.
+ */
+async function loadAndPlay(
+	session: PlaybackSessionSnapshot,
+	playPayload: OffscreenPlayPayload,
+	input: StartPlaybackInput,
+): Promise<void> {
+	if (input.contentScope === 'selection' && input.source.kind === 'tab') {
+		try {
+			await chrome.tabs.sendMessage(input.source.tabId, {
+				action: 'WORD_HIGHLIGHT_SET_SELECTION_SCOPE',
+				sessionId: session.sessionId,
+				selectionText: input.content.content,
+			});
+		} catch (_error) {
+			// Selected-text audio still plays when the page cannot bind a safe DOM range.
+		}
+	}
+	try {
+		await modelCacheWarmer.waitForCurrentWarm();
+	} catch (_error) {
+		// A failed best-effort warm must not prevent the normal offscreen load path.
+	}
+	try {
+		await setupOffscreen();
+	} catch (_error) {
+		await failPendingStart(session.sessionId);
+		return;
+	}
+	if (activeSession?.sessionId !== session.sessionId) {
+		// A newer session or a stop won while the offscreen document was loading. Tearing down reads
+		// and closes shared state, so it belongs back on the session lane.
+		runQueuedEvent(() => closeOffscreenWhenIdle());
+		return;
+	}
+	observeOffscreenPlay(session.sessionId, {
+		action: 'PLAY',
+		payload: playPayload,
+	});
 }
 
 async function startCurrentPage(targetTabId?: number, queueItemId?: string, fallbackUrl?: string): Promise<CommandResponse> {
@@ -1096,7 +1143,7 @@ function observeOffscreenPlay(sessionId: string, command: OffscreenCommand): voi
 			}
 			const audioExportEstimate = response.audioExportEstimate;
 			if (audioExportEstimate) {
-				void enqueue(async () => {
+				runQueuedEvent(async () => {
 					await ensureHydrated();
 					const updatedSession = applyAudioExportEstimate(activeSession, sessionId, audioExportEstimate, Date.now());
 					if (!updatedSession) {
@@ -1135,6 +1182,9 @@ async function getPlaybackState(): Promise<{ session: PlaybackSessionSnapshot | 
 
 async function routeSessionCommand(action: 'PAUSE' | 'PLAY'): Promise<CommandResponse> {
 	await ensureHydrated();
+	// Pausing a session that is still preparing must reach the offscreen document rather than fail,
+	// so wait for the start it belongs to.
+	await settlePendingStart();
 	if (!activeSession) {
 		return { success: false, error: ERROR_MESSAGES.noSession };
 	}
@@ -1175,6 +1225,7 @@ async function openDocumentReader(): Promise<CommandResponse> {
 
 async function changeSpeed(payload: unknown): Promise<CommandResponse> {
 	await ensureHydrated();
+	await settlePendingStart();
 	if (!activeSession) {
 		return { success: false, error: ERROR_MESSAGES.noSession };
 	}
@@ -1597,13 +1648,13 @@ export const handleBackgroundMessage = (
 				return respondFromQueue(() => changeSpeed(msg.payload), sendResponse);
 
 			case 'PLAYBACK_PROGRESS_UPDATE':
-				void enqueue(() => applyProgressMessage(msg));
+				runQueuedEvent(() => applyProgressMessage(msg));
 				break;
 
 			case 'AUDIO_EXPORT_PROGRESS':
 				if (isAudioExportProgressUpdate(msg.progress)) {
 					const progress = msg.progress;
-					void enqueue(async () => {
+					runQueuedEvent(async () => {
 						await ensureHydrated();
 						await audioExportCoordinator.handleProgress(progress);
 						await closeOffscreenWhenIdle();
@@ -1623,7 +1674,7 @@ export const handleBackgroundMessage = (
 
 			case 'READABLE_SURFACE_UPDATE':
 				if (isReadableSurfaceUpdateMessage(msg)) {
-					void enqueue(async () => {
+					runQueuedEvent(async () => {
 						await ensureHydrated();
 						readableSurface.advance(msg);
 					});
@@ -1632,7 +1683,7 @@ export const handleBackgroundMessage = (
 
 			case 'READABLE_SURFACE_CLEAR':
 				if (isReadableSurfaceClearMessage(msg)) {
-					void enqueue(async () => {
+					runQueuedEvent(async () => {
 						await ensureHydrated();
 						await readableSurface.clear(msg.sessionId);
 					});
@@ -1788,7 +1839,7 @@ export const handleBackgroundMessage = (
 chrome.runtime.onMessage.addListener(handleBackgroundMessage);
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-	void enqueue(async () => {
+	runQueuedEvent(async () => {
 		await ensureHydrated();
 		if (pendingQueueNavigation?.tabId === tabId) {
 			await failPendingQueueNavigation(pendingQueueNavigation.itemId);
@@ -1798,7 +1849,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-	void enqueue(async () => {
+	runQueuedEvent(async () => {
 		// Checked on `complete` as well as `loading`: while a navigation is still loading the tab can
 		// still report the URL it is leaving, and that update is the only other chance to notice.
 		if (changeInfo.status !== undefined || changeInfo.url !== undefined) {
@@ -1835,7 +1886,7 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.contextMenus.onClicked.addListener((info, tab) => {
 	if (info.menuItemId === 'readit-read-selection') {
 		if (typeof tab?.id !== 'number') return;
-		void enqueue(async () => {
+		runQueuedEvent(async () => {
 			const [{ result: pageLanguage } = { result: undefined }] = await chrome.scripting
 				.executeScript({
 					target: { tabId: tab.id as number },
@@ -1852,7 +1903,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 			if (!article) {
 				return { success: true };
 			}
-			return startPlayback({
+			const response = await startPlayback({
 				contentScope: 'selection',
 				source: {
 					kind: 'tab',
@@ -1863,6 +1914,13 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 				content: article,
 				readableSurface: 'website-dom',
 			});
+			// Nothing carries this response back to a caller, so a failed start would otherwise leave an
+			// open popup or Side Panel showing the previous state. Publishing the error keeps every open
+			// surface in sync without opening one.
+			if (!response.success) {
+				await publishExtractionFailure(tab.id as number, tab.title, url, response.error || ERROR_MESSAGES.setup);
+			}
+			return response;
 		});
 		return;
 	}
@@ -1871,7 +1929,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 		const url = info.pageUrl || tab?.url || '';
 		const title = tab?.title || '';
 		if (!url || isRestrictedUrl(url)) return;
-		void enqueue(async () => {
+		runQueuedEvent(async () => {
 			await ensureHydrated();
 			const result = addToQueue(playlistQueue, {
 				url,
@@ -1887,7 +1945,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 	}
 
 	if (info.menuItemId === 'readit-play-queue') {
-		void enqueue(async () => {
+		runQueuedEvent(async () => {
 			await ensureHydrated();
 			const nextItem = getNextPending(playlistQueue);
 			if (!nextItem) return { success: false, error: 'Queue trống.' };
@@ -1897,7 +1955,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 	}
 
 	if (info.menuItemId === 'readit-replay-queue') {
-		void enqueue(async () => {
+		runQueuedEvent(async () => {
 			await ensureHydrated();
 			if (playlistQueue.items.length === 0) return { success: false, error: 'Queue trống.' };
 			playlistQueue = requeueAllItems(playlistQueue);
@@ -1938,7 +1996,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onConnect) {
 				if (typeof sessionId !== 'string') {
 					return;
 				}
-				void enqueue(async () => {
+				runQueuedEvent(async () => {
 					await ensureHydrated();
 					await readableSurface.attachDocumentReader({
 						tabId,
@@ -1948,7 +2006,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onConnect) {
 				});
 			});
 			port.onDisconnect.addListener(() => {
-				void enqueue(() => readableSurface.detachDocumentReader(tabId));
+				runQueuedEvent(() => readableSurface.detachDocumentReader(tabId));
 			});
 			return;
 		}

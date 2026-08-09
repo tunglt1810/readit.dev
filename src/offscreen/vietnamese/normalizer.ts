@@ -20,6 +20,25 @@ function originalSpan(tokens: readonly SourceToken[], span: DetectedSpan): strin
 		.join('');
 }
 
+/**
+ * A non-standard word never starts or ends with a bare punctuation mark, so shrink a detected span
+ * off its punctuation edges before expanding it. Without this, a CRF span that swallows a sentence
+ * terminal (e.g. `LSEQ` over `"` + `.`) reads that terminal aloud as "chấm" and, worse, deletes it
+ * from the normalized text — merging two sentences into one run-on that later fails capacity
+ * planning. Punctuation *inside* a span (`TP.HCM`, `PGS.TS`) is untouched.
+ */
+function trimSpanPunctuation(tokens: readonly SourceToken[], span: DetectedSpan): DetectedSpan | null {
+	let startToken = span.startToken;
+	let endToken = span.endToken;
+	while (startToken < endToken && tokens[startToken].kind === 'punctuation') {
+		startToken++;
+	}
+	while (endToken > startToken && tokens[endToken - 1].kind === 'punctuation') {
+		endToken--;
+	}
+	return endToken > startToken ? { type: span.type, startToken, endToken } : null;
+}
+
 const ROMAN_CONTEXT_WORDS = new Set(['mục', 'chương', 'phần', 'quý', 'điều', 'khoản']);
 
 function hasExplicitRomanContext(tokens: readonly SourceToken[], index: number): boolean {
@@ -127,7 +146,9 @@ async function expandParagraph(
 	labels: readonly CheckpointLabel[],
 	dependencies: NormalizationDependencies,
 ): Promise<{ text: string; wordMap: WordMapEntry[]; usedAbbreviationScorer: boolean }> {
-	const spans = reconstructDetectedSpans(labels);
+	const spans = reconstructDetectedSpans(labels)
+		.map((span) => trimSpanPunctuation(paragraph.tokens, span))
+		.filter((span): span is DetectedSpan => span !== null);
 	const spansByStart = new Map(spans.map((span) => [span.startToken, span]));
 	const output: string[] = [];
 	const wordMap: WordMapEntry[] = [];

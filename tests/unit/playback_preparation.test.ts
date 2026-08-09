@@ -130,7 +130,6 @@ test('attaches a word map for both normalized Vietnamese text and plain Latin te
 	);
 });
 
-
 test('consolidates bare Latin, Vietnamese, fallback, and compatibility units before attaching word maps', async () => {
 	const latinBody = 'The paragraph continues with enough content to be independently reliable.';
 	const [latin] = await preparePlaybackUnits(`Heading\n\n${latinBody}`, 'en', null);
@@ -154,7 +153,13 @@ test('consolidates bare Latin, Vietnamese, fallback, and compatibility units bef
 			return {
 				text: vietnameseSpoken,
 				wordMap: [
-					{ originalText: vietnameseHeading, originalStart: 0, originalEnd: 6, spokenStart: 0, spokenEnd: vietnameseHeading.length },
+					{
+						originalText: vietnameseHeading,
+						originalStart: 0,
+						originalEnd: 6,
+						spokenStart: 0,
+						spokenEnd: vietnameseHeading.length,
+					},
 					{
 						originalText: vietnameseBody,
 						originalStart: 7,
@@ -206,7 +211,6 @@ test('consolidates bare Latin, Vietnamese, fallback, and compatibility units bef
 	assert.deepEqual(withoutWordMap([compatibility]), [
 		{
 			text: `标题 ${compatibilityBody}`,
-			synthesisText: `标题. ${compatibilityBody}`,
 			pauseAfterMs: null,
 		},
 	]);
@@ -227,26 +231,23 @@ test('consolidates short English lines into merged speech units with proper synt
 	const listText = `monitor performance across Personal, Private, Corporate and Intermediaries segments\n\ntrack deposit growth and funding mix\n\nmanage lending portfolio risk and profitability\n\nimprove RM productivity\n\nstrengthen AML lifecycle monitoring\n\nprovide consistent management reporting`;
 	const listUnits = await preparePlaybackUnits(listText, 'en', null);
 	assert.ok(listUnits.length <= 3, `Expected at most 3 units for list items, got ${listUnits.length}`);
-	assert.ok(listUnits[0].synthesisText?.includes('.'));
+	assert.equal(listUnits.map((unit) => unit.text).join(' '), listText.replace(/\s+/gu, ' ').trim());
+	assert.ok(listUnits.every((unit) => (unit.synthesisText ?? unit.text).length <= 300));
 });
 
+test('merges short CJK units without injecting ASCII punctuation into null-pause compatibility paths', async () => {
+	const first = '这是第一段，包含足够多的中文字符以避免短片段合并，并且以中文句号结束。';
+	const second = '这是第二段，包含足够多的中文字符以避免短片段合并，并且也以中文句号结束。';
+	const units = await preparePlaybackUnits(`${first}\n\n${second}`, 'zh', null);
 
-test('preserves CJK sentence boundaries without injecting ASCII punctuation', async () => {
-	const text =
-		'这是第一段，包含足够多的中文字符以避免短片段合并，并且以中文句号结束。\n\n这是第二段，包含足够多的中文字符以避免短片段合并，并且也以中文句号结束。';
-	const units = await preparePlaybackUnits(text, 'zh', null);
-
-	assert.deepEqual(withoutWordMap(units), [
-		{ text: '这是第一段，包含足够多的中文字符以避免短片段合并，并且以中文句号结束。', pauseAfterMs: null },
-		{ text: '这是第二段，包含足够多的中文字符以避免短片段合并，并且也以中文句号结束。', pauseAfterMs: null },
-	]);
+	assert.deepEqual(withoutWordMap(units), [{ text: `${first} ${second}`, pauseAfterMs: null }]);
 	assert.ok(units.every((unit) => !unit.synthesisText?.includes('。.')));
 });
-test('preserves Japanese terminal punctuation without treating it as an unpunctuated list', async () => {
-	const text =
-		'最初の段落は十分に長く、短い断片として結合されるべきではありません！\n\n次の段落も十分に長く、独立した文として保持されるべきです。';
-	const units = await preparePlaybackUnits(text, 'ja', null);
+test('merges short Japanese units without treating null pauses as audible', async () => {
+	const first = '最初の段落は十分に長く、短い断片として結合されるべきではありません！';
+	const second = '次の段落も十分に長く、独立した文として保持されるべきです。';
+	const units = await preparePlaybackUnits(`${first}\n\n${second}`, 'ja', null);
 
-	assert.equal(units.length, 2);
+	assert.deepEqual(withoutWordMap(units), [{ text: `${first} ${second}`, pauseAfterMs: null }]);
 	assert.ok(units.every((unit) => !unit.synthesisText?.includes('！.')));
 });
