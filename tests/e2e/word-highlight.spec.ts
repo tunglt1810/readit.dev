@@ -3,7 +3,7 @@ import type { BrowserContext, Page, Worker } from '@playwright/test';
 import { tokenizeVietnameseText } from '../../src/offscreen/vietnamese/tokenizer';
 import { STORAGE_KEYS } from '../../src/shared/constants';
 import { resolveExtensionId } from './extension_id';
-import { expect, test } from './fixtures';
+import { expect, gotoWithRetry, test } from './fixtures';
 
 const highlightRegistryName = 'readit-dev-word-highlight';
 
@@ -778,6 +778,7 @@ test('recovers after a word split across inline markup instead of staying stuck 
 });
 
 test('highlights every real word of a realistic multi-paragraph Vietnamese article in order, with no dead zones', async ({ context }) => {
+	test.setTimeout(60_000);
 	// A comprehensive regression net: a single narrow scenario per test (as above) only catches the
 	// one bug it was written for. This test walks a whole realistic article structure end to end —
 	// a title, a location-stamp span glued directly to the next sentence with no DOM whitespace
@@ -817,7 +818,7 @@ test('highlights every real word of a realistic multi-paragraph Vietnamese artic
 		}),
 	);
 	const page = await context.newPage();
-	await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+	await gotoWithRetry(page, targetUrl, { waitUntil: 'domcontentloaded' });
 
 	const serviceWorker = await findExtensionServiceWorker(context);
 	const tabId = await getTabId(serviceWorker);

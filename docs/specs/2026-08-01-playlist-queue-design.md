@@ -2,10 +2,7 @@
 
 ## Overview
 
-Thêm tính năng **Queue đọc liên tiếp** cho readit.dev: người dùng có thể thêm
-nhiều URL/tab vào hàng chờ; khi đọc xong một bài, extension tự chuyển tab
-hiện tại sang URL tiếp theo và bắt đầu đọc. Queue được persist vào
-`chrome.storage.local` và hiển thị trong Side Panel.
+Adds a **consecutive queue reading** capability to readit.dev: users can add multiple URLs/tabs to a queue; when reading completes for an article, the extension automatically navigates the active tab to the next URL and begins reading. The queue is persisted to `chrome.storage.local` and displayed in the Side Panel.
 
 ---
 
@@ -16,9 +13,9 @@ hiện tại sang URL tiếp theo và bắt đầu đọc. Queue được persis
 ```ts
 interface QueueItem {
     id: string;            // crypto.randomUUID()
-    url: string;           // URL gốc, dùng để hiển thị và navigate
-    normalizedUrl: string; // URL đã normalize, dùng để check trùng
-    title: string;         // title lấy từ tab hoặc domain khi dán URL thủ công
+    url: string;           // Original URL used for display and navigation
+    normalizedUrl: string; // Normalized URL used for duplicate checking
+    title: string;         // Title from tab, or domain name when pasting URL manually
     addedAt: number;       // Date.now()
     status: 'pending' | 'playing' | 'done' | 'error';
 }
@@ -31,21 +28,19 @@ interface PlaylistQueue {
 
 ### URL Normalization
 
-Normalize được thực hiện **một lần duy nhất khi add**, kết quả lưu vào
-`normalizedUrl`. Duplicate check so sánh trên `normalizedUrl`.
+Normalization is performed **once upon addition**, and the result is stored in `normalizedUrl`. Duplicate checks compare on `normalizedUrl`.
 
 ```ts
 function normalizeQueueUrl(raw: string): string {
-    const url = new URL(raw); // throws nếu URL không hợp lệ
-    url.hash = '';            // bỏ fragment (#section)
-    return url.href;          // giữ nguyên path và query params
+    const url = new URL(raw); // throws if URL is invalid
+    url.hash = '';            // strip fragment (#section)
+    return url.href;          // retain path and query params
 }
 ```
 
-Query params được giữ để phân biệt các trang phân trang. Fragment bị bỏ vì
-không ảnh hưởng đến nội dung bài.
+Query parameters are retained to distinguish paginated pages. Fragments are removed as they do not change article content.
 
-### Storage key
+### Storage keys
 
 ```ts
 STORAGE_KEYS.PLAYLIST_QUEUE = 'readit_playlist_queue'; // add to constants.ts
@@ -54,26 +49,26 @@ STORAGE_KEYS.PENDING_QUEUE_NAVIGATION = 'readit_pending_queue_navigation';
 
 ---
 
-## State Machine của QueueItem.status
+## QueueItem.status State Machine
 
 ```
-PENDING  -> PLAYING  (background bắt đầu đọc item này)
-PLAYING  -> DONE     (session kết thúc tự nhiên: completedNaturally = true)
-PLAYING  -> ERROR    (extract article thất bại)
-PLAYING  -> PENDING  (user skip)
+PENDING  -> PLAYING  (background begins reading this item)
+PLAYING  -> DONE     (session completes naturally: completedNaturally = true)
+PLAYING  -> ERROR    (article extraction fails)
+PLAYING  -> PENDING  (user skips item)
 DONE     -> PENDING  (user clicks Re-add)
 ERROR    -> PENDING  (user clicks Re-add)
 ```
 
 ---
 
-## Module mới: src/background/playlist_queue.ts
+## New Module: src/background/playlist_queue.ts
 
-Trách nhiệm duy nhất: quản lý state của queue. Không biết gì về playback.
+Sole responsibility: manage queue state. Has no knowledge of playback.
 
 ### API
 
-Tất cả hàm mutate là **pure function**. Chỉ saveQueue / loadQueue có side effect.
+All state mutations are **pure functions**. Only `saveQueue` / `loadQueue` produce side effects.
 
 ```ts
 export function normalizeQueueUrl(raw: string): string
@@ -93,7 +88,7 @@ export function saveQueue(queue: PlaylistQueue): Promise<void>
 export function loadQueue(): Promise<PlaylistQueue>
 ```
 
-### Duplicate check trong addToQueue
+### Duplicate check in addToQueue
 
 ```ts
 const normalizedUrl = normalizeQueueUrl(item.url);
@@ -103,54 +98,53 @@ const isDuplicate = queue.items.some(
 if (isDuplicate) return { error: 'DUPLICATE_URL' };
 ```
 
-Items done không bị check trùng — cho phép re-add bài đã đọc.
+Completed (`done`) items are excluded from duplicate checking — allowing re-adding previously read articles.
 
 ---
 
-## Integration vào background.ts
+## Integration into background.ts
 
-### Biến module-level mới
+### New module-level variable
 
 ```ts
 let playlistQueue: PlaylistQueue = createPlaylistQueue();
 ```
 
-Khởi tạo từ storage khi background hydrate (cùng với activeSession).
+Initialized from storage during background hydration (alongside `activeSession`).
 
-### Phân biệt stop do user vs stop tự nhiên
+### Distinguishing user stop vs natural completion
 
-Thêm optional field vào PlaybackProgress:
+Add optional field to `PlaybackProgress`:
 
 ```ts
 interface PlaybackProgress {
-    // ...fields hiện tại...
-    completedNaturally?: boolean; // true khi TTS đọc hết toàn bộ segments
+    // ...existing fields...
+    completedNaturally?: boolean; // true when TTS finishes reading all segments
 }
 ```
 
-Offscreen set completedNaturally: true khi kết thúc tự nhiên.
+Offscreen sets `completedNaturally: true` upon natural completion.
 
 ### Auto-advance logic
 
-Khi background nhận status: 'stopped' với completedNaturally: true và
-activeSession là item đang playing trong queue:
+When background receives `status: 'stopped'` with `completedNaturally: true` and `activeSession` matches the `playing` item in the queue:
 
-1. markDone(playlistQueue, activeItemId) -> lưu queue
-2. getNextPending(playlistQueue) -> lấy item tiếp theo
-3. Nếu có:
-   - markPlaying(playlistQueue, nextItem.id) -> lưu queue
-   - chrome.tabs.update(activeTabId, { url: nextItem.url })
-   - Chờ chrome.tabs.onUpdated status: 'complete' -> trigger startPlayback
-4. Broadcast PLAYLIST_QUEUE_UPDATE sau mỗi thay đổi
+1. `markDone(playlistQueue, activeItemId)` -> save queue
+2. `getNextPending(playlistQueue)` -> get next item
+3. If next item exists:
+   - `markPlaying(playlistQueue, nextItem.id)` -> save queue
+   - `chrome.tabs.update(activeTabId, { url: nextItem.url })`
+   - Wait for `chrome.tabs.onUpdated` `status: 'complete'` -> trigger `startPlayback`
+4. Broadcast `PLAYLIST_QUEUE_UPDATE` after every state change
 
-### Messages mới Side Panel -> Background
+### New Messages Side Panel -> Background
 
 ```ts
 { action: 'ADD_TAB_TO_QUEUE' }
-// background lấy title + url từ tab active
+// background retrieves title + url from active tab
 
 { action: 'ADD_URL_TO_QUEUE'; payload: { url: string } }
-// title tạm = hostname
+// fallback title = hostname
 
 { action: 'REMOVE_QUEUE_ITEM'; payload: { id: string } }
 
@@ -169,9 +163,9 @@ activeSession là item đang playing trong queue:
 
 ## Side Panel UI
 
-Queue card thêm sau manual-text-card, trước SettingsCard.
+Queue card added after `manual-text-card`, before `SettingsCard`.
 
-Layout (vertical card, theo pattern hiện có):
+Layout (vertical card, following existing patterns):
 
 ```
 <section class="queue-card">
@@ -183,7 +177,7 @@ Layout (vertical card, theo pattern hiện có):
     <input type="url" placeholder="Dán URL..." />
     <button>Thêm</button>
   </div>
-  <!-- inline error nếu trùng URL -->
+  <!-- inline error on duplicate URL -->
 
   <ul class="queue-list">
     <!-- queue-item: data-status = pending | playing | done | error -->
@@ -198,8 +192,7 @@ Layout (vertical card, theo pattern hiện có):
 </section>
 ```
 
-Side Panel subscribe PLAYLIST_QUEUE_UPDATE trong useEffect theo pattern
-subscribePlaybackState hiện tại.
+Side Panel subscribes to `PLAYLIST_QUEUE_UPDATE` in `useEffect` following the existing `subscribePlaybackState` pattern.
 
 ---
 
@@ -207,48 +200,41 @@ subscribePlaybackState hiện tại.
 
 ### Unit tests (pnpm test:unit)
 
-- normalizeQueueUrl: bỏ fragment, giữ query, throw với URL invalid
-- addToQueue: duplicate check đúng với pending/playing, bỏ qua done
-- State transitions: markDone, markError, requeueItem
-- getNextPending: trả item pending đầu tiên, null nếu queue trống/hết pending
+- `normalizeQueueUrl`: strips fragment, keeps query, throws on invalid URL
+- `addToQueue`: duplicate check accurate for pending/playing, ignores done items
+- State transitions: `markDone`, `markError`, `requeueItem`
+- `getNextPending`: returns first pending item, null if queue is empty or no pending items remain
 
 ### E2E tests (pnpm test:e2e)
 
-- Thêm tab hiện tại -> item xuất hiện trong Side Panel
-- Thêm URL thủ công -> item với title = hostname
-- Thêm URL trùng -> error inline, không thêm item mới
-- Đọc xong bài đầu -> tab navigate sang URL thứ hai -> bắt đầu đọc
-- Xóa item -> item biến mất; Re-add done -> về pending
-- Queue persist sau khi reload extension
+- Add current tab -> item appears in Side Panel
+- Add URL manually -> item added with title = hostname
+- Add duplicate URL -> inline error shown, no new item added
+- Complete reading first article -> tab navigates to second URL -> starts reading
+- Remove item -> item disappears; Re-add done item -> moves to pending
+- Queue persists across extension reload
 
 ---
 
 ## Explicitly out of scope
 
 - Drag-to-reorder
-- Auto-fetch title từ URL (title tạm = hostname cho MVP)
-- Queue từ context menu hoặc keyboard shortcut
+- Auto-fetching title from URL (fallback title = hostname for MVP)
+- Queueing from context menu or keyboard shortcut
 - Loop / shuffle mode
 
 ---
 
 ## Review corrections 2026-08-02
 
-The following invariants supplement and take precedence over the MVP
-description above wherever navigation ownership or lifecycle is ambiguous.
+The following invariants supplement and take precedence over the MVP description above wherever navigation ownership or lifecycle is ambiguous.
 
 ### Queue ownership and playback session
 
-- Only a tab playback session may carry `queueItemId?: string`. Manual
-  playback and selected-text playback must not claim queue ownership.
-- Ordinary `START_CURRENT_PAGE` must not claim a queue item merely because the
-  current URL matches `normalizedUrl`. Only Play/Replay queue flows pass
-  explicit ownership through `queueItemId`.
-- `markPlaying` must demote the current `playing` item to `pending`, ensuring
-  that the queue has at most one `playing` item.
-- When natural completion is received, the background may call `markDone` only
-  for the item whose id equals `activeSession.queueItemId`. Manual, selection,
-  and tab sessions without that id must not auto-advance the queue.
+- Only a tab playback session may carry `queueItemId?: string`. Manual playback and selected-text playback must not claim queue ownership.
+- Ordinary `START_CURRENT_PAGE` must not claim a queue item merely because the current URL matches `normalizedUrl`. Only Play/Replay queue flows pass explicit ownership through `queueItemId`.
+- `markPlaying` must demote the current `playing` item to `pending`, ensuring that the queue has at most one `playing` item.
+- When natural completion is received, the background may call `markDone` only for the item whose id equals `activeSession.queueItemId`. Manual, selection, and tab sessions without that id must not auto-advance the queue.
 
 ### Pending navigation and service-worker recovery
 
@@ -262,24 +248,14 @@ interface PendingQueueNavigation {
 }
 ```
 
-- Queue flows select the active tab first; a flow that continues reading a
-  specific tab may pass an explicit `tabId`.
-- The background must persist pending navigation before `tabs.update` and
-  hydrate it before processing `tabs.onUpdated`.
-- Playback may start only when `tabId` and the actual URL exactly match
-  `expectedUrl` after normalization (hash removed, query retained). A redirect
-  to a different URL is a mismatch and must not start the wrong content.
-- A closed tab, navigation mismatch, navigation error, or pending state whose
-  owner is missing after service-worker restart must move the correct item to
-  `error`, clear pending state, and broadcast the queue update.
-- An `error` item can always be Re-added to `pending`; a `done` item keeps the
-  existing Re-add behavior.
+- Queue flows select the active tab first; a flow that continues reading a specific tab may pass an explicit `tabId`.
+- The background must persist pending navigation before `tabs.update` and hydrate it before processing `tabs.onUpdated`.
+- Playback may start only when `tabId` and the actual URL exactly match `expectedUrl` after normalization (hash removed, query retained). A redirect to a different URL is a mismatch and must not start the wrong content.
+- A closed tab, navigation mismatch, navigation error, or pending state whose owner is missing after service-worker restart must move the correct item to `error`, clear pending state, and broadcast the queue update.
+- An `error` item can always be Re-added to `pending`; a `done` item keeps the existing Re-add behavior.
 
 ### Verification additions
 
-- Ownership unit tests: the queue item id appears only on tab sessions, and
-  completion cannot use a different `playing` item.
-- Navigation unit tests: active-tab selection, `tabId` validation, exact
-  normalized URL matching, and mismatch/close cleanup.
-- The web-to-PDF queue E2E test must preserve item ownership; the Side Panel
-  must display the localized PDF error and allow Re-add for the failed item.
+- Ownership unit tests: the queue item id appears only on tab sessions, and completion cannot use a different `playing` item.
+- Navigation unit tests: active-tab selection, `tabId` validation, exact normalized URL matching, and mismatch/close cleanup.
+- The web-to-PDF queue E2E test must preserve item ownership; the Side Panel must display the localized PDF error and allow Re-add for the failed item.

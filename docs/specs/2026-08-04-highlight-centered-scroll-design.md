@@ -1,105 +1,105 @@
-# Thiết kế: Cuộn Căn Giữa Highlight & Dừng Thông Minh 3s Khi Cuộn Tay
+# Design: Centered Highlight Scrolling & Smart 3s Manual Scroll Pause
 
-## 1. Tổng quan & Mục tiêu
+## 1. Overview & Goals
 
-Khi ứng dụng highlight từ/câu đang đọc (TTS playback), trải nghiệm hiện tại gặp 2 hạn chế:
-- **Cắt viền / Cuộn không hợp lý**: Đoạn highlight chỉ được cuộn khi trôi lọt hẳn ra khỏi màn hình, và được đẩy vào sát mép trên hoặc dưới (do dùng `block: 'nearest'`), khiến mắt người đọc phải nhìn xuống đáy hoặc sát đỉnh màn hình.
-- **Tranh chấp cuộn với người dùng**: Nếu người dùng cuộn tay xem nội dung xung quanh trong khi đang phát đọc, extension tự động cuộn giật màn hình lại về từ highlight mới.
+When the application highlights the word/sentence currently being read during TTS playback, the existing experience faces two limitations:
+- **Edge Clipping / Suboptimal Scrolling**: Highlighted text is only scrolled when it drifts completely off-screen, and is pushed directly against the top or bottom edge (due to `block: 'nearest'`), forcing the reader's eyes to look at the very bottom or top of the viewport.
+- **Scroll Conflict with User**: If the user manually scrolls to view surrounding content during playback, the extension forcibly scrolls the viewport back to the newly highlighted word.
 
-**Mục tiêu**:
-1. Đưa vị trí highlight về **chính giữa màn hình** khi đi ra ngoài dải an toàn (20% - 80% viewport).
-2. Tự động tạm ngưng cuộn 3 giây nếu phát hiện người dùng tự cuộn tay **trong lúc đang đọc**.
+**Goals**:
+1. Center the highlighted word/range at **the middle of the viewport** whenever it drifts outside the safe zone (20% - 80% of viewport height).
+2. Automatically pause auto-scrolling for 3 seconds whenever manual user scrolling is detected **during playback**.
 
 ---
 
-## 2. Chi tiết Kỹ thuật & Thuật toán
+## 2. Technical Details & Algorithms
 
-### 2.1. Căn giữa Highlight (Centering Math)
-- **Vùng an toàn (Safe Zone)**: `TOP_THRESHOLD = 0.20` và `BOTTOM_THRESHOLD = 0.80`.
-  > Giá trị 20%/80% khớp với ngưỡng mà code hiện tại đã dùng trong cả `word_highlight.ts` lẫn `App.tsx`, tránh thay đổi tần suất cuộn so với trước.
-- **Điều kiện kích hoạt cuộn**:
-  Giả sử `rect` là `getBoundingClientRect()` của phần tử/range highlight hiện tại, tâm của highlight là:
+### 2.1. Centering Math
+- **Safe Zone**: `TOP_THRESHOLD = 0.20` and `BOTTOM_THRESHOLD = 0.80`.
+  > The 20%/80% threshold matches the existing bounds used in both `word_highlight.ts` and `App.tsx`, preserving scrolling frequency.
+- **Scroll Trigger Condition**:
+  Let `rect` be `getBoundingClientRect()` of the current highlight element/range. The vertical center of the highlight is:
   $$\text{targetY} = \text{rect.top} + \frac{\text{rect.height}}{2}$$
-  Kích hoạt cuộn khi $\text{targetY} < 0.20 \times \text{window.innerHeight}$ hoặc $\text{targetY} > 0.80 \times \text{window.innerHeight}$.
-- **Khoảng cách cuộn ($\Delta Y$)**:
+  Trigger scrolling when $\text{targetY} < 0.20 \times \text{window.innerHeight}$ or $\text{targetY} > 0.80 \times \text{window.innerHeight}$.
+- **Scroll Offset ($\Delta Y$)**:
   $$\Delta Y = \text{targetY} - \frac{\text{window.innerHeight}}{2}$$
-- **Hiệu ứng cuộn**:
-  Sử dụng `window.scrollBy({ top: deltaY, behavior })` với `behavior` ưu tiên `'smooth'`, ngoại trừ trường hợp hệ thống bật `prefers-reduced-motion: reduce` sẽ dùng `'auto'`.
-  `prefers-reduced-motion` được kiểm tra tại mỗi lần gọi cuộn (không cache), vì user có thể thay đổi setting giữa chừng.
+- **Scroll Behavior**:
+  Use `window.scrollBy({ top: deltaY, behavior })` with `behavior` defaulting to `'smooth'`, except when `prefers-reduced-motion: reduce` is enabled on the OS, in which case `behavior: 'auto'` is used.
+  `prefers-reduced-motion` is checked on every scroll invocation (un-cached) so mid-session OS setting changes are immediately respected.
 
-### 2.2. Cơ chế Dừng Thông Minh 3s (Smart 3s Pause)
+### 2.2. Smart 3s Pause Mechanism
 
-#### 2.2.1. Xác định trạng thái "đang phát" (Playback State Source)
+#### 2.2.1. Playback State Source
 
-Hai integration point có cách khác nhau để biết TTS đang phát:
+The two integration points determine TTS playback state as follows:
 
-| Context | Nguồn trạng thái | Giải thích |
-|---------|-------------------|------------|
-| **Content script** (`word_highlight.ts`) | Khi nhận `WORD_HIGHLIGHT_INIT` hợp lệ, gọi `setPlaybackState(true)` một lần cho session; gọi `setPlaybackState(false)` khi nhận message `WORD_HIGHLIGHT_CLEAR` hoặc khi `disposeCurrentHighlightSession()`. | Content script không nhận message pause/resume riêng — nó chỉ nhận `WORD_HIGHLIGHT_UPDATE` (mỗi từ mới) và `WORD_HIGHLIGHT_CLEAR` (kết thúc). Khi pause, background đơn giản ngừng gửi UPDATE. Sau 3s không có UPDATE mới, pause manager tự hết hiệu lực. |
-| **Reader view** (`App.tsx`) | `status === 'playing'` từ `documentSession?.status` | Reader view có trực tiếp trạng thái playback qua state. |
+| Context | State Source | Explanation |
+|---------|--------------|-------------|
+| **Content script** (`word_highlight.ts`) | Calls `setPlaybackState(true)` once per session upon receiving a valid `WORD_HIGHLIGHT_INIT`; calls `setPlaybackState(false)` upon receiving `WORD_HIGHLIGHT_CLEAR` or during `disposeCurrentHighlightSession()`. | The content script does not receive distinct pause/resume messages — it receives `WORD_HIGHLIGHT_UPDATE` (per word) and `WORD_HIGHLIGHT_CLEAR` (end). When paused, background simply stops emitting updates. After 3s without updates, the pause manager naturally expires. |
+| **Reader view** (`App.tsx`) | `status === 'playing'` from `documentSession?.status` | Reader view directly accesses playback status via React state. |
 
-#### 2.2.2. Chi tiết hoạt động
+#### 2.2.2. Operational Details
 
-- **Ràng buộc trạng thái**: Cơ chế 3s chỉ hoạt động khi trạng thái đọc TTS đang phát. Nếu không đọc, event listener vẫn tồn tại nhưng `onUserInteraction()` sẽ no-op.
-- **Bắt sự kiện cuộn tay**:
-  - Đăng ký sự kiện: `wheel`, `touchmove`, và các phím cuộn trang (`PageDown`, `PageUp`, `ArrowDown`, `ArrowUp`, `Space`).
-  - Khi có thao tác người dùng trong lúc đọc:
-    1. Gọi `pauseManager.onUserInteraction()`.
-    2. Manager ghi nhận `pausedUntil = now + 3000ms`.
-    3. Mỗi lần `performCenteredScroll` được gọi, nó check `isPaused()` → nếu `now < pausedUntil` thì bỏ qua cuộn.
-  - Nếu user cuộn thêm lần nữa trước khi hết 3s, `pausedUntil` được đẩy ra thêm 3s (debounce behavior).
-- **Bỏ qua cuộn tự động**: Trong khi `isPaused() === true`, hàm `performCenteredScroll` sẽ `return false` sớm, không can thiệp vào vị trí màn hình người dùng.
-- **Reset trạng thái**: Khi `setPlaybackState(false)`, xóa sạch `pausedUntil` ngay lập tức.
+- **State Constraint**: The 3s pause mechanism operates only while TTS playback state is active (`playing`). When not playing, event listeners remain attached but `onUserInteraction()` no-ops.
+- **Capturing Manual Scroll Events**:
+  - Registered events: `wheel`, `touchmove`, and page scroll keys (`PageDown`, `PageUp`, `ArrowDown`, `ArrowUp`, `Space`).
+  - Upon user interaction during playback:
+    1. Call `pauseManager.onUserInteraction()`.
+    2. Manager records `pausedUntil = now + 3000ms`.
+    3. Each time `performCenteredScroll` is invoked, it checks `isPaused()` → if `now < pausedUntil`, scrolling is skipped.
+  - If the user scrolls again before 3s elapses, `pausedUntil` extends by an additional 3s (debounce behavior).
+- **Skipping Auto-Scroll**: While `isPaused() === true`, `performCenteredScroll` returns early (`return false`) without altering the user's viewport position.
+- **State Reset**: When `setPlaybackState(false)` is called, `pausedUntil` is cleared immediately.
 
-#### 2.2.3. Lifecycle của Event Listeners
+#### 2.2.3. Event Listener Lifecycle
 
-| Context | Attach | Detach | Lý do |
-|---------|--------|--------|-------|
-| **Content script** | Khi `installWordHighlight()` chạy (1 lần duy nhất khi content script inject vào trang) | Khi page unload (content script bị destroy cùng trang) | Content script sống suốt đời trang. Listener luôn tồn tại nhưng chỉ có hiệu lực khi `isPlaying === true` trong manager. |
-| **Reader view** | Trong `useEffect` với dependency `[status]` khi `status === 'playing'` | Trong cleanup function của cùng `useEffect` | React lifecycle — clean attach/detach theo playback state. |
+| Context | Attach | Detach | Rationale |
+|---------|--------|--------|-----------|
+| **Content script** | Inside `installWordHighlight()` (runs once when content script is injected) | On page unload (content script destroyed with page) | Content script lives for the page lifecycle. Listener remains attached constantly but only activates when `isPlaying === true` inside the manager. |
+| **Reader view** | Inside `useEffect` with `[status]` dependency when `status === 'playing'` | Inside cleanup function of the same `useEffect` | Standard React lifecycle — clean attach/detach aligned with playback state. |
 
-> **Tại sao content script không detach khi clear session?**
-> Content script có thể nhận session mới bất kỳ lúc nào (user bấm play lại). Attach/detach liên tục tạo churn không cần thiết. Thay vào đó, `onUserInteraction()` check `isPlaying` bên trong — nếu false thì no-op, chi phí gần bằng 0.
+> **Why doesn't the content script detach when clearing a session?**
+> The content script may receive a new playback session at any time (e.g. user clicks play again). Continual attach/detach adds unnecessary DOM churn. Instead, `onUserInteraction()` checks internal `isPlaying` — if false, cost is near zero.
 
 ---
 
-## 3. Cấu trúc Component & Ảnh hưởng File
+## 3. Component Architecture & Affected Files
 
 ### 3.1. [NEW] `src/shared/scroll_helper.ts`
-Tạo helper module tập trung cung cấp:
-- `calculateCenteredScrollOffset(rect, viewportHeight, topThreshold?, bottomThreshold?)`: Pure function tính toán. Default thresholds 0.20/0.80.
-- `UserScrollPauseManager`: Class quản lý trạng thái 3s pause. Methods: `setPlaybackState(isPlaying)`, `onUserInteraction()`, `isPaused()`.
-- `performCenteredScroll(rect, viewportHeight, pauseManager?, scrollFn?, prefersReducedMotion?)`: Orchestrator kết hợp calculation + pause check + scroll execution.
+Creates a centralized helper module providing:
+- `calculateCenteredScrollOffset(rect, viewportHeight, topThreshold?, bottomThreshold?)`: Pure calculation function. Default thresholds 0.20/0.80.
+- `UserScrollPauseManager`: Class managing 3s pause state. Methods: `setPlaybackState(isPlaying)`, `onUserInteraction()`, `isPaused()`.
+- `performCenteredScroll(rect, viewportHeight, pauseManager?, scrollFn?, prefersReducedMotion?)`: Orchestrator combining calculation + pause check + scroll execution.
 
 ### 3.2. [MODIFY] `src/content/word_highlight.ts`
-- Thay thế hàm `scrollIntoViewIfNeeded` cũ bằng gọi `performCenteredScroll` từ `scroll_helper`.
-- Thêm module-level `scrollPauseManager` instance.
-- Gọi `scrollPauseManager.setPlaybackState(true)` một lần khi nhận `WORD_HIGHLIGHT_INIT` hợp lệ để bắt đầu session playback; không ghi lại trạng thái trong đường hot path cuộn từng từ.
-- Gọi `scrollPauseManager.setPlaybackState(false)` trong `disposeCurrentHighlightSession()`.
-- Đăng ký `wheel`, `touchmove`, `keydown` listeners 1 lần trong `installWordHighlight()`, handler gọi `scrollPauseManager.onUserInteraction()`.
+- Replace legacy `scrollIntoViewIfNeeded` with `performCenteredScroll` from `scroll_helper`.
+- Add module-level `scrollPauseManager` instance.
+- Call `scrollPauseManager.setPlaybackState(true)` once when receiving a valid `WORD_HIGHLIGHT_INIT` to start the playback session; do not re-record state in the per-word hot path.
+- Call `scrollPauseManager.setPlaybackState(false)` in `disposeCurrentHighlightSession()`.
+- Register `wheel`, `touchmove`, `keydown` listeners once in `installWordHighlight()`, handler invoking `scrollPauseManager.onUserInteraction()`.
 
 ### 3.3. [MODIFY] `src/reader/App.tsx`
-- Import `performCenteredScroll` và `UserScrollPauseManager`.
-- Tạo `useRef<UserScrollPauseManager>` để giữ instance ổn định qua renders.
-- Trong `useEffect([status])`: gọi `manager.setPlaybackState(status === 'playing')`, attach/detach scroll listeners.
-- Trong `useEffect([currentWordIndex, wordRanges])`: thay khối scroll cũ bằng `performCenteredScroll(...)`.
+- Import `performCenteredScroll` and `UserScrollPauseManager`.
+- Create `useRef<UserScrollPauseManager>` to maintain instance stability across renders.
+- Inside `useEffect([status])`: call `manager.setPlaybackState(status === 'playing')`, attach/detach scroll listeners.
+- Inside `useEffect([currentWordIndex, wordRanges])`: replace legacy scroll block with `performCenteredScroll(...)`.
 
 ---
 
-## 4. Kế hoạch Kiểm thử (Verification Plan)
+## 4. Verification Plan
 
 ### Automated Tests
-- Unit tests cho `calculateCenteredScrollOffset`: boundary cases, edge cases (rect.height = 0, viewport nhỏ).
-- Unit tests cho `UserScrollPauseManager`: no-op when not playing, pause duration, debounce on repeated interaction, reset on stop.
-- Unit tests cho `performCenteredScroll`: integration of pause + calculation + scroll invocation.
-- Chạy build TypeScript: `pnpm build`
-- Chạy unit tests: `pnpm test:unit`
+- Unit tests for `calculateCenteredScrollOffset`: boundary cases, edge cases (`rect.height = 0`, small viewport).
+- Unit tests for `UserScrollPauseManager`: no-op when not playing, pause duration, debounce on repeated interaction, reset on stop.
+- Unit tests for `performCenteredScroll`: integration of pause + calculation + scroll invocation.
+- TypeScript build check: `pnpm build`
+- Unit test execution: `pnpm test:unit`
 
 ### Manual Verification
-1. Mở trang web có nội dung dài, bật đọc TTS.
-2. Kiểm tra khi highlight trôi xuống dưới 80% màn hình, trang web cuộn mượt đưa dòng highlight về chính giữa màn hình.
-3. Khi đang đọc, dùng chuột/touchpad tự cuộn trang lên trên hoặc xuống dưới: Xác nhận extension tạm dừng tự động cuộn trong 3 giây.
-4. Sau 3 giây không thao tác cuộn: Xác nhận ở từ highlight tiếp theo, extension tự động cuộn căn giữa lại bình thường.
-5. Khi không đọc TTS, thử cuộn trang: Xác nhận cờ cuộn không bị kích hoạt vô ích (no console errors, no unexpected scrolls).
-6. Bật `prefers-reduced-motion: reduce` trong OS → xác nhận cuộn dùng `behavior: 'auto'` (không animation).
-7. Trong Reader View: pause TTS → cuộn tay → resume → xác nhận cuộn tự động hoạt động lại ngay (không chờ 3s vì pause đã reset state).
+1. Open a long web page and start TTS reading.
+2. Verify that when highlighted text drifts below 80% of the viewport, the page scrolls smoothly to center the highlight line.
+3. During reading, manually scroll up or down using mouse/touchpad: Confirm the extension pauses auto-scrolling for 3 seconds.
+4. After 3 seconds of no scroll interaction: Confirm the next highlighted word resumes smooth centered scrolling.
+5. When TTS is not reading, manually scroll the page: Confirm scroll flags do not trigger unnecessarily (no console errors, no unexpected scrolls).
+6. Enable `prefers-reduced-motion: reduce` in OS settings → confirm scrolling uses `behavior: 'auto'` (no animation).
+7. In Reader View: pause TTS → manual scroll → resume → confirm auto-scrolling resumes immediately (without waiting 3s, as pause reset the state).

@@ -121,6 +121,8 @@
 	"queueErrorNoPending": "Queue không có bài nào đang chờ.",
 	"queueErrorEmpty": "Queue trống.",
 	"queueErrorNavigationFailed": "Không thể điều hướng đến trang.",
+	"mediaSessionSelectedText": "Đoạn văn bản đã chọn",
+	"mediaSessionManualText": "Văn bản tự nhập",
 	"voiceStyles": {
 		"M1": "Nam 1 (Trầm)",
 		"M2": "Nam 2 (Ấm)",

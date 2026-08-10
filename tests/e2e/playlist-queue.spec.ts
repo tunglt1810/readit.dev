@@ -203,28 +203,108 @@ startxref
 				)
 				.not.toBeNull();
 		}
-		await expect.poll(
-			async () => {
-				const result = await worker?.evaluate(async () => {
-					const res = await chrome.storage.session.get('readit_playback_session');
-					return (res as Record<string, { status?: string }>).readit_playback_session?.status ?? null;
-				});
-				return result ?? null;
-			},
-			{ timeout: 30000 },
-		).toBe('playing');
+		await expect
+			.poll(
+				async () => {
+					const result = await worker?.evaluate(async () => {
+						const res = await chrome.storage.session.get('readit_playback_session');
+						return (res as Record<string, { status?: string }>).readit_playback_session?.status ?? null;
+					});
+					return result ?? null;
+				},
+				{ timeout: 30000 },
+			)
+			.toBe('playing');
 
 		// Send message from sidePanel page context so background SW onMessage listener receives it
 		await sidePanel.evaluate(async (sessionId) => {
 			await chrome.runtime.sendMessage({
 				action: 'PLAYBACK_PROGRESS_UPDATE',
 				sessionId,
-				progress: { status: 'stopped', completedNaturally: true, currentParagraphIndex: 0, totalParagraphs: 1, progressPercentage: 100 },
+				progress: {
+					status: 'stopped',
+					completedNaturally: true,
+					currentParagraphIndex: 0,
+					totalParagraphs: 1,
+					progressPercentage: 100,
+				},
 			});
 		}, activeSessionId);
 		await sidePanel.waitForTimeout(2000);
 
 		await expect(sidePanel.locator('.queue-item').nth(1)).toHaveAttribute('data-status', 'playing', { timeout: 10000 });
 		await expect(sidePanel.locator('.queue-item[data-status="error"]')).toHaveCount(0);
+	});
+
+	// markPlaying runs before the session exists, so a queue item showing 'playing' is
+	// not yet a signal that there is anything to skip.
+	async function waitForActiveSessionPlaying(context: import('@playwright/test').BrowserContext): Promise<void> {
+		const worker = context.serviceWorkers()[0];
+		await expect
+			.poll(
+				async () =>
+					(await worker?.evaluate(async () => {
+						const res = await chrome.storage.session.get('readit_playback_session');
+						return (res as Record<string, { status?: string }>).readit_playback_session?.status ?? null;
+					})) ?? null,
+				{ timeout: 30000 },
+			)
+			.toBe('playing');
+	}
+
+	test('skip to next marks the current item done and starts the next', async ({ context, page, openSidePanel }) => {
+		await page.goto('https://en.wikipedia.org/wiki/Text_to_speech');
+		await page.waitForLoadState('networkidle');
+
+		const sidePanel = await context.newPage();
+		await openSidePanel(sidePanel);
+
+		await page.bringToFront();
+		await sidePanel.locator('.queue-add-tab-btn').click();
+		await expect(sidePanel.locator('.queue-item')).toHaveCount(1);
+
+		await sidePanel.locator('.queue-url-input').fill('https://en.wikipedia.org/wiki/Podcast');
+		await sidePanel.locator('.queue-url-row button').click();
+		await expect(sidePanel.locator('.queue-item')).toHaveCount(2);
+
+		await sidePanel.locator('.queue-play-btn').click();
+		await expect(sidePanel.locator('.queue-item').nth(0)).toHaveAttribute('data-status', 'playing', { timeout: 30000 });
+		await waitForActiveSessionPlaying(context);
+
+		const response = await sidePanel.evaluate(async () => {
+			return await chrome.runtime.sendMessage({ action: 'SKIP_TO_NEXT_QUEUE_ITEM' });
+		});
+		expect(response).toMatchObject({ success: true });
+
+		// The skipped item must land on 'done'. Reverting it to 'pending' is the
+		// regression this guards: startPlayback -> stopActiveSession releases the
+		// active session's queue item back to pending, which would overwrite the
+		// markDone and make getNextPending pick the skipped article again.
+		await expect(sidePanel.locator('.queue-item').nth(0)).toHaveAttribute('data-status', 'done', { timeout: 30000 });
+		await expect(sidePanel.locator('.queue-item').nth(1)).toHaveAttribute('data-status', 'playing', { timeout: 30000 });
+	});
+
+	test('skip on the last item ends the queue without starting anything', async ({ context, page, openSidePanel }) => {
+		await page.goto('https://en.wikipedia.org/wiki/Text_to_speech');
+		await page.waitForLoadState('networkidle');
+
+		const sidePanel = await context.newPage();
+		await openSidePanel(sidePanel);
+
+		await page.bringToFront();
+		await sidePanel.locator('.queue-add-tab-btn').click();
+		await expect(sidePanel.locator('.queue-item')).toHaveCount(1);
+
+		await sidePanel.locator('.queue-play-btn').click();
+		await expect(sidePanel.locator('.queue-item').nth(0)).toHaveAttribute('data-status', 'playing', { timeout: 30000 });
+		await waitForActiveSessionPlaying(context);
+
+		const response = await sidePanel.evaluate(async () => {
+			return await chrome.runtime.sendMessage({ action: 'SKIP_TO_NEXT_QUEUE_ITEM' });
+		});
+		expect(response).toMatchObject({ success: true });
+
+		await expect(sidePanel.locator('.queue-item').nth(0)).toHaveAttribute('data-status', 'done', { timeout: 30000 });
+		await expect(sidePanel.locator('.queue-item[data-status="playing"]')).toHaveCount(0);
 	});
 });

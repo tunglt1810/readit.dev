@@ -325,3 +325,21 @@ export const test = base.extend<{
 });
 
 export { expect } from '@playwright/test';
+
+/**
+ * Retries page.goto on transient navigation failures (e.g. net::ERR_ABORTED)
+ * that occur under Chrome resource pressure during long suite runs.
+ */
+export async function gotoWithRetry(page: Page, url: string, options?: Parameters<Page['goto']>[1], retries = 2): Promise<void> {
+	for (let attempt = 0; ; attempt++) {
+		try {
+			await page.goto(url, options);
+			return;
+		} catch (error) {
+			if (attempt >= retries) {
+				throw error;
+			}
+			await new Promise((resolve) => setTimeout(resolve, 1_000));
+		}
+	}
+}

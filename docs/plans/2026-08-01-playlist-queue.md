@@ -2,37 +2,37 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Thêm tính năng Queue đọc liên tiếp vào readit.dev — user thêm URL/tab vào queue, extension tự chuyển tab và đọc bài tiếp khi xong bài hiện tại.
+**Goal:** Add consecutive queue reading functionality to readit.dev — users add URLs/tabs to the queue, and the extension automatically switches tabs and reads the next article when the current article completes.
 
-**Architecture:** Module `playlist_queue.ts` độc lập quản lý state queue bằng pure functions. Background.ts tích hợp queue qua biến module-level, lắng nghe `completedNaturally` từ offscreen để auto-advance. Side Panel hiển thị queue card dọc và gửi message commands vào background.
+**Architecture:** An independent `playlist_queue.ts` module manages queue state using pure functions. `background.ts` integrates the queue via module-level variables, listening for `completedNaturally` from offscreen to auto-advance. The Side Panel displays a vertical queue card and sends message commands to background.
 
 **Tech Stack:** TypeScript strict, Node test runner (unit), Playwright (e2e), chrome.storage.local (persist), chrome.runtime.onMessage (IPC).
 
 ## Global Constraints
 
-- TypeScript strict mode — không dùng `any`, không bypass type guard
+- TypeScript strict mode — do not use `any`, do not bypass type guards
 - Biome formatter: tabs, 4-space tab width, 140-char line width
-- Tên file: lowercase/snake_case cho modules, PascalCase cho React components
-- Tất cả string action phải là string literal const (không magic string lẻ)
-- `chrome.storage.local` cho persist (không phải `session`)
-- Unit test dùng Node built-in `test` + `assert/strict` — không cần framework ngoài
-- E2E test: Playwright, reuse `tests/e2e/fixtures.ts`, tên file `*.spec.ts`
+- File names: lowercase/snake_case for modules, PascalCase for React components
+- All action strings must be string literal constants (no magic strings)
+- `chrome.storage.local` for persistence (not `session`)
+- Unit tests use built-in Node `test` + `assert/strict` — no external test framework
+- E2E tests: Playwright, reuse `tests/e2e/fixtures.ts`, file names `*.spec.ts`
 
 ---
 
 ## File Map
 
-| File | Action | Trách nhiệm |
+| File | Action | Responsibility |
 |---|---|---|
-| `src/background/playlist_queue.ts` | CREATE | Pure functions + storage cho queue |
-| `src/shared/types.ts` | MODIFY | Thêm `QueueItem`, `PlaylistQueue`, `completedNaturally` vào `PlaybackProgress` |
-| `src/shared/constants.ts` | MODIFY | Thêm `STORAGE_KEYS.PLAYLIST_QUEUE` |
-| `src/background/background.ts` | MODIFY | Tích hợp queue, hydrate, auto-advance, message handlers |
-| `src/sidepanel/App.tsx` | MODIFY | Thêm QueueCard section |
-| `src/sidepanel/sidepanel.css` | MODIFY | Style cho queue card và items |
-| `src/offscreen/` | MODIFY | Set `completedNaturally: true` khi TTS kết thúc tự nhiên |
-| `tests/unit/playlist_queue.test.ts` | CREATE | Unit tests cho module playlist_queue |
-| `tests/e2e/playlist-queue.spec.ts` | CREATE | E2E tests cho queue flow |
+| `src/background/playlist_queue.ts` | CREATE | Pure functions + storage for queue |
+| `src/shared/types.ts` | MODIFY | Add `QueueItem`, `PlaylistQueue`, `completedNaturally` to `PlaybackProgress` |
+| `src/shared/constants.ts` | MODIFY | Add `STORAGE_KEYS.PLAYLIST_QUEUE` |
+| `src/background/background.ts` | MODIFY | Integrate queue, hydrate, auto-advance, message handlers |
+| `src/sidepanel/App.tsx` | MODIFY | Add QueueCard section |
+| `src/sidepanel/sidepanel.css` | MODIFY | Styles for queue card and items |
+| `src/offscreen/` | MODIFY | Set `completedNaturally: true` when TTS completes naturally |
+| `tests/unit/playlist_queue.test.ts` | CREATE | Unit tests for playlist_queue module |
+| `tests/e2e/playlist-queue.spec.ts` | CREATE | E2E tests for queue flow |
 
 ---
 
@@ -43,11 +43,11 @@
 - Modify: `src/shared/constants.ts`
 
 **Interfaces:**
-- Produces: `QueueItem`, `PlaylistQueue`, updated `PlaybackProgress` — dùng trong mọi task sau
+- Produces: `QueueItem`, `PlaylistQueue`, updated `PlaybackProgress` — used in all subsequent tasks
 
-- [ ] **Step 1: Thêm types vào `src/shared/types.ts`**
+- [ ] **Step 1: Add types to `src/shared/types.ts`**
 
-Mở file, thêm sau block `PlaybackProgress` (dòng 58):
+Open the file, add after the `PlaybackProgress` block (line 58):
 
 ```typescript
 export interface QueueItem {
@@ -65,7 +65,7 @@ export interface PlaylistQueue {
 }
 ```
 
-Sửa interface `PlaybackProgress` (dòng 50-58) — thêm field `completedNaturally`:
+Modify interface `PlaybackProgress` (lines 50-58) — add `completedNaturally` field:
 
 ```typescript
 export interface PlaybackProgress {
@@ -80,9 +80,9 @@ export interface PlaybackProgress {
 }
 ```
 
-- [ ] **Step 2: Thêm storage key vào `src/shared/constants.ts`**
+- [ ] **Step 2: Add storage key to `src/shared/constants.ts`**
 
-Trong object `STORAGE_KEYS` (dòng 38-47), thêm entry cuối:
+Inside `STORAGE_KEYS` object (lines 38-47), add entry at the end:
 
 ```typescript
 export const STORAGE_KEYS = {
@@ -98,13 +98,13 @@ export const STORAGE_KEYS = {
 };
 ```
 
-- [ ] **Step 3: Build để kiểm tra type**
+- [ ] **Step 3: Build to verify types**
 
 ```bash
  pnpm build 2>&1 | head -30
 ```
 
-Expected: build thành công, không có type error
+Expected: build succeeds with no type errors
 
 - [ ] **Step 4: Commit**
 
@@ -122,7 +122,7 @@ Expected: build thành công, không có type error
 - Create: `tests/unit/playlist_queue.test.ts`
 
 **Interfaces:**
-- Consumes: `QueueItem`, `PlaylistQueue` từ `src/shared/types.ts`; `STORAGE_KEYS` từ `src/shared/constants.ts`
+- Consumes: `QueueItem`, `PlaylistQueue` from `src/shared/types.ts`; `STORAGE_KEYS` from `src/shared/constants.ts`
 - Produces:
   - `normalizeQueueUrl(raw: string): string`
   - `createPlaylistQueue(): PlaylistQueue`
@@ -137,9 +137,9 @@ Expected: build thành công, không có type error
   - `saveQueue(queue: PlaylistQueue): Promise<void>`
   - `loadQueue(): Promise<PlaylistQueue>`
 
-- [ ] **Step 1: Viết failing unit tests**
+- [ ] **Step 1: Write failing unit tests**
 
-Tạo file `tests/unit/playlist_queue.test.ts`:
+Create file `tests/unit/playlist_queue.test.ts`:
 
 ```typescript
 import assert from 'node:assert/strict';
@@ -282,7 +282,7 @@ test('clearQueue removes all items', () => {
 });
 ```
 
-- [ ] **Step 2: Run tests — xác nhận fail**
+- [ ] **Step 2: Run tests — confirm failure**
 
 ```bash
  pnpm test:unit -- --test-name-pattern "playlist_queue" 2>&1 | tail -20
@@ -393,21 +393,21 @@ export async function loadQueue(): Promise<PlaylistQueue> {
 }
 ```
 
-- [ ] **Step 4: Run tests — xác nhận pass**
+- [ ] **Step 4: Run tests — confirm pass**
 
 ```bash
  pnpm test:unit -- --test-name-pattern "playlist_queue" 2>&1 | tail -20
 ```
 
-Expected: tất cả tests PASS
+Expected: all tests PASS
 
-- [ ] **Step 5: Run toàn bộ unit tests — không có regression**
+- [ ] **Step 5: Run all unit tests — no regression**
 
 ```bash
  pnpm test:unit 2>&1 | tail -10
 ```
 
-Expected: tất cả pass
+Expected: all pass
 
 - [ ] **Step 6: Commit**
 
@@ -421,32 +421,32 @@ Expected: tất cả pass
 ## Task 3: Offscreen — emit `completedNaturally`
 
 **Files:**
-- Modify: offscreen TTS completion handler (tìm nơi emit `status: 'stopped'`)
+- Modify: offscreen TTS completion handler (find where `status: 'stopped'` is emitted)
 
 **Interfaces:**
-- Consumes: `PlaybackProgress` từ `src/shared/types.ts` (đã có `completedNaturally?`)
-- Produces: progress message với `completedNaturally: true` khi TTS kết thúc hết segments
+- Consumes: `PlaybackProgress` from `src/shared/types.ts` (which now has `completedNaturally?`)
+- Produces: progress message with `completedNaturally: true` when TTS finishes all segments
 
-- [ ] **Step 1: Tìm nơi offscreen emit stopped**
+- [ ] **Step 1: Find where offscreen emits stopped**
 
 ```bash
  grep -rn "status.*stopped\|stopped.*status" src/offscreen/ 2>&1
 ```
 
-Ghi lại file và dòng.
+Note down the file and line.
 
-- [ ] **Step 2: Tìm hàm emit PlaybackProgress trong offscreen**
+- [ ] **Step 2: Find PlaybackProgress emit function in offscreen**
 
 ```bash
  grep -rn "PLAYBACK_PROGRESS_UPDATE\|progressPercentage\|currentParagraphIndex" src/offscreen/ 2>&1 | head -20
 ```
 
-- [ ] **Step 3: Thêm `completedNaturally: true` vào progress emit cuối**
+- [ ] **Step 3: Add `completedNaturally: true` to final progress emit**
 
-Trong handler kết thúc TTS tự nhiên (khi đọc hết toàn bộ segments, không phải khi bị STOP command), thêm field:
+In the natural TTS completion handler (when reading all segments, not upon a STOP command), add the field:
 
 ```typescript
-// Ví dụ — điều chỉnh theo code thực tế:
+// Example — adjust according to actual code:
 chrome.runtime.sendMessage({
     action: 'PLAYBACK_PROGRESS_UPDATE',
     sessionId: currentSessionId,
@@ -455,20 +455,20 @@ chrome.runtime.sendMessage({
         currentParagraphIndex: totalParagraphs - 1,
         totalParagraphs,
         progressPercentage: 100,
-        completedNaturally: true,  // <-- thêm dòng này
+        completedNaturally: true,  // <-- add this line
     },
 });
 ```
 
-Khi bị STOP command (user stop hoặc session replaced) — **không** set `completedNaturally`.
+Upon a STOP command (user stop or session replaced) — **do not** set `completedNaturally`.
 
-- [ ] **Step 4: Build và xác nhận không có type error**
+- [ ] **Step 4: Build and confirm no type errors**
 
 ```bash
  pnpm build 2>&1 | head -20
 ```
 
-Expected: build thành công
+Expected: build succeeds
 
 - [ ] **Step 5: Commit**
 
@@ -479,20 +479,20 @@ Expected: build thành công
 
 ---
 
-## Task 4: Background — tích hợp queue + auto-advance
+## Task 4: Background — integrate queue + auto-advance
 
 **Files:**
 - Modify: `src/background/background.ts`
 
 **Interfaces:**
 - Consumes:
-  - `createPlaylistQueue`, `addToQueue`, `markPlaying`, `markDone`, `markError`, `removeItem`, `requeueItem`, `clearQueue`, `getNextPending`, `saveQueue`, `loadQueue` từ `./playlist_queue.ts`
-  - `QueueItem`, `PlaylistQueue` từ `../shared/types.ts`
-- Produces: handlers cho messages `ADD_TAB_TO_QUEUE`, `ADD_URL_TO_QUEUE`, `REMOVE_QUEUE_ITEM`, `REQUEUE_ITEM`, `CLEAR_QUEUE`, `GET_PLAYLIST_QUEUE`; broadcast `PLAYLIST_QUEUE_UPDATE`
+  - `createPlaylistQueue`, `addToQueue`, `markPlaying`, `markDone`, `markError`, `removeItem`, `requeueItem`, `clearQueue`, `getNextPending`, `saveQueue`, `loadQueue` from `./playlist_queue.ts`
+  - `QueueItem`, `PlaylistQueue` from `../shared/types.ts`
+- Produces: handlers for messages `ADD_TAB_TO_QUEUE`, `ADD_URL_TO_QUEUE`, `REMOVE_QUEUE_ITEM`, `REQUEUE_ITEM`, `CLEAR_QUEUE`, `GET_PLAYLIST_QUEUE`; broadcast `PLAYLIST_QUEUE_UPDATE`
 
-- [ ] **Step 1: Import playlist_queue vào background.ts**
+- [ ] **Step 1: Import playlist_queue into background.ts**
 
-Thêm import ở đầu file (sau các import hiện tại):
+Add imports at top of file (after existing imports):
 
 ```typescript
 import {
@@ -511,25 +511,25 @@ import {
 import type { PlaylistQueue } from '../shared/types.ts';
 ```
 
-- [ ] **Step 2: Thêm biến module-level `playlistQueue`**
+- [ ] **Step 2: Add module-level `playlistQueue` variable**
 
-Sau dòng `let hydrated = false;` (dòng ~90), thêm:
+After line `let hydrated = false;` (line ~90), add:
 
 ```typescript
 let playlistQueue: PlaylistQueue = createPlaylistQueue();
 ```
 
-- [ ] **Step 3: Hydrate queue trong `ensureHydrated()`**
+- [ ] **Step 3: Hydrate queue in `ensureHydrated()`**
 
-Trong function `ensureHydrated()` (dòng ~198), sau dòng `hydrated = true;`, thêm:
+In function `ensureHydrated()` (line ~198), after line `hydrated = true;`, add:
 
 ```typescript
 playlistQueue = await loadQueue();
 ```
 
-- [ ] **Step 4: Thêm `broadcastQueue()` helper**
+- [ ] **Step 4: Add `broadcastQueue()` helper**
 
-Sau function `broadcastSession` (dòng ~234), thêm:
+After function `broadcastSession` (line ~234), add:
 
 ```typescript
 async function broadcastQueue(queue: PlaylistQueue): Promise<void> {
@@ -541,25 +541,25 @@ async function broadcastQueue(queue: PlaylistQueue): Promise<void> {
 }
 ```
 
-- [ ] **Step 5: Sửa `applyProgressMessage` để auto-advance**
+- [ ] **Step 5: Modify `applyProgressMessage` for auto-advance**
 
-Sửa function `applyProgressMessage` (dòng ~976-995). Thay block xử lý `status === 'stopped'`:
+Modify function `applyProgressMessage` (lines ~976-995). Replace the `status === 'stopped'` handling block:
 
 ```typescript
-// Trước (dòng 987-991):
+// Before (lines 987-991):
 if (updatedSession.status === 'stopped') {
     await clearSession();
     await closeOffscreenWhenIdle();
     return;
 }
 
-// Sau:
+// After:
 if (updatedSession.status === 'stopped') {
     const completedNaturally = (message.progress as Record<string, unknown>)?.completedNaturally === true;
     await clearSession();
 
     if (completedNaturally) {
-        // Tìm item đang playing trong queue (theo normalizedUrl của session)
+        // Find playing item in queue (matching session normalizedUrl)
         const playingItem = playlistQueue.items.find(
             (i) => i.status === 'playing',
         );
@@ -577,8 +577,8 @@ if (updatedSession.status === 'stopped') {
                 const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
                 if (activeTab?.id) {
                     await chrome.tabs.update(activeTab.id, { url: nextItem.url });
-                    // chrome.tabs.onUpdated sẽ trigger startCurrentPage khi tab load xong
-                    // Cần lưu pending navigation để biết đây là queue advance
+                    // chrome.tabs.onUpdated will trigger startCurrentPage when tab finishes loading
+                    // Need to store pending navigation to identify queue advance
                     pendingQueueNavigation = nextItem;
                 }
             }
@@ -590,22 +590,22 @@ if (updatedSession.status === 'stopped') {
 }
 ```
 
-- [ ] **Step 6: Thêm biến `pendingQueueNavigation` và xử lý trong `onUpdated`**
+- [ ] **Step 6: Add `pendingQueueNavigation` variable and handle in `onUpdated`**
 
-Thêm biến module-level sau `playlistQueue`:
+Add module-level variable after `playlistQueue`:
 
 ```typescript
 let pendingQueueNavigation: import('../shared/types.ts').QueueItem | null = null;
 ```
 
-Sửa handler `chrome.tabs.onUpdated` (dòng ~1222-1228). Thêm logic xử lý queue navigation:
+Modify `chrome.tabs.onUpdated` handler (lines ~1222-1228). Add queue navigation handling logic:
 
 ```typescript
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
     if (changeInfo.status !== undefined || changeInfo.url !== undefined) {
         void enqueue(() => stopIfNavigatedAway(tabId));
     }
-    // Auto-advance queue: khi tab load xong và có pending queue navigation
+    // Auto-advance queue: when tab status complete and pending queue navigation exists
     if (changeInfo.status === 'complete' && pendingQueueNavigation) {
         const queueItem = pendingQueueNavigation;
         void enqueue(async () => {
@@ -619,9 +619,9 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 });
 ```
 
-- [ ] **Step 7: Thêm message handlers vào switch trong `chrome.runtime.onMessage`**
+- [ ] **Step 7: Add message handlers to switch in `chrome.runtime.onMessage`**
 
-Trong switch (dòng ~1018), thêm các cases trước `default:`:
+In switch statement (line ~1018), add cases before `default:`:
 
 ```typescript
 case 'GET_PLAYLIST_QUEUE':
@@ -720,21 +720,21 @@ case 'CLEAR_QUEUE':
     }, sendResponse);
 ```
 
-- [ ] **Step 8: Build — xác nhận không có type error**
+- [ ] **Step 8: Build — confirm no type errors**
 
 ```bash
  pnpm build 2>&1 | head -30
 ```
 
-Expected: build thành công
+Expected: build succeeds
 
-- [ ] **Step 9: Run unit tests — không có regression**
+- [ ] **Step 9: Run unit tests — no regression**
 
 ```bash
  pnpm test:unit 2>&1 | tail -10
 ```
 
-Expected: tất cả pass
+Expected: all pass
 
 - [ ] **Step 10: Commit**
 
@@ -754,13 +754,13 @@ Expected: tất cả pass
 **Interfaces:**
 - Consumes:
   - Message `GET_PLAYLIST_QUEUE` → `{ queue: PlaylistQueue }`
-  - Message `PLAYLIST_QUEUE_UPDATE` broadcast từ background
+  - Message `PLAYLIST_QUEUE_UPDATE` broadcast from background
   - Commands: `ADD_TAB_TO_QUEUE`, `ADD_URL_TO_QUEUE`, `REMOVE_QUEUE_ITEM`, `REQUEUE_ITEM`, `CLEAR_QUEUE`
-- Produces: Queue card section hiển thị trong Side Panel
+- Produces: Queue card section displayed in Side Panel
 
-- [ ] **Step 1: Thêm queue state và subscription vào `App.tsx`**
+- [ ] **Step 1: Add queue state and subscription to `App.tsx`**
 
-Trong component `App` (sau các useState hiện tại, dòng ~60), thêm:
+In component `App` (after existing useState hooks, line ~60), add:
 
 ```typescript
 const [queue, setQueue] = useState<PlaylistQueue>({ items: [], activeIndex: null });
@@ -768,13 +768,13 @@ const [urlInput, setUrlInput] = useState('');
 const [queueError, setQueueError] = useState('');
 ```
 
-Import `PlaylistQueue` ở đầu file:
+Import `PlaylistQueue` at top of file:
 
 ```typescript
 import type { ..., PlaylistQueue } from '../shared/types.ts';
 ```
 
-Trong `useEffect` hydration (dòng ~79), thêm sau `chrome.storage.local.get(...)`:
+In `useEffect` hydration (line ~79), add after `chrome.storage.local.get(...)`:
 
 ```typescript
 // Load initial queue
@@ -785,7 +785,7 @@ chrome.runtime.sendMessage({ action: 'GET_PLAYLIST_QUEUE' }, (response: unknown)
 });
 ```
 
-Trong `useEffect` subscribe (nơi `subscribePlaybackState` được gọi), thêm listener cho queue updates:
+In `useEffect` subscribe (where `subscribePlaybackState` is called), add listener for queue updates:
 
 ```typescript
 const handleMessage = (message: unknown) => {
@@ -799,9 +799,9 @@ chrome.runtime.onMessage.addListener(handleMessage);
 return () => chrome.runtime.onMessage.removeListener(handleMessage);
 ```
 
-- [ ] **Step 2: Thêm handler functions cho queue actions**
+- [ ] **Step 2: Add handler functions for queue actions**
 
-Trong component `App`, thêm các handlers:
+In component `App`, add handlers:
 
 ```typescript
 const handleAddCurrentTab = async () => {
@@ -838,9 +838,9 @@ const handleClearQueue = () => {
 };
 ```
 
-- [ ] **Step 3: Thêm Queue Card vào JSX**
+- [ ] **Step 3: Add Queue Card to JSX**
 
-Trong return JSX của `App`, thêm sau `</section>` của `manual-text-card` (dòng ~601) và trước `<SettingsCard`:
+In JSX return of `App`, add after `</section>` of `manual-text-card` (line ~601) and before `<SettingsCard`:
 
 ```tsx
 <section className="queue-card" aria-labelledby="queue-title">
@@ -915,9 +915,9 @@ Trong return JSX của `App`, thêm sau `</section>` của `manual-text-card` (d
 </section>
 ```
 
-- [ ] **Step 4: Thêm CSS cho queue card vào `sidepanel.css`**
+- [ ] **Step 4: Add CSS for queue card to `sidepanel.css`**
 
-Append vào cuối file `src/sidepanel/sidepanel.css`:
+Append to end of file `src/sidepanel/sidepanel.css`:
 
 ```css
 /* Queue Card */
@@ -1063,21 +1063,21 @@ Append vào cuối file `src/sidepanel/sidepanel.css`:
 }
 ```
 
-- [ ] **Step 5: Build — xác nhận không có lỗi**
+- [ ] **Step 5: Build — confirm no errors**
 
 ```bash
  pnpm build 2>&1 | head -30
 ```
 
-Expected: build thành công
+Expected: build succeeds
 
-- [ ] **Step 6: Run unit tests — không có regression**
+- [ ] **Step 6: Run unit tests — no regression**
 
 ```bash
  pnpm test:unit 2>&1 | tail -10
 ```
 
-Expected: tất cả pass
+Expected: all pass
 
 - [ ] **Step 7: Commit**
 
@@ -1096,15 +1096,15 @@ Expected: tất cả pass
 **Interfaces:**
 - Consumes: `fixtures.ts` (extension context, side panel helpers), background queue state
 
-- [ ] **Step 1: Xem fixtures.ts để biết helpers có sẵn**
+- [ ] **Step 1: Inspect fixtures.ts for available helpers**
 
 ```bash
  grep -n "export\|openSidePanel\|getSidePanel" tests/e2e/fixtures.ts | head -30
 ```
 
-- [ ] **Step 2: Viết E2E test file**
+- [ ] **Step 2: Write E2E test file**
 
-Tạo `tests/e2e/playlist-queue.spec.ts`:
+Create `tests/e2e/playlist-queue.spec.ts`:
 
 ```typescript
 import { test, expect } from './fixtures.ts';
@@ -1206,7 +1206,7 @@ test.describe('Playlist Queue', () => {
 });
 ```
 
-**Note:** Adjust `sidePanel.open()`, `sidePanel.close()` và helpers cho đúng với fixtures.ts thực tế sau khi đọc file ở Step 1.
+**Note:** Adjust `sidePanel.open()`, `sidePanel.close()` and helpers to match actual `fixtures.ts` after reading the file in Step 1.
 
 - [ ] **Step 3: Build extension**
 
@@ -1220,7 +1220,7 @@ test.describe('Playlist Queue', () => {
  pnpm test:e2e -- --grep "Playlist Queue" 2>&1 | tail -30
 ```
 
-Expected: tests pass (hoặc xác định tests cần điều chỉnh fixtures)
+Expected: tests pass (or identify tests needing fixture adjustments)
 
 - [ ] **Step 5: Commit**
 
@@ -1233,34 +1233,34 @@ Expected: tests pass (hoặc xác định tests cần điều chỉnh fixtures)
 
 ## Task 7: Manual Verification + Cleanup
 
-- [ ] **Step 1: Load extension vào Chrome**
+- [ ] **Step 1: Load extension into Chrome**
 
 ```bash
  pnpm dev
 ```
 
-1. Mở `chrome://extensions/`
+1. Open `chrome://extensions/`
 2. Enable Developer mode
-3. Load unpacked → chọn `dist/chrome/`
+3. Load unpacked → select `dist/chrome/`
 
 - [ ] **Step 2: Test manual flow**
 
-1. Mở 2 tab với bài Wikipedia (tab A và tab B)
-2. Mở Side Panel
-3. Ở tab A: bấm "Thêm tab hiện tại" → confirm item xuất hiện
-4. Dán URL tab B vào input → bấm Thêm → confirm item thứ hai xuất hiện
-5. Bấm Read (đọc tab A)
-6. Chờ đọc xong → tab tự chuyển sang URL của tab B → tự bắt đầu đọc
-7. Confirm item tab A đổi sang "✓ done", item tab B đổi sang "▶ playing"
+1. Open 2 tabs with Wikipedia articles (tab A and tab B)
+2. Open Side Panel
+3. On tab A: click "Thêm tab hiện tại" → confirm item appears
+4. Paste tab B URL into input → click Add → confirm second item appears
+5. Click Read (read tab A)
+6. Wait for reading to complete → tab automatically switches to tab B URL → automatically starts reading
+7. Confirm tab A item status changes to "✓ done", tab B item changes to "▶ playing"
 
-- [ ] **Step 3: Run full test suite lần cuối**
+- [ ] **Step 3: Run full test suite one last time**
 
 ```bash
  pnpm test:unit 2>&1 | tail -5
  pnpm build 2>&1 | tail -5
 ```
 
-Expected: tất cả pass, build clean
+Expected: all pass, clean build
 
 - [ ] **Step 4: Final commit**
 

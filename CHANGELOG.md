@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - center active word highlight and temporarily pause auto-scroll during user interaction - [@tunglt1810]
 - isolate Firefox release failures - [@tunglt1810]
 - universal text segmantation - [@tunglt1810]
+- integrate with system media controls - [@tunglt1810]
 
 ### Fixed
 - sentence tail truncation and short unit consolidation for Vietnamese TTS - [@tunglt1810]

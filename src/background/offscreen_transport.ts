@@ -8,6 +8,7 @@ import {
 } from '../shared/audio_export.ts';
 import { isDocumentReaderSnapshot, type DocumentReaderSnapshot } from '../shared/document_reader.ts';
 import { isPanelInstanceId } from '../shared/manual_playback.ts';
+import type { MediaSessionMetadata } from '../shared/media_session_metadata.ts';
 import type { AudioExportEstimate, CommandResponse, PlaybackContent, PlaybackContentScope, ReadableSurfaceKind } from '../shared/types.ts';
 
 export type OffscreenCommand = { action: string; payload?: unknown; target?: string };
@@ -25,6 +26,8 @@ export type OffscreenPlayPayload = {
 	contentScope?: PlaybackContentScope;
 	panelInstanceId?: string;
 	documentTitle?: string;
+	mediaSession?: MediaSessionMetadata;
+	hasNextQueueItem?: boolean;
 };
 
 export type ManualCheckpointMetadata = {

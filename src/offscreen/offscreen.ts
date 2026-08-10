@@ -19,6 +19,8 @@ import { AudioExportEngine } from './audio_export_engine.ts';
 import { estimateSpeechUnits } from './audio_export_estimate';
 import { canStartBackgroundSynthesis, type PlaybackRunway } from './audio_export_runway';
 import { captureManualCheckpoint, isCheckpointOwner, type ManualCheckpoint, resumeOffsetSeconds } from './manual_checkpoint';
+import type { MediaSessionMetadata } from '../shared/media_session_metadata.ts';
+import { createMediaSessionController } from './media_session';
 import { createPauseKeepalive } from './pause_keepalive';
 import { METRICS_STORAGE_KEY, PlaybackMetricsRecorder, summarizePlaybackMetrics } from './playback_metrics';
 import { isVietnameseLanguage, preparePlaybackUnits, VietnameseTextNormalizer } from './playback_preparation';
@@ -57,6 +59,9 @@ let currentSourceId = 0;
 let currentBuffer: AudioBuffer | null = null;
 let currentBufferStartedAt = 0;
 let currentBufferOffsetSec = 0;
+// Audio already spoken in earlier units, so the media session can report a position
+// across the whole article rather than restarting at each paragraph.
+let playedSecondsBeforeCurrentUnit = 0;
 let currentManualPanelInstanceId: string | null = null;
 let currentPlaybackLanguage: string | null = null;
 let currentPlaybackStyle: Style | null = null;
@@ -88,6 +93,11 @@ type RuntimeManualCheckpoint = ManualCheckpoint & {
 };
 
 let manualCheckpoint: RuntimeManualCheckpoint | null = null;
+
+// Null outside Chrome: Firefox has no offscreen document, so this file never loads there.
+const mediaSession = navigator.mediaSession
+	? createMediaSessionController(navigator.mediaSession, (init) => new MediaMetadata(init))
+	: null;
 
 const pauseKeepalive = createPauseKeepalive(
 	() => new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)(),
@@ -171,8 +181,25 @@ function flushPlaybackMetrics() {
 	sourceId: currentSourceId,
 	bufferOffsetSec: currentBufferOffsetSec,
 	audioContextTime: audioCtx?.currentTime ?? null,
+	audioContextState: audioCtx?.state ?? null,
+	isPaused,
+	unitIndex: currentUnitIndex,
+	wordHighlight: {
+		...highlightDebug,
+		timerActive: wordHighlightTimer !== null,
+		msSinceLastTick: highlightDebug.lastTickAtMs === null ? null : performance.now() - highlightDebug.lastTickAtMs,
+		surfaceReady,
+		emittedWordIndex: lastReadableSurfaceWordIndex,
+	},
 	pauseKeepalive: pauseKeepalive.getDebugState(),
 	backgroundSynthesisAllowed: canStartBackgroundSynthesis(playbackRunway()),
+	mediaSession: mediaSession
+		? {
+				...mediaSession.getDebugState(),
+				playbackState: navigator.mediaSession.playbackState,
+				metadataTitle: navigator.mediaSession.metadata?.title ?? null,
+			}
+		: null,
 });
 
 // Test-only CDP view: there is deliberately no extension message or product UI for these records.
@@ -230,6 +257,7 @@ function flushPlaybackMetrics() {
  */
 function reportProgress(status: PlaybackStatus, extra: Partial<PlaybackProgress> = {}) {
 	playbackStatus = status;
+	mediaSession?.sync(status);
 	notifyExportRunway();
 	const progress: PlaybackProgress = {
 		status,
@@ -510,6 +538,20 @@ let wordHighlightTimer: ReturnType<typeof setInterval> | null = null;
 let lastReadableSurfaceWordIndex = -1;
 let surfaceReady = false;
 
+/**
+ * A frozen highlight leaves no trace anywhere else: the tick either stops firing, fires
+ * too slowly, or fires with an elapsed time that has walked off the end of the unit's
+ * windows. Each of those looks identical from the page, so record which one it is.
+ */
+const highlightDebug = {
+	ticks: 0,
+	lastTickAtMs: null as number | null,
+	lastElapsedSec: null as number | null,
+	windowEndSec: null as number | null,
+	lastMatchedWordIndex: null as number | null,
+	unmatchedTicks: 0,
+};
+
 function isReadableSurfaceKind(value: unknown): value is ReadableSurfaceKind {
 	return value === 'website-dom' || value === 'manual-reader' || value === 'document-reader' || value === 'none';
 }
@@ -567,17 +609,25 @@ function startWordHighlightTracking(windows: WordTimingWindow[], unitStartTime: 
 	}
 	const base = wordIndexBase(unitIndex);
 	playbackMetrics.beginHighlightTracking();
+	highlightDebug.ticks = 0;
+	highlightDebug.unmatchedTicks = 0;
+	highlightDebug.windowEndSec = windows[windows.length - 1]?.endSec ?? null;
 	wordHighlightTimer = setInterval(() => {
 		if (!audioCtx) {
 			return;
 		}
 		playbackMetrics.recordHighlightTick(performance.now());
 		const elapsed = audioCtx.currentTime - unitStartTime + offsetSec;
+		highlightDebug.ticks++;
+		highlightDebug.lastTickAtMs = performance.now();
+		highlightDebug.lastElapsedSec = elapsed;
 		const wordTiming = findWordAtTime(windows, elapsed);
 		if (wordTiming === null) {
+			highlightDebug.unmatchedTicks++;
 			return;
 		}
 		const wordIndex = base + wordTiming.wordIndex;
+		highlightDebug.lastMatchedWordIndex = wordIndex;
 		currentWordIndex = wordIndex;
 		if (!surfaceReady || !currentExtensionSessionId || wordIndex === lastReadableSurfaceWordIndex) {
 			return;
@@ -606,6 +656,11 @@ function stopAudio(options?: { completedNaturally?: boolean }) {
 	synthesisCoordinator.clear();
 	recentSynthesisMilliseconds.length = 0;
 	reportProgress('stopped', options?.completedNaturally ? { completedNaturally: true } : {});
+	// After the 'stopped' report, so the tile is not cleared while it still reads as playing.
+	mediaSession?.clear();
+	mediaSession?.setNextTrack(null);
+	mediaSession?.setPosition(null);
+	playedSecondsBeforeCurrentUnit = 0;
 	speechUnits = [];
 	currentUnitIndex = 0;
 	currentBuffer = null;
@@ -622,6 +677,55 @@ function stopAudio(options?: { completedNaturally?: boolean }) {
 	pendingManualPlayback = null;
 	currentExtensionSessionId = null;
 	notifyExportRunway();
+}
+
+/**
+ * Resume a suspended context.
+ *
+ * These three exist so the message handlers and the system media controls share one
+ * body each, instead of the controls growing a second copy of the same transition.
+ */
+async function resumePlayback(): Promise<void> {
+	await pauseKeepalive.stop();
+	await audioCtx?.resume();
+	isPaused = false;
+	reportProgress('playing');
+}
+
+/** Returns false when there is no running context to pause. */
+async function pausePlayback(): Promise<boolean> {
+	if (!audioCtx || audioCtx.state !== 'running') {
+		return false;
+	}
+	await audioCtx.suspend();
+	playbackMetrics.discardPendingTransition();
+	isPaused = true;
+	await pauseKeepalive.start().catch(() => undefined);
+	reportProgress('paused');
+	return true;
+}
+
+function stopPlayback(): void {
+	playbackSession++;
+	stopAudio();
+}
+
+/**
+ * A session with no duration reads to the OS as an incidental sound rather than
+ * something worth a Now Playing entry, so report where we are in the whole article.
+ * The total is an estimate over units that have not been synthesised yet; the
+ * controller clamps an overrun rather than letting it throw.
+ */
+function reportMediaSessionPosition(offsetInUnitSec: number): void {
+	if (!mediaSession || speechUnits.length === 0) {
+		return;
+	}
+	const durationSeconds = estimateSpeechUnits(speechUnits, currentPlaybackLanguage ?? '', currentSpeed).durationSeconds;
+	mediaSession.setPosition({
+		duration: durationSeconds,
+		position: playedSecondsBeforeCurrentUnit + offsetInUnitSec,
+		playbackRate: currentSpeed,
+	});
 }
 
 /**
@@ -684,6 +788,7 @@ function playAudioBuffer(
 		currentBuffer = null;
 		currentBufferStartedAt = 0;
 		currentBufferOffsetSec = 0;
+		playedSecondsBeforeCurrentUnit += buffer.duration;
 		currentUnitIndex = unitIndex + 1;
 		if (currentUnitIndex < speechUnits.length) {
 			void playNextUnit(lang, style, session);
@@ -697,6 +802,7 @@ function playAudioBuffer(
 	const windows = computeReadableSurfaceWordTimings(currentReadableSurface, unit?.wordMap ?? [], spokenDurationSec);
 	const unitStartTime = audioCtx.currentTime;
 	source.start(0, sourceOffsetSec);
+	reportMediaSessionPosition(sourceOffsetSec);
 	playbackMetrics.recordUnitStart(unitIndex, unitStartTime, performance.now(), buffer.duration, sourceOffsetSec);
 	startWordHighlightTracking(windows, unitStartTime, sourceOffsetSec, unitIndex);
 	// Flushed here rather than in `onended`: this point is after the gap has been measured,
@@ -1172,6 +1278,8 @@ export const handleOffscreenMessage = (
 						contentScope?: unknown;
 						readableSurface?: unknown;
 						documentTitle?: unknown;
+						mediaSession?: MediaSessionMetadata;
+						hasNextQueueItem?: boolean;
 					};
 					const { article, voiceStyleId, speed } = data;
 					if (!isReadableSurfaceKind(data.readableSurface)) {
@@ -1188,6 +1296,11 @@ export const handleOffscreenMessage = (
 					}
 					const session = ++playbackSession;
 					stopAudio();
+					// After stopAudio(), which clears the previous session's tile.
+					mediaSession?.setMetadata(data.mediaSession);
+					mediaSession?.setNextTrack(
+						data.hasNextQueueItem ? () => void chrome.runtime.sendMessage({ action: 'SKIP_TO_NEXT_QUEUE_ITEM' }) : null,
+					);
 					currentExtensionSessionId = sessionId;
 					currentManualPanelInstanceId = data.panelInstanceId ?? null;
 					currentReadableSurface = data.readableSurface;
@@ -1296,10 +1409,7 @@ export const handleOffscreenMessage = (
 
 				(async () => {
 					try {
-						await pauseKeepalive.stop();
-						await audioCtx?.resume();
-						isPaused = false;
-						reportProgress('playing');
+						await resumePlayback();
 						sendResponse({ success: true });
 					} catch (err) {
 						const error = err as Error;
@@ -1311,16 +1421,11 @@ export const handleOffscreenMessage = (
 
 			case 'PAUSE':
 				(async () => {
-					if (!audioCtx || audioCtx.state !== 'running') {
-						sendResponse({ success: false, error: 'Audio is not running' });
-						return;
-					}
 					try {
-						await audioCtx.suspend();
-						playbackMetrics.discardPendingTransition();
-						isPaused = true;
-						await pauseKeepalive.start().catch(() => undefined);
-						reportProgress('paused');
+						if (!(await pausePlayback())) {
+							sendResponse({ success: false, error: 'Audio is not running' });
+							return;
+						}
 						sendResponse({ success: true });
 					} catch (error) {
 						sendResponse({ success: false, error: (error as Error).message });
@@ -1329,8 +1434,7 @@ export const handleOffscreenMessage = (
 				return true;
 
 			case 'STOP':
-				playbackSession++;
-				stopAudio();
+				stopPlayback();
 				sendResponse({ success: true });
 				break;
 
@@ -1405,4 +1509,9 @@ export const handleOffscreenMessage = (
 
 export function registerOffscreenMessageHandler(): void {
 	chrome.runtime.onMessage.addListener(handleOffscreenMessage);
+	mediaSession?.install({
+		play: () => void resumePlayback(),
+		pause: () => void pausePlayback(),
+		stop: () => stopPlayback(),
+	});
 }

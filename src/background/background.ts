@@ -9,6 +9,7 @@ import {
 	type PdfErrorCode,
 } from '../shared/constants';
 import { t } from '../shared/i18n.ts';
+import { buildMediaSessionMetadata } from '../shared/media_session_metadata.ts';
 import { isInternalAudioExportOffscreenCommand } from '../shared/audio_export.ts';
 import { deleteAudioExportHandle } from '../shared/audio_export_handle_store.ts';
 import { DOCUMENT_READER_PORT_NAME } from '../shared/document_reader.ts';
@@ -94,6 +95,7 @@ const ERROR_MESSAGES = {
 	extraction: 'Không thể trích xuất nội dung từ trang web này. Vui lòng tải lại trang và thử lại.',
 	noSession: 'Không có phiên đọc đang hoạt động.',
 	setup: 'Không thể bắt đầu đọc trang này. Vui lòng thử lại.',
+	startupTimeout: 'Khởi tạo phát âm thanh quá lâu. Vui lòng thử lại.',
 	invalidSpeed: 'Tốc độ đọc không hợp lệ.',
 } as const;
 
@@ -129,6 +131,7 @@ let suspendedManualCheckpoint: ManualCheckpointMetadata | null = null;
 let suspendedManualSession: ManualPlaybackSessionSnapshot | null = null;
 let hydrated = false;
 let pendingStart: Promise<void> | null = null;
+const STARTUP_TIMEOUT_MS = 60_000;
 let playlistQueue: PlaylistQueue = createPlaylistQueue();
 let pendingQueueNavigation: PendingQueueNavigation | null = null;
 /**
@@ -277,7 +280,9 @@ async function ensureHydrated(): Promise<void> {
 	activeSession = isPlaybackSessionSnapshot(storedSession) ? storedSession : null;
 	pendingQueueNavigation = isPendingQueueNavigation(storedPendingNavigation) ? storedPendingNavigation : null;
 	if (activeSession) {
-		readableSurface.activate(activeSession);
+		// Restored, not started: this worker is replacing an evicted one, and the page it
+		// was projecting into is still there.
+		readableSurface.restore(activeSession);
 	}
 	playlistQueue = await loadQueue();
 	let queueChanged = false;
@@ -697,7 +702,10 @@ async function stopActiveSession(_reason: string): Promise<void> {
 	await settlePendingStart();
 	const activePlaybackSession = activeSession;
 	const queueItemId = getQueueItemId(activePlaybackSession);
-	if (queueItemId) {
+	// 'queue-skipped' leaves the queue alone: advanceQueueAfter owns that item's next
+	// status, and releasing it to 'pending' here would overwrite the markDone and make
+	// getNextPending hand back the article the user just skipped.
+	if (queueItemId && _reason !== 'queue-skipped') {
 		const releaseStatus = _reason === 'tab-removed' ? 'error' : 'pending';
 		await markQueueItemStatus(queueItemId, releaseStatus);
 	}
@@ -905,6 +913,17 @@ async function startPlayback(input: StartPlaybackInput): Promise<CommandResponse
 		...(input.readableSurface === 'document-reader'
 			? { documentTitle: input.source.title?.trim() || (input.content as { title?: string }).title?.trim() || 'Document' }
 			: {}),
+		mediaSession: buildMediaSessionMetadata(
+			{
+				contentScope: input.contentScope,
+				title: input.source.kind === 'tab' ? input.source.title : undefined,
+				url: input.source.kind === 'tab' ? input.source.url : undefined,
+			},
+			{ selection: t('mediaSessionSelectedText'), manual: t('mediaSessionManualText') },
+		),
+		// Computed once at start: editing the queue mid-article can leave the OS next
+		// button stale until the following item begins.
+		hasNextQueueItem: getNextPending(playlistQueue) !== null,
 	};
 	// The session is live and published, so the command is answered here. Everything below waits on
 	// the model cache and the offscreen document — seconds on a cold start — and must not hold the
@@ -970,6 +989,14 @@ async function loadAndPlay(
 		action: 'PLAY',
 		payload: playPayload,
 	});
+
+	// Guard against offscreen never reporting back — if the session is still loading
+	// after STARTUP_TIMEOUT_MS, transition to error rather than hanging indefinitely.
+	setTimeout(() => {
+		if (activeSession?.sessionId === session.sessionId && activeSession?.status === 'loading') {
+			void failPendingStart(session.sessionId);
+		}
+	}, STARTUP_TIMEOUT_MS);
 }
 
 async function startCurrentPage(targetTabId?: number, queueItemId?: string, fallbackUrl?: string): Promise<CommandResponse> {
@@ -1389,6 +1416,35 @@ async function findTargetTabForNavigation(preferredTabId?: number): Promise<numb
 	return undefined;
 }
 
+/** Retire a queue item and start whatever is next. Shared by natural completion and skip. */
+async function advanceQueueAfter(queueItemId: string, tabId?: number): Promise<void> {
+	playlistQueue = markDone(playlistQueue, queueItemId);
+	await saveAndBroadcastQueue();
+
+	const nextItem = getNextPending(playlistQueue);
+	if (nextItem) {
+		await playQueueItem(nextItem, tabId);
+	}
+}
+
+/**
+ * The system "next track" control. Unlike natural completion this runs with a live
+ * session, so the audio has to be torn down first — see stopActiveSession for why the
+ * reason matters.
+ */
+async function skipToNextQueueItem(): Promise<CommandResponse> {
+	await ensureHydrated();
+	const queueItemId = getQueueItemId(activeSession);
+	if (!queueItemId || !getPlayingItem(playlistQueue, queueItemId)) {
+		return { success: false, error: ERROR_MESSAGES.noSession };
+	}
+	const tabId = activeSession?.source.kind === 'tab' ? activeSession.source.tabId : undefined;
+
+	await stopActiveSession('queue-skipped');
+	await advanceQueueAfter(queueItemId, tabId);
+	return { success: true };
+}
+
 async function applyProgressMessage(message: Record<string, unknown>): Promise<void> {
 	await ensureHydrated();
 	if (!activeSession || typeof message.sessionId !== 'string' || !isPlaybackProgress(message.progress)) {
@@ -1408,13 +1464,7 @@ async function applyProgressMessage(message: Record<string, unknown>): Promise<v
 		await clearSession();
 
 		if (completedNaturally && queueItemId && getPlayingItem(playlistQueue, queueItemId)) {
-			playlistQueue = markDone(playlistQueue, queueItemId);
-			await saveAndBroadcastQueue();
-
-			const nextItem = getNextPending(playlistQueue);
-			if (nextItem) {
-				await playQueueItem(nextItem, currentSessionTabId);
-			}
+			await advanceQueueAfter(queueItemId, currentSessionTabId);
 		}
 
 		await closeOffscreenWhenIdle();
@@ -1640,6 +1690,9 @@ export const handleBackgroundMessage = (
 
 			case 'STOP_READING':
 				return respondFromQueue(stopReading, sendResponse);
+
+			case 'SKIP_TO_NEXT_QUEUE_ITEM':
+				return respondFromQueue(skipToNextQueueItem, sendResponse);
 
 			case 'OPEN_DOCUMENT_READER':
 				return respondFromQueue(openDocumentReader, sendResponse);

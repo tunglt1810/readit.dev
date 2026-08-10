@@ -8,6 +8,7 @@ const AUDIO_LIFECYCLE_TEST = /resumes the same session after Chrome audio idle c
 export default defineConfig({
 	testDir: './tests/e2e',
 	globalSetup: './tests/e2e/global_setup.ts',
+	globalTeardown: './tests/e2e/global_teardown.ts',
 	/* Maximum time one test can run for. */
 	timeout: 30 * 1000,
 	expect: {
@@ -44,9 +45,15 @@ export default defineConfig({
 			},
 		},
 		{
+			name: 'chromium-cleanup',
+			testMatch: /chromium_cleanup\.ts/,
+			dependencies: ['chromium'],
+		},
+		{
 			name: 'chromium-audio',
 			testMatch: /reading-state\.spec\.ts/,
 			grep: AUDIO_LIFECYCLE_TEST,
+			dependencies: ['chromium-cleanup'],
 			use: {
 				...devices['Desktop Chrome'],
 				headless: false,

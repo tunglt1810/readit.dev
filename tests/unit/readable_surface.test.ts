@@ -140,6 +140,36 @@ test('ignores Website updates until initialization succeeds', async () => {
 	assert.deepEqual(sentToTab, []);
 });
 
+test('a session restored after a worker restart keeps projecting without a second handshake', async () => {
+	// Chrome evicts an idle MV3 worker after ~30s, so any pause longer than that revives a
+	// cold worker holding none of the READABLE_SURFACE_INIT handshake. The content script
+	// still has its word list and offscreen never sends INIT again, so demanding the
+	// handshake here drops every remaining update and freezes the highlight for good.
+	const { coordinator, queued, sentToTab } = createHarness();
+	coordinator.restore(websiteSession);
+
+	coordinator.advance(updateMessage(1, 'Second'));
+	await queued.shift()?.();
+
+	assert.deepEqual(sentToTab, [
+		{ tabId: 42, message: { action: 'WORD_HIGHLIGHT_UPDATE', sessionId: websiteSession.sessionId, wordIndex: 1 } },
+	]);
+});
+
+test('a restored session stops projecting once the tab turns out to be gone', async () => {
+	// Assuming the projection survived is only safe because a vanished tab corrects it:
+	// the page may have been reloaded while the worker was asleep.
+	const { coordinator, queued, sentToTab } = createHarness({ rejectTab: true });
+	coordinator.restore(websiteSession);
+
+	coordinator.advance(updateMessage(1, 'Second'));
+	await queued.shift()?.();
+	coordinator.advance(updateMessage(2, 'Third'));
+	await queued.shift()?.();
+
+	assert.equal(sentToTab.length, 1);
+});
+
 test('rejects Website initialization when the message scope differs from the active session', async () => {
 	const { coordinator, sentToTab } = createHarness();
 	const selectionSession: PlaybackSessionSnapshot = {

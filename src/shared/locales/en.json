@@ -121,6 +121,8 @@
 	"queueErrorNoPending": "Queue has no pending items.",
 	"queueErrorEmpty": "Queue is empty.",
 	"queueErrorNavigationFailed": "Unable to navigate to page.",
+	"mediaSessionSelectedText": "Selected text",
+	"mediaSessionManualText": "Manual text",
 	"voiceStyles": {
 		"M1": "Male 1 (Deep)",
 		"M2": "Male 2 (Warm)",

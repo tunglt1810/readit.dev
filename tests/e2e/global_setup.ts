@@ -1,3 +1,4 @@
+import { execSync } from 'child_process';
 import { chromium, type Page } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
@@ -66,6 +67,20 @@ function cleanOrphanProfiles(): void {
 	}
 }
 
+export function killOrphanChromeProcesses(): void {
+	if (process.platform !== 'darwin' && process.platform !== 'linux') {
+		return;
+	}
+	try {
+		// Kill orphan Chromium/Chrome helper processes that outlived their test context.
+		// The --signal TERM gives them a clean shutdown chance before force-killing.
+		execSync('pkill -f "chromium.*--test-type" 2>/dev/null || true', { stdio: 'ignore' });
+		execSync('pkill -f "chrome.*--test-type" 2>/dev/null || true', { stdio: 'ignore' });
+	} catch (_error) {
+		// pkill returns non-zero when no matching processes exist — safe to ignore.
+	}
+}
+
 /**
  * Downloads the real Supertonic model files into a reusable Chrome profile
  * once, so per-test profiles (see fixtures.ts) can clone it instead of each
@@ -75,6 +90,7 @@ function cleanOrphanProfiles(): void {
  * docs/plans/2026-07-24-e2e-model-cache-seed-fix.md for the full rationale.
  */
 export default async function globalSetup(): Promise<void> {
+	killOrphanChromeProcesses();
 	cleanOrphanProfiles();
 
 	if (isSeedFresh()) {

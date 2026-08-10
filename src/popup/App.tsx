@@ -334,11 +334,11 @@ export default function App() {
 					<h1 className="logo-text">
 						readit<span>.dev</span>
 					</h1>
-					</div>
-					<span className="extension-version">v{displayVersion}</span>
-					<a className="support-link header-support-link" href={BUY_ME_A_COFFEE_URL} target="_blank" rel="noreferrer">
-						<span aria-hidden="true">☕</span> {t('buyMeCoffee')}
-					</a>
+				</div>
+				<span className="extension-version">v{displayVersion}</span>
+				<a className="support-link header-support-link" href={BUY_ME_A_COFFEE_URL} target="_blank" rel="noreferrer">
+					<span aria-hidden="true">☕</span> {t('buyMeCoffee')}
+				</a>
 				</header>
 
 			{/* Main Playback Area */}
@@ -482,7 +482,7 @@ export default function App() {
 						</span>
 					</div>
 				</div>
-				</main>
+			</main>
 
 			<SettingsCard
 				collapsible={false}
@@ -499,10 +499,10 @@ export default function App() {
 				onThemeChange={handleThemeChange}
 			/>
 
-				{/* Footer */}
-				<footer className="app-footer">
-					<div className="footer-links">
-						<a className="support-link feedback-link" href={feedbackUrl} target="_blank" rel="noreferrer">
+			{/* Footer */}
+			<footer className="app-footer">
+				<div className="footer-links">
+					<a className="support-link feedback-link" href={feedbackUrl} target="_blank" rel="noreferrer">
 						{t('feedback')}
 					</a>
 					<a className="privacy-link" href={PRIVACY_POLICY_URL} target="_blank" rel="noreferrer">

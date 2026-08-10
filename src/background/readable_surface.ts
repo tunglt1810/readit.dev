@@ -5,6 +5,12 @@ import { createWordHighlightUpdateCoalescer } from './word_highlight_update_coal
 
 export interface ReadableSurfaceCoordinator {
 	activate(session: PlaybackSessionSnapshot): void;
+	/**
+	 * Adopt a session that was already playing before this worker started. Unlike
+	 * `activate`, the projection is assumed to be live: the handshake happened in the
+	 * evicted worker and offscreen only sends it once per session.
+	 */
+	restore(session: PlaybackSessionSnapshot): void;
 	attachDocumentReader(owner: DocumentReaderOwner): Promise<boolean>;
 	detachDocumentReader(tabId: number): Promise<void>;
 	documentReaderTabId(): number | null;
@@ -90,6 +96,12 @@ export function createReadableSurfaceCoordinator(dependencies: ReadableSurfaceDe
 			}
 			activeSession = session;
 			websiteReady = false;
+		},
+		restore(session) {
+			activeSession = session;
+			// Safe to assume rather than verify: a tab that went away in the meantime makes
+			// the first delivery throw, which clears this again.
+			websiteReady = session.readableSurface === 'website-dom';
 		},
 		async attachDocumentReader(owner) {
 			const session = activeSession;
