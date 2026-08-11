@@ -9,7 +9,7 @@ import {
 import { isDocumentReaderSnapshot, type DocumentReaderSnapshot } from '../shared/document_reader.ts';
 import { isPanelInstanceId } from '../shared/manual_playback.ts';
 import type { MediaSessionMetadata } from '../shared/media_session_metadata.ts';
-import type { AudioExportEstimate, CommandResponse, PlaybackContent, PlaybackContentScope, ReadableSurfaceKind } from '../shared/types.ts';
+import type { AudioExportEstimate, CommandResponse, PlaybackContent, PlaybackContentScope, PronunciationRule, ReadableSurfaceKind } from '../shared/types.ts';
 
 export type OffscreenCommand = { action: string; payload?: unknown; target?: string };
 
@@ -28,6 +28,9 @@ export type OffscreenPlayPayload = {
 	documentTitle?: string;
 	mediaSession?: MediaSessionMetadata;
 	hasNextQueueItem?: boolean;
+	// Read from storage in the background before dispatch: `chrome.storage` is not
+	// reliably available inside the Chrome offscreen document (see storage.ts).
+	pronunciationRules: PronunciationRule[];
 };
 
 export type ManualCheckpointMetadata = {

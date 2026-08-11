@@ -502,6 +502,18 @@ export default function App() {
 			{/* Footer */}
 			<footer className="app-footer">
 				<div className="footer-links">
+					<a
+						className="support-link pronunciation-link"
+						href="#"
+						onClick={(e) => {
+							e.preventDefault();
+							void chrome.tabs.create({
+								url: chrome.runtime.getURL('src/settings/settings.html'),
+							});
+						}}
+					>
+						{t('pronunciationDictionary')}
+					</a>
 					<a className="support-link feedback-link" href={feedbackUrl} target="_blank" rel="noreferrer">
 						{t('feedback')}
 					</a>

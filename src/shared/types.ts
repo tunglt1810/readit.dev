@@ -167,3 +167,15 @@ export interface PlaybackStateResponse {
 export interface AudioExportStateResponse {
 	job: AudioExportJobSnapshot | null;
 }
+
+/** A user-defined pronunciation replacement rule applied before TTS synthesis. */
+export interface PronunciationRule {
+	id: string;
+	match: string;
+	replacement: string;
+	wholeWord: boolean;
+	caseSensitive: boolean;
+	lang?: 'en' | 'vi' | 'zh';
+	enabled: boolean;
+	createdAt: number;
+}

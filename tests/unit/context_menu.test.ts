@@ -24,7 +24,7 @@ test('setupContextMenus clears existing menus before creating sub-menus', async 
 	assert.equal(calls[0].action, 'removeAll');
 
 	const createCalls = calls.filter((c) => c.action === 'create');
-	assert.equal(createCalls.length, 6); // parent, selection, separator, add-to-queue, play-queue, replay-queue
+	assert.equal(createCalls.length, 8); // parent, selection, separator, add-to-queue, play-queue, replay-queue, pronunciation-separator, add-pronunciation-rule
 
 	// Parent menu check
 	const parentCall = createCalls[0].args?.[0] as Record<string, unknown>;

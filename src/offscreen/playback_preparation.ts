@@ -1,10 +1,12 @@
 import { isPredominantlyLatinText, planLatinSpeechUnits } from './latin/speech_units.ts';
+import { applyPronunciationDictionary } from './pronunciation_dictionary.ts';
 import { SegmentationCapacityError } from './segmentation.ts';
 import { consolidateShortSpeechUnits } from './short_segment_consolidation.ts';
 import type { SpeechUnit } from './speech_unit.ts';
 import { assertWithinSynthesisCapacity, chunkText, synthesisTextLimitForLanguage } from './supertonic_helper.ts';
 import { normalizeSourceText } from './text_normalization.ts';
 import type { NormalizationResult } from './vietnamese/types.ts';
+import type { PronunciationRule } from '../shared/types.ts';
 import { attachNormalizedWordMap, attachPlainWordMap } from './word_map.ts';
 
 export interface VietnameseTextNormalizer {
@@ -53,6 +55,7 @@ export async function preparePlaybackUnits(
 	rawText: string,
 	lang: string,
 	normalizer: VietnameseTextNormalizer | null,
+	pronunciationRules: readonly PronunciationRule[] = [],
 ): Promise<SpeechUnit[]> {
 	const { paragraphs, planningText } = normalizeSourceText(rawText);
 	if (paragraphs.length === 0) {
@@ -63,10 +66,13 @@ export async function preparePlaybackUnits(
 		const planned = isPredominantlyLatinText(planningText)
 			? plannedUnits(paragraphs, lang, null)
 			: compatibilityUnits(paragraphs, lang, null);
+		applyPronunciationDictionary(planned, pronunciationRules, lang);
 		return attachPlainWordMap(consolidate(planned, lang));
 	}
 	if (!normalizer) {
-		return attachPlainWordMap(consolidate(vietnameseFallback(paragraphs, lang), lang));
+		const fallback = vietnameseFallback(paragraphs, lang);
+		applyPronunciationDictionary(fallback, pronunciationRules, lang);
+		return attachPlainWordMap(consolidate(fallback, lang));
 	}
 	try {
 		const result = await normalizer.normalize(planningText);
@@ -75,13 +81,19 @@ export async function preparePlaybackUnits(
 		const planned = planLatinSpeechUnits(normalizeSourceText(result.text).paragraphs).filter(
 			({ text: unit }) => unit.trim().length > 0,
 		);
-		return planned.length > 0
-			? attachNormalizedWordMap(consolidate(validateCapacity(planned, lang), lang), result.text, result.wordMap)
-			: attachPlainWordMap(consolidate(vietnameseFallback(paragraphs, lang), lang));
+		applyPronunciationDictionary(planned, pronunciationRules, lang);
+		if (planned.length > 0) {
+			return attachNormalizedWordMap(consolidate(validateCapacity(planned, lang), lang), result.text, result.wordMap);
+		}
+		const viFallback = vietnameseFallback(paragraphs, lang);
+		applyPronunciationDictionary(viFallback, pronunciationRules, lang);
+		return attachPlainWordMap(consolidate(viFallback, lang));
 	} catch (error) {
 		if (error instanceof SegmentationCapacityError || error instanceof RangeError) {
 			throw error;
 		}
-		return attachPlainWordMap(consolidate(vietnameseFallback(paragraphs, lang), lang));
+		const errorFallback = vietnameseFallback(paragraphs, lang);
+		applyPronunciationDictionary(errorFallback, pronunciationRules, lang);
+		return attachPlainWordMap(consolidate(errorFallback, lang));
 	}
 }

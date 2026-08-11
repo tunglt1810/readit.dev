@@ -85,7 +85,7 @@ import {
 	matchesPendingQueueNavigation,
 	selectNavigationTab,
 } from './queue_navigation.ts';
-import type { PendingQueueNavigation, PlaylistQueue, QueueItem } from '../shared/types.ts';
+import type { PendingQueueNavigation, PlaylistQueue, PronunciationRule, QueueItem } from '../shared/types.ts';
 
 const DEFAULT_VOICE_STYLE_ID = 'M1';
 
@@ -902,12 +902,18 @@ async function startPlayback(input: StartPlaybackInput): Promise<CommandResponse
 	readableSurface.activate(session);
 	await publishSession(session);
 
+	// Read here, not in the offscreen document: `chrome.storage` is not reliably available
+	// inside the Chrome offscreen document (see storage.ts).
+	const pronunciationStorageResult = await chrome.storage.local.get(STORAGE_KEYS.PRONUNCIATION_DICTIONARY);
+	const pronunciationRules: PronunciationRule[] = (pronunciationStorageResult[STORAGE_KEYS.PRONUNCIATION_DICTIONARY] as PronunciationRule[] | undefined) ?? [];
+
 	const playPayload: OffscreenPlayPayload = {
 		sessionId: session.sessionId,
 		article: input.content,
 		voiceStyleId,
 		speed,
 		readableSurface: input.readableSurface,
+		pronunciationRules,
 		...(input.source.kind === 'tab' ? { contentScope: input.contentScope } : {}),
 		...(input.contentScope === 'manual' ? { panelInstanceId: input.source.panelInstanceId } : {}),
 		...(input.readableSurface === 'document-reader'
@@ -2017,6 +2023,16 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 			if (!nextItem) return { success: false, error: 'Không thể phát lại queue.' };
 			return playQueueItem(nextItem);
 		});
+		return;
+	}
+
+	if (info.menuItemId === 'readit-add-pronunciation-rule') {
+		const selectedText = (info.selectionText ?? '').trim();
+		if (!selectedText) return;
+		const settingsUrl = chrome.runtime.getURL(
+			`src/settings/settings.html?match=${encodeURIComponent(selectedText)}`,
+		);
+		void chrome.tabs.create({ url: settingsUrl });
 	}
 });
 

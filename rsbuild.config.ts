@@ -104,6 +104,7 @@ export default defineConfig({
 			popup: './src/popup/index.tsx',
 			sidepanel: './src/sidepanel/index.tsx',
 			reader: './src/reader/index.tsx',
+			settings: './src/settings/index.tsx',
 			offscreen: vietnameseBenchmark ? './tests/performance/vietnamese_offscreen_benchmark.ts' : './src/offscreen/offscreen_entry.ts',
 			background: {
 				import: targetBrowser === 'firefox' ? './src/background/firefox_background.ts' : './src/background/background.ts',
@@ -167,6 +168,9 @@ export default defineConfig({
 			if (entryName === 'reader') {
 				return './src/reader/reader.html';
 			}
+			if (entryName === 'settings') {
+				return './src/settings/settings.html';
+			}
 			if (entryName === 'offscreen') {
 				return vietnameseBenchmark ? './tests/performance/vietnamese_offscreen_benchmark.html' : './src/offscreen/offscreen.html';
 			}
@@ -181,6 +185,8 @@ export default defineConfig({
 				config.filename = 'src/sidepanel/sidepanel.html';
 			} else if (entryName === 'reader') {
 				config.filename = 'src/reader/reader.html';
+			} else if (entryName === 'settings') {
+				config.filename = 'src/settings/settings.html';
 			} else if (entryName === 'offscreen') {
 				config.filename = 'src/offscreen/offscreen.html';
 			}

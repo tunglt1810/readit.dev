@@ -47,6 +47,7 @@ export const STORAGE_KEYS = {
 	PLAYLIST_QUEUE: 'readit_playlist_queue',
 	PENDING_QUEUE_NAVIGATION: 'readit_pending_queue_navigation',
 	HAS_CUSTOM_SPEED_OVERRIDE: 'readit_has_custom_speed_override',
+	PRONUNCIATION_DICTIONARY: 'readit_pronunciation_dictionary',
 };
 
 export const PRIVACY_POLICY_URL = 'https://tunglt1810.github.io/readit.dev/privacy-policy/';

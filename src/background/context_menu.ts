@@ -61,6 +61,24 @@ export function setupContextMenus(): Promise<void> {
 				documentUrlPatterns: ['http://*/*', 'https://*/*'],
 			});
 
+			// Separator before pronunciation
+			chrome.contextMenus.create({
+				id: 'readit-pronunciation-separator',
+				parentId: 'readit-menu',
+				type: 'separator',
+				contexts: ['selection'],
+				documentUrlPatterns: ['http://*/*', 'https://*/*'],
+			});
+
+			// Add pronunciation rule
+			chrome.contextMenus.create({
+				id: 'readit-add-pronunciation-rule',
+				parentId: 'readit-menu',
+				title: t('contextMenuAddRule'),
+				contexts: ['selection'],
+				documentUrlPatterns: ['http://*/*', 'https://*/*'],
+			});
+
 			resolve();
 		});
 	});

@@ -8,7 +8,7 @@ import { MODEL_FILES, VOICE_STYLES } from '../shared/constants';
 import type { DocumentReaderSnapshot } from '../shared/document_reader.ts';
 import { isPanelInstanceId } from '../shared/manual_playback';
 import { buildReadableSurfaceWords } from '../shared/readable_surface.ts';
-import type { AudioExportEstimate, PlaybackContent, PlaybackContentScope, PlaybackProgress, PlaybackStatus, ReadableSurfaceKind } from '../shared/types';
+import type { AudioExportEstimate, PlaybackContent, PlaybackContentScope, PlaybackProgress, PlaybackStatus, PronunciationRule, ReadableSurfaceKind } from '../shared/types';
 import { createSpeechAudioBuffer, synthesizeSpeechUnitSamples } from './audio';
 import { EngineBoundaryDiagnostics } from './engine_boundary_diagnostics.ts';
 import { VoicedAudioError } from './voiced_audio.ts';
@@ -1280,6 +1280,7 @@ export const handleOffscreenMessage = (
 						documentTitle?: unknown;
 						mediaSession?: MediaSessionMetadata;
 						hasNextQueueItem?: boolean;
+						pronunciationRules?: PronunciationRule[];
 					};
 					const { article, voiceStyleId, speed } = data;
 					if (!isReadableSurfaceKind(data.readableSurface)) {
@@ -1341,7 +1342,7 @@ export const handleOffscreenMessage = (
 									normalize: (text) => normalizeVietnameseText(text, { assets, now: () => performance.now() }),
 								};
 							}
-							const preparedUnits = await preparePlaybackUnits(article.content, article.lang, normalizer);
+							const preparedUnits = await preparePlaybackUnits(article.content, article.lang, normalizer, data.pronunciationRules ?? []);
 
 							if (session !== playbackSession) {
 								sendResponse({ success: false, error: 'Playback superseded' });
