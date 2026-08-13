@@ -24,7 +24,7 @@
 - Unknown, ambiguous, malformed, non-finite, or failed normalization restores the complete original source span and playback continues.
 - Store every download, generated scratch artifact, browser profile, benchmark build, and report under repository `.tmp/`; never use the operating-system temp directory.
 - Preserve unrelated worktree content, especially `context_improvement.md`; stage only files named by a task.
-- Do not commit during implementation until anh guộc explicitly authorizes commits. Each commit step below is a future checkpoint, not current authorization.
+- Do not commit during implementation until the repository owner explicitly authorizes commits. Each commit step below is a future checkpoint, not current authorization.
 - Do not begin a custom Rust/WASM Viterbi implementation from this plan. Trigger a separate reviewed plan only if Chrome misses the p95 budget, Viterbi exceeds 50% of normalization time, a prototype improves end-to-end normalization by at least 20%, and output is byte-identical.
 
 ---
@@ -285,7 +285,7 @@ git add scripts/sync-vietnamese-normalizer-assets.py scripts/validate-vietnamese
 git commit -m "Bundle Vietnamese normalizer assets"
 ```
 
-Do not run these commands until anh guộc explicitly authorizes commits.
+Do not run these commands until the repository owner explicitly authorizes commits.
 
 ---
 
@@ -429,7 +429,7 @@ git add src/offscreen/vietnamese/types.ts src/offscreen/vietnamese/tokenizer.ts 
 git commit -m "Add reversible Vietnamese tokenization"
 ```
 
-Do not run until anh guộc explicitly authorizes commits.
+Do not run until the repository owner explicitly authorizes commits.
 
 ---
 
@@ -564,7 +564,7 @@ git add src/offscreen/vietnamese/features.ts src/offscreen/vietnamese/crf.ts \
 git commit -m "Port Vietnamese CRF detection"
 ```
 
-Do not run until anh guộc explicitly authorizes commits.
+Do not run until the repository owner explicitly authorizes commits.
 
 ---
 
@@ -674,7 +674,7 @@ git add src/offscreen/vietnamese/number_words.ts src/offscreen/vietnamese/expand
 git commit -m "Add Vietnamese typed expansion rules"
 ```
 
-Do not run until anh guộc explicitly authorizes commits.
+Do not run until the repository owner explicitly authorizes commits.
 
 ---
 
@@ -785,7 +785,7 @@ git add src/offscreen/vietnamese/abbreviations.ts src/offscreen/vietnamese/abbre
 git commit -m "Add constrained Vietnamese abbreviation scoring"
 ```
 
-Do not run until anh guộc explicitly authorizes commits.
+Do not run until the repository owner explicitly authorizes commits.
 
 ---
 
@@ -960,7 +960,7 @@ git add src/offscreen/vietnamese/assets.ts src/offscreen/vietnamese/normalizer.t
 git commit -m "Assemble Vietnamese normalization pipeline"
 ```
 
-Do not run until anh guộc explicitly authorizes commits.
+Do not run until the repository owner explicitly authorizes commits.
 
 ---
 
@@ -1068,7 +1068,7 @@ git add src/offscreen/vietnamese/speech_units.ts src/offscreen/audio.ts \
 git commit -m "Plan Vietnamese speech pauses"
 ```
 
-Do not run until anh guộc explicitly authorizes commits.
+Do not run until the repository owner explicitly authorizes commits.
 
 ---
 
@@ -1161,7 +1161,7 @@ git add src/offscreen/playback_preparation.ts src/offscreen/offscreen.ts \
 git commit -m "Integrate Vietnamese speech preparation"
 ```
 
-Do not run until anh guộc explicitly authorizes commits.
+Do not run until the repository owner explicitly authorizes commits.
 
 ---
 
@@ -1265,7 +1265,7 @@ git add tests/e2e/vietnamese-pronunciation.spec.ts tests/performance \
 git commit -m "Verify Vietnamese pronunciation quality"
 ```
 
-Do not add `.tmp` benchmark outputs and do not commit until anh guộc explicitly authorizes commits.
+Do not add `.tmp` benchmark outputs and do not commit until the repository owner explicitly authorizes commits.
 
 ---
 
@@ -1373,7 +1373,7 @@ git add rsbuild.config.ts public/manifest.json src/offscreen/supertonic_helper.t
 git commit -m "Trim ONNX Runtime extension assets"
 ```
 
-Stage `public/manifest.json` and `supertonic_helper.ts` only if their measured production decision changed. Do not commit until anh guộc explicitly authorizes commits.
+Stage `public/manifest.json` and `supertonic_helper.ts` only if their measured production decision changed. Do not commit until the repository owner explicitly authorizes commits.
 
 ---
 
@@ -1457,7 +1457,7 @@ git add .github/workflows/release-extension.yml _docs/RELEASING.md \
 git commit -m "Complete Vietnamese pronunciation improvements"
 ```
 
-Do not run until anh guộc explicitly authorizes commits.
+Do not run until the repository owner explicitly authorizes commits.
 
 ---
 
@@ -1585,7 +1585,7 @@ git add src/offscreen/vietnamese/speech_units.ts \
 git commit -m "Reduce Vietnamese speech pauses"
 ```
 
-Do not run these commands until anh guộc explicitly authorizes commits.
+Do not run these commands until the repository owner explicitly authorizes commits.
 
 ---
 

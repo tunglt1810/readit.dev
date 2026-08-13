@@ -12,7 +12,7 @@ Today, PDF playback only starts from a PDF already open in the active browser ta
 
 This design adds:
 
-1. A **"Mở sách" (Open book)** entry point in the Popup and Side Panel that opens/focuses the extension's existing `src/reader/reader.html` page.
+1. A **"Open book"** entry point in the Popup and Side Panel that opens/focuses the extension's existing `src/reader/reader.html` page.
 2. A file picker on the Reader's empty state, built on the File System Access API, accepting both `.epub` and `.pdf`.
 3. An EPUB adapter (`src/shared/epub_extractor.ts`) that parses the container/OPF/spine and yields chapter text **one chapter at a time**, so only one chapter's decompressed text is ever resident.
 4. A **chapter-chaining coordinator** living in the Reader page that plays chapters back-to-back as independent playback sessions through the existing pipeline, with no changes to the offscreen synthesis engine.
@@ -50,7 +50,7 @@ This feature is **Chrome-only**. It depends on the File System Access API for bo
 
 The repository ships a real Firefox build (`browser_specific_settings.gecko`, `strict_min_version: 115.0`, an approved AMO listing), and `rsbuild.config.ts` already strips Chrome-only capabilities from the Firefox manifest (`sidePanel`, `offscreen`, `file://*/*`). This feature follows that precedent, but at the UI layer: because `rsbuild.config.ts` does not expose the build target to source code, the codebase's existing idiom is **runtime capability detection** (see `getDefaultBrowserApi()` in `src/shared/browser.ts`, which branches on `sidebarAction` vs `sidePanel`).
 
-Accordingly, the **"Mở sách"** entry point renders only when `typeof window.showOpenFilePicker === 'function'`. On Firefox — and on any Chrome build lacking the API — the button is absent rather than present-but-broken. No fallback loading path is built.
+Accordingly, the **"Open book"** entry point renders only when `typeof window.showOpenFilePicker === 'function'`. On Firefox — and on any Chrome build lacking the API — the button is absent rather than present-but-broken. No fallback loading path is built.
 
 ## Domain Model
 
@@ -76,14 +76,14 @@ Because the Reader tab is the source tab for local books, the Side Panel's exist
 
 ### Entry point
 
-`src/popup/App.tsx` and `src/sidepanel/App.tsx` each get an **"Mở sách"** button, always visible when supported (not dependent on an active session), calling `chrome.tabs.create({ url: chrome.runtime.getURL('src/reader/reader.html') })` — the same path `openDocumentReader()` already uses — or focusing an already-open Reader tab. This button only opens/focuses the tab; it does not itself invoke a file picker, so it is unaffected by the Popup's close-on-blur behavior.
+`src/popup/App.tsx` and `src/sidepanel/App.tsx` each get an **"Open book"** button, always visible when supported (not dependent on an active session), calling `chrome.tabs.create({ url: chrome.runtime.getURL('src/reader/reader.html') })` — the same path `openDocumentReader()` already uses — or focusing an already-open Reader tab. This button only opens/focuses the tab; it does not itself invoke a file picker, so it is unaffected by the Popup's close-on-blur behavior.
 
 ### Reader empty state
 
 When no `document-reader` session is attached, the empty state shows:
 
-- **"Mở sách"** (primary) — invokes `window.showOpenFilePicker({ types: [{ description: 'Books', accept: { 'application/pdf': ['.pdf'], 'application/epub+zip': ['.epub'] } }] })` from within the click handler (the API requires a user gesture), then branches on the returned handle's file extension/MIME.
-- **"Tiếp tục đọc: `<title>` — Chương X/Y"** (secondary, only rendered if a saved EPUB progress record and file handle both exist) — see Resume below.
+- **"Open book"** (primary) — invokes `window.showOpenFilePicker({ types: [{ description: 'Books', accept: { 'application/pdf': ['.pdf'], 'application/epub+zip': ['.epub'] } }] })` from within the click handler (the API requires a user gesture), then branches on the returned handle's file extension/MIME.
+- **"Continue reading: `<title>` — Chapter X/Y"** (secondary, only rendered if a saved EPUB progress record and file handle both exist) — see Resume below.
 
 ### Returning to the file picker after Stop
 
@@ -91,7 +91,7 @@ Existing Document Reader behavior (unchanged) keeps a tab-attached PDF/Google Do
 
 Detecting "the user stopped" from session state alone is not reliable: the background broadcasts a null session *before* it broadcasts `DOCUMENT_READER_COMPLETED`, so a null session is indistinguishable from the gap between two chapters. Rather than race that ordering, the Reader offers the picker through two deterministic paths:
 
-- **Always reachable:** while a book is rendered, the Reader header shows **"Mở sách"**, so another book can be picked at any time — including mid-book, without stopping first.
+- **Always reachable:** while a book is rendered, the Reader header shows **"Open book"**, so another book can be picked at any time — including mid-book, without stopping first.
 - **End of book:** when `advance()` reports no further chapter, the Reader clears its snapshot directly in that branch and returns to the empty state with the picker and any resume action.
 
 Stop mid-book leaves the current chapter rendered, matching existing Document Reader behavior; the header action remains available.
@@ -148,7 +148,7 @@ The coordinator advances to the next chapter **only** on this message, matching 
 
 **Chapter-boundary gap.** Each chapter is a new playback session, so after prefetching text the pipeline still has to normalize, segment, and synthesize the first audio segment before sound resumes. A short gap at each boundary is therefore inherent to this design; prefetch removes only the parse portion. Eliminating it entirely would require the offscreen engine to accept appended content mid-session, which is out of scope.
 
-Because each chapter is its own session, `currentParagraphIndex`/`totalParagraphs`/`progressPercentage` are chapter-relative. The Reader additionally displays "Chương X/Y" from the chapter list (see *Chapters come from the table of contents* below), since the true whole-book word count is unknown without pre-parsing every chapter, which would defeat the memory goal.
+Because each chapter is its own session, `currentParagraphIndex`/`totalParagraphs`/`progressPercentage` are chapter-relative. The Reader additionally displays "Chapter X/Y" from the chapter list (see *Chapters come from the table of contents* below), since the true whole-book word count is unknown without pre-parsing every chapter, which would defeat the memory goal.
 
 ### Manual chapter navigation (EPUB only)
 
@@ -214,7 +214,7 @@ The Reader already computes the needed value while playing: `wordRanges[currentW
 **Resume flow:**
 
 1. The Reader loads with no active session and checks `chrome.storage.local` and IndexedDB for a saved book.
-2. If both exist, it shows "Tiếp tục đọc: `<title>` — Chương X/Y".
+2. If both exist, it shows "Continue reading: `<title>` — Chapter X/Y".
 3. On click (the required user gesture): call `handle.queryPermission({ mode: 'read' })`; if not `'granted'`, call `requestPermission({ mode: 'read' })` within the same gesture. Chrome may re-grant silently if the browser has not restarted, or show its native prompt.
 4. If denied, show `epubFileAccessDenied` and keep the saved progress so the user can retry.
 5. Otherwise re-open the file, re-parse the spine (cheap — no chapter text yet), jump to `chapterIndex`, parse that chapter, slice at `charOffset`, and start playback as above.
@@ -245,9 +245,9 @@ New codes are added to `src/shared/constants.ts` as `EPUB_ERROR_CODES`, mirrorin
 | `src/shared/epub_progress_store.ts` | New. Reads/writes `chrome.storage.local` progress and the IndexedDB file handle. |
 | `src/background/pdf_extractor.ts` | Split fetch from parse; add `extractPdfArticleFromBytes()`. |
 | `src/background/background.ts` | Handle `START_READER_CONTENT`; broadcast `DOCUMENT_READER_COMPLETED` on natural completion of a document-reader session. |
-| `src/reader/App.tsx` | Empty state: "Mở sách" file picker (PDF/EPUB branch) and conditional "Tiếp tục đọc"; local-origin Stop returns to empty state; offset tracking for progress writes; previous/next chapter buttons in the toolbar. |
+| `src/reader/App.tsx` | Empty state: "Open book" file picker (PDF/EPUB branch) and conditional "Continue reading"; local-origin Stop returns to empty state; offset tracking for progress writes; previous/next chapter buttons in the toolbar. |
 | `src/shared/components/PlaybackIcon.tsx` | Add `previous` / `next` skip glyphs. |
-| `src/popup/App.tsx`, `src/sidepanel/App.tsx` | Add capability-gated "Mở sách" entry point; suppress "Open full reader" for local-book sessions. |
+| `src/popup/App.tsx`, `src/sidepanel/App.tsx` | Add capability-gated "Open book" entry point; suppress "Open full reader" for local-book sessions. |
 | `src/shared/constants.ts` | `EPUB_ERROR_CODES`, `STORAGE_KEYS.EPUB_PROGRESS`. |
 | `src/shared/i18n.ts` | EN/VI strings for new errors and labels. |
 | `tests/unit/epub_extractor.test.ts` | New. Valid/invalid/DRM fixtures; chapter extraction; offset slicing and rebasing. |
@@ -283,10 +283,10 @@ New codes are added to `src/shared/constants.ts` as `EPUB_ERROR_CODES`, mirrorin
 - Resume a saved book at a later chapter and confirm the previous button still reaches the chapter before it.
 - Open a fixture with front matter the navigation skips; confirm it is neither counted nor read, and that the previous button is disabled on the opening chapter.
 - Open a fixture with a spine slot the navigation never names; confirm its text is read as part of the chapter before it.
-- Pre-seed `chrome.storage.local`/IndexedDB, reload the Reader, and confirm "Tiếp tục đọc" resumes at the correct chapter and offset.
+- Pre-seed `chrome.storage.local`/IndexedDB, reload the Reader, and confirm "Continue reading" resumes at the correct chapter and offset.
 - Simulate `requestPermission()` denial on resume; confirm `epubFileAccessDenied` is shown, progress is retained, and no crash occurs.
-- Open a local PDF via the same picker; confirm it reaches `document-reader` with no `chrome.storage` writes and no "Tiếp tục đọc" affordance.
-- Confirm the Popup/Side Panel "Mở sách" button opens/focuses the Reader without requiring an active session, and is absent when `showOpenFilePicker` is undefined.
+- Open a local PDF via the same picker; confirm it reaches `document-reader` with no `chrome.storage` writes and no "Continue reading" affordance.
+- Confirm the Popup/Side Panel "Open book" button opens/focuses the Reader without requiring an active session, and is absent when `showOpenFilePicker` is undefined.
 
 ### Verification sequence
 
@@ -302,14 +302,14 @@ Run sequentially:
 
 ## Acceptance Criteria
 
-- A non-DRM EPUB opened via "Mở sách" plays through TTS with word highlighting in the Document Reader.
+- A non-DRM EPUB opened via "Open book" plays through TTS with word highlighting in the Document Reader.
 - At most one chapter's decompressed text (plus one prefetched chapter) is resident at a time; the whole book's text is never decompressed at once.
 - Chapters advance automatically on natural completion, and only on natural completion — an explicit Stop does not advance.
 - Any chapter already read can be reached again: the previous/next buttons jump one chapter at a time and play it from the start, and running past the end of the chapter list leaves the current chapter playing rather than ending the book.
-- "Chương X/Y" counts the chapters the book's own table of contents names, so the chapter a book opens on is chapter 1 and the previous button is disabled there — front matter is neither numbered nor read.
+- "Chapter X/Y" counts the chapters the book's own table of contents names, so the chapter a book opens on is chapter 1 and the previous button is disabled there — front matter is neither numbered nor read.
 - Another book can be picked at any time from the Reader header, and finishing the last chapter returns the tab to the file-picker empty state.
 - EPUB chapter and character offset survive closing and reopening the browser, modulo re-granting file access, without drift across repeated resumes.
-- A locally picked PDF reuses the existing PDF parsing/highlighting path with no persistence and no "Tiếp tục đọc" affordance.
+- A locally picked PDF reuses the existing PDF parsing/highlighting path with no persistence and no "Continue reading" affordance.
 - The entry point is absent on builds/browsers without `showOpenFilePicker`; the Firefox build is otherwise unaffected.
 - No new manifest permission is introduced.
 - Existing website, Google Docs, and tab-based PDF reading behavior is unchanged, including retaining rendered text after Stop.

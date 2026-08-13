@@ -1355,7 +1355,7 @@ Expected: PASS and a successful build.
 
 - [ ] **Step 8: Manually smoke-test the PDF path**
 
-Load `dist/chrome` as an unpacked extension, open the Reader via `chrome-extension://<id>/src/reader/reader.html`, click **Mở sách**, and pick any text-layer PDF.
+Load `dist/chrome` as an unpacked extension, open the Reader via `chrome-extension://<id>/src/reader/reader.html`, click **Open book**, and pick any text-layer PDF.
 Expected: the PDF's text renders in the Reader and playback starts with word highlighting.
 
 - [ ] **Step 9: Commit**
@@ -1891,7 +1891,7 @@ Add the handler:
 	};
 ```
 
-Add the button inside `document-reader-empty-actions`, after the **Mở sách** button:
+Add the button inside `document-reader-empty-actions`, after the **Open book** button:
 
 ```tsx
 								{savedProgress && (
@@ -1915,7 +1915,7 @@ Expected: PASS and a successful build.
 - [ ] **Step 7: Manually smoke-test resume**
 
 Read a few paragraphs of an EPUB, close the Reader tab, reopen it.
-Expected: the **Tiếp tục đọc** button appears with the right chapter; clicking it resumes near the saved position.
+Expected: the **Continue reading** button appears with the right chapter; clicking it resumes near the saved position.
 
 - [ ] **Step 8: Commit**
 
@@ -1929,7 +1929,7 @@ git commit -m "feat: resume a saved EPUB from its stored chapter and offset"
 
 ### Task 11: Entry points and local-session behavior
 
-Adds the **Mở sách** button to Popup and Side Panel, suppresses the now-redundant **Open full reader** for local books, and returns the Reader to its empty state when a local session stops.
+Adds the **Open book** button to Popup and Side Panel, suppresses the now-redundant **Open full reader** for local books, and returns the Reader to its empty state when a local session stops.
 
 **Files:**
 - Modify: `src/popup/App.tsx`
@@ -2062,7 +2062,7 @@ Change the existing **Open full reader** condition (line 565) so it hides for lo
 						{session.readableSurface === 'document-reader' && !isLocalBookSession(session) && (
 ```
 
-Add the same **Mở sách** button as the Popup in the Side Panel's no-session branch, next to its existing page-info actions:
+Add the same **Open book** button as the Popup in the Side Panel's no-session branch, next to its existing page-info actions:
 
 ```tsx
 						{isFileSystemAccessSupported() && (
