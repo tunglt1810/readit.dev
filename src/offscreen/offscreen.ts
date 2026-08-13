@@ -7,7 +7,7 @@ import { deleteAudioExportHandle, takeAudioExportHandle } from '../shared/audio_
 import { MODEL_FILES, VOICE_STYLES } from '../shared/constants';
 import type { DocumentReaderSnapshot } from '../shared/document_reader.ts';
 import { isPanelInstanceId } from '../shared/manual_playback';
-import { buildReadableSurfaceWords } from '../shared/readable_surface.ts';
+import { buildReadableSurfaceInitMessage, buildReadableSurfaceWords } from '../shared/readable_surface.ts';
 import type { AudioExportEstimate, PlaybackContent, PlaybackContentScope, PlaybackProgress, PlaybackStatus, PronunciationRule, ReadableSurfaceKind } from '../shared/types';
 import { createSpeechAudioBuffer, synthesizeSpeechUnitSamples } from './audio';
 import { EngineBoundaryDiagnostics } from './engine_boundary_diagnostics.ts';
@@ -582,16 +582,17 @@ async function initializeReadableSurface(session: number): Promise<void> {
 		currentDocumentReader = { ...currentDocumentReader, words };
 	}
 	surfaceReady = false;
-	if (!currentExtensionSessionId || currentReadableSurface === 'none' || currentReadableSurface === 'document-reader' || words.length === 0) {
+	const initMessage = buildReadableSurfaceInitMessage(
+		currentReadableSurface,
+		currentExtensionSessionId,
+		currentReadableSurfaceContentScope,
+		words,
+	);
+	if (!initMessage) {
 		return;
 	}
 	try {
-		const response = (await requestAudioHostMessage({
-			action: 'READABLE_SURFACE_INIT',
-			sessionId: currentExtensionSessionId,
-			contentScope: currentReadableSurfaceContentScope,
-			words,
-		})) as { success?: unknown };
+		const response = (await requestAudioHostMessage(initMessage)) as { success?: unknown };
 		if (session === playbackSession) {
 			surfaceReady = response?.success === true;
 		}

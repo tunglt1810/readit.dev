@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createReadableSurfaceCoordinator } from '../../src/background/readable_surface.ts';
 import type { DocumentReaderPortMessage, DocumentReaderSnapshot } from '../../src/shared/document_reader.ts';
-import type { ReadableSurfaceInitMessage, ReadableSurfaceUpdateMessage, ReadableSurfaceWord } from '../../src/shared/readable_surface.ts';
+import {
+	buildReadableSurfaceInitMessage,
+	type ReadableSurfaceInitMessage,
+	type ReadableSurfaceUpdateMessage,
+	type ReadableSurfaceWord,
+} from '../../src/shared/readable_surface.ts';
 import type { PlaybackSessionSnapshot } from '../../src/shared/types.ts';
 
 const words: readonly ReadableSurfaceWord[] = [
@@ -76,6 +81,8 @@ function createHarness(options: { rejectTab?: boolean; rejectRuntime?: boolean }
 	const sentToRuntime: unknown[] = [];
 	const queued: (() => Promise<void>)[] = [];
 	const detachedDocumentSessions: string[] = [];
+	// Offscreen only knows the document once playback is prepared, so tests can withhold it.
+	const offscreenSnapshot: { current: DocumentReaderSnapshot | null } = { current: documentSnapshot };
 	const coordinator = createReadableSurfaceCoordinator({
 		sendTabMessage: async (tabId, message) => {
 			sentToTab.push({ tabId, message });
@@ -91,13 +98,13 @@ function createHarness(options: { rejectTab?: boolean; rejectRuntime?: boolean }
 			}
 			return undefined;
 		},
-		requestDocumentReaderSnapshot: async (sessionId) => (sessionId === documentSession.sessionId ? documentSnapshot : null),
+		requestDocumentReaderSnapshot: async (sessionId) => (sessionId === documentSession.sessionId ? offscreenSnapshot.current : null),
 		detachDocumentReader: async (sessionId) => {
 			detachedDocumentSessions.push(sessionId);
 		},
 		enqueue: (operation) => queued.push(operation),
 	});
-	return { coordinator, detachedDocumentSessions, queued, sentToRuntime, sentToTab };
+	return { coordinator, detachedDocumentSessions, offscreenSnapshot, queued, sentToRuntime, sentToTab };
 }
 
 test('initializes Website DOM before coalesced index updates', async () => {
@@ -271,6 +278,47 @@ test('attaches one Document Reader owner and routes snapshot, update, and clear'
 		{ action: 'DOCUMENT_READER_CLEAR', sessionId: documentSession.sessionId },
 	]);
 	assert.equal(coordinator.documentReaderTabId(), 77);
+});
+
+test('delivers the snapshot to a Document Reader that attached before playback was prepared', async () => {
+	const { coordinator, offscreenSnapshot } = createHarness();
+	const delivered: DocumentReaderPortMessage[] = [];
+	coordinator.activate(documentSession);
+	// A locally opened book publishes its session before offscreen holds the document.
+	offscreenSnapshot.current = null;
+
+	assert.equal(
+		await coordinator.attachDocumentReader({
+			tabId: 77,
+			sessionId: documentSession.sessionId,
+			deliver: (message) => delivered.push(message),
+		}),
+		true,
+	);
+	assert.deepEqual(delivered, []);
+
+	offscreenSnapshot.current = documentSnapshot;
+	assert.deepEqual(await coordinator.initialize(initMessage('article', documentSession.sessionId)), { success: true });
+
+	assert.deepEqual(delivered, [{ action: 'DOCUMENT_READER_SNAPSHOT', snapshot: documentSnapshot }]);
+});
+
+test('the Document Reader handshake survives the surface that carries no words of its own', () => {
+	assert.deepEqual(buildReadableSurfaceInitMessage('document-reader', 'document-session', 'article', words), {
+		action: 'READABLE_SURFACE_INIT',
+		sessionId: 'document-session',
+		contentScope: 'article',
+		words: [],
+	});
+	assert.deepEqual(buildReadableSurfaceInitMessage('website-dom', 'website-session', 'article', words), {
+		action: 'READABLE_SURFACE_INIT',
+		sessionId: 'website-session',
+		contentScope: 'article',
+		words,
+	});
+	assert.equal(buildReadableSurfaceInitMessage('none', 'website-session', 'article', words), null);
+	assert.equal(buildReadableSurfaceInitMessage('website-dom', 'website-session', 'article', []), null);
+	assert.equal(buildReadableSurfaceInitMessage('website-dom', null, 'article', words), null);
 });
 
 test('detaches a Document Reader without affecting playback', async () => {

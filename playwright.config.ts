@@ -13,14 +13,22 @@ export default defineConfig({
 	timeout: 30 * 1000,
 	expect: {
 		/**
-		 * Maximum time expect() should wait for the condition to be met.
-		 * For example in `await expect(locator).toBeVisible();`
+		 * Maximum time expect() should wait for the condition to be met. Workers run several
+		 * extension browsers at once, so a round trip through the background service worker can
+		 * take considerably longer than it does when one browser has the machine to itself.
 		 */
-		timeout: 5000,
+		timeout: 15_000,
 	},
-	/* Run tests in files in parallel */
+	/* Files run in parallel across workers; tests within one file stay ordered. */
 	fullyParallel: false,
-	workers: 1,
+	/**
+	 * Every test already gets its own profile directory, so parallelism is bounded by machine
+	 * size rather than by isolation. Measured on a 12-core machine: 4 workers ran the suite clean
+	 * twice at 5.4 min against 18.1 min serial, while Playwright's default of 6 reached 4.5 min
+	 * but started dropping synthesized input events under the extra contention. CI runners have
+	 * four cores, so they take a correspondingly smaller share.
+	 */
+	workers: process.env.CI ? 2 : 4,
 	/* Fail the build on CI if you accidentally left test.only in the source code. */
 	forbidOnly: !!process.env.CI,
 	/* Retry on CI only */

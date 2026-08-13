@@ -15,6 +15,8 @@ import { normalizeManualText } from '../shared/manual_text.ts';
 import { requestPlaybackState, sendPlaybackCommand, sendRuntimeRequest, subscribePlaybackState } from '../shared/playback_client.ts';
 import { resolvePlaybackStatus } from '../shared/playback_status.ts';
 import { isSelectionButtonEnabled } from '../shared/selection_button.ts';
+import { isLocalBookSession } from '../shared/local_book_session.ts';
+import { isFileSystemAccessSupported } from '../reader/book_loader.ts';
 import type { ManualTextLanguage, PageInfoResponse, PlaybackSessionSnapshot, PlaybackStatus, PlaylistQueue, ThemeName } from '../shared/types.ts';
 import { isWordHighlightEnabled } from '../shared/word_highlight.ts';
 import { buildSidePanelRegisterMessage } from '../popup/side_panel.ts';
@@ -563,7 +565,7 @@ export default function App() {
 							/>
 							<AudioExportButton session={session} />
 						</div>
-						{session.readableSurface === 'document-reader' && (
+						{session.readableSurface === 'document-reader' && !isLocalBookSession(session) && (
 							<button className="secondary-button document-reader-button" type="button" onClick={handleOpenDocumentReader}>
 								{t('openDocumentReader')}
 							</button>
@@ -580,6 +582,15 @@ export default function App() {
 							</div>
 						) : (
 							<p>{t('currentPageUnavailable')}</p>
+						)}
+						{isFileSystemAccessSupported() && (
+							<button
+								className="secondary-button"
+								type="button"
+								onClick={() => void chrome.tabs.create({ url: chrome.runtime.getURL('src/reader/reader.html') })}
+							>
+								{t('openBook')}
+							</button>
 						)}
 						<div className="playback-controls">
 							<PlaybackControlButton

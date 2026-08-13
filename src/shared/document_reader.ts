@@ -96,3 +96,20 @@ export function isDocumentReaderSnapshot(value: unknown): value is DocumentReade
 		Object.keys(snapshot).length === 5
 	);
 }
+
+/**
+ * Natural completion is otherwise invisible to extension pages: a finished session and a
+ * user-pressed Stop both surface as `status: 'stopped'` on the session snapshot.
+ */
+export interface DocumentReaderCompletedMessage {
+	action: 'DOCUMENT_READER_COMPLETED';
+	sessionId: string;
+}
+
+export function isDocumentReaderCompletedMessage(value: unknown): value is DocumentReaderCompletedMessage {
+	if (!value || typeof value !== 'object') {
+		return false;
+	}
+	const message = value as Record<string, unknown>;
+	return message.action === 'DOCUMENT_READER_COMPLETED' && typeof message.sessionId === 'string' && message.sessionId.length > 0;
+}

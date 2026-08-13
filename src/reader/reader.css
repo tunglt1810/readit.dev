@@ -11,7 +11,8 @@ body {
 	margin: 0;
 	min-width: 720px;
 	color: var(--color-text-primary);
-	background: radial-gradient(circle at 15% -10%, rgba(9, 159, 181, 0.16), transparent 36rem), var(--bg-app);
+	background: radial-gradient(circle at 88% 0%, rgba(0, 135, 113, 0.14), transparent 34%), var(--bg-app);
+	background-attachment: fixed;
 	font-family: var(--font-sans);
 }
 
@@ -36,8 +37,16 @@ input {
 	justify-content: space-between;
 	gap: 24px;
 	padding: 18px 0;
-	background: color-mix(in srgb, var(--bg-app) 88%, transparent);
-	backdrop-filter: blur(18px);
+	/* Blur alone, with no tint of its own: any opaque layer here paints over the page glow
+	   and leaves a black slab where the other surfaces show colour. */
+	backdrop-filter: blur(24px);
+}
+
+.document-reader-header-actions {
+	display: flex;
+	flex-shrink: 0;
+	align-items: center;
+	gap: 12px;
 }
 
 .document-reader-brand {
@@ -102,7 +111,7 @@ input {
 	height: 18px;
 }
 
-.btn-back-source {
+.document-reader-header-actions .btn {
 	flex-shrink: 0;
 	padding: 8px 16px;
 }
@@ -170,4 +179,17 @@ input {
 	* {
 		scroll-behavior: auto !important;
 	}
+}
+
+.document-reader-empty-actions {
+	display: flex;
+	gap: 12px;
+	justify-content: center;
+	margin-top: 20px;
+}
+
+/* `.btn` carries no padding of its own, so every surface has to size its own buttons. Matching
+   the header keeps the two places a book can be opened from looking like one control set. */
+.document-reader-empty-actions .btn {
+	padding: 8px 16px;
 }

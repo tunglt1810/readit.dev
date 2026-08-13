@@ -1,4 +1,4 @@
-export type PlaybackIconName = 'read' | 'stop' | 'pause' | 'resume' | 'sidepanel' | 'download' | 'check' | 'warning';
+export type PlaybackIconName = 'read' | 'stop' | 'pause' | 'resume' | 'previous' | 'next' | 'sidepanel' | 'download' | 'check' | 'warning';
 
 export function PlaybackIcon({ name }: { name: PlaybackIconName }) {
 	const commonProps = {
@@ -30,6 +30,20 @@ export function PlaybackIcon({ name }: { name: PlaybackIconName }) {
 			return (
 				<svg {...commonProps}>
 					<polygon points="8 5 19 12 8 19 8 5" />
+				</svg>
+			);
+		case 'previous':
+			return (
+				<svg {...commonProps}>
+					<polygon points="18 5 8 12 18 19 18 5" />
+					<line x1="6" y1="5" x2="6" y2="19" />
+				</svg>
+			);
+		case 'next':
+			return (
+				<svg {...commonProps}>
+					<polygon points="6 5 16 12 6 19 6 5" />
+					<line x1="18" y1="5" x2="18" y2="19" />
 				</svg>
 			);
 		case 'sidepanel':

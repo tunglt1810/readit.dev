@@ -1,4 +1,4 @@
-import { GOOGLE_DOCS_EXPORT_UNAVAILABLE, PDF_ERROR_CODES } from './constants.ts';
+import { EPUB_ERROR_CODES, GOOGLE_DOCS_EXPORT_UNAVAILABLE, PDF_ERROR_CODES } from './constants.ts';
 import en from './locales/en.json' with { type: 'json' };
 import vi from './locales/vi.json' with { type: 'json' };
 
@@ -32,6 +32,12 @@ export function getPlaybackErrorTranslationKey(error: string | undefined): Trans
 			return 'pdfTextUnavailable';
 		case PDF_ERROR_CODES.extractionFailed:
 			return 'pdfExtractionFailed';
+		case EPUB_ERROR_CODES.parseFailed:
+			return 'epubParseFailed';
+		case EPUB_ERROR_CODES.drmProtected:
+			return 'epubDrmProtected';
+		case EPUB_ERROR_CODES.fileAccessDenied:
+			return 'epubFileAccessDenied';
 		default:
 			return undefined;
 	}

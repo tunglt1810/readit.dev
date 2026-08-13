@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- read local EPUB and PDF books from the Document Reader, chaining chapters and resuming where reading stopped - [@tunglt1810]
 - center active word highlight and temporarily pause auto-scroll during user interaction - [@tunglt1810]
 - isolate Firefox release failures - [@tunglt1810]
 - universal text segmantation - [@tunglt1810]
@@ -17,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - sentence tail truncation and short unit consolidation for Vietnamese TTS - [@tunglt1810]
 - filter category metadata noise and preserve DOM order for Znews articles - [@tunglt1810]
 - sync language speed defaults and resolve audio cutoff in list consolidation - [@tunglt1810]
+
+### Chore
+- run the extension e2e suite on parallel workers - [@tunglt1810]
 
 
 ## [1.1.1] - 2026-08-01

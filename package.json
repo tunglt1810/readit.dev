@@ -31,6 +31,7 @@
 		"@mediabunny/mp3-encoder": "1.52.3",
 		"@mozilla/readability": "0.6.0",
 		"fft.js": "4.0.4",
+		"jszip": "3.10.1",
 		"mediabunny": "1.52.3",
 		"onnxruntime-web": "1.27.0",
 		"pdfjs-dist": "6.2.108",

@@ -1,4 +1,4 @@
-import type { PlaybackContentScope } from './types.ts';
+import type { PlaybackContentScope, ReadableSurfaceKind } from './types.ts';
 
 export interface ReadableSurfaceWord {
 	text: string;
@@ -32,6 +32,26 @@ export function buildReadableSurfaceWords(units: readonly { wordMap?: readonly {
 		}
 	}
 	return words;
+}
+
+/**
+ * The Document Reader pulls its own snapshot, so its handshake carries no words — but it still
+ * needs one: a Reader tab that attached while the session was published yet the document was not
+ * prepared has no other way to learn that its content exists.
+ */
+export function buildReadableSurfaceInitMessage(
+	surface: ReadableSurfaceKind,
+	sessionId: string | null,
+	contentScope: PlaybackContentScope,
+	words: readonly ReadableSurfaceWord[],
+): ReadableSurfaceInitMessage | null {
+	if (!sessionId || surface === 'none') {
+		return null;
+	}
+	if (surface === 'document-reader') {
+		return { action: 'READABLE_SURFACE_INIT', sessionId, contentScope, words: [] };
+	}
+	return words.length === 0 ? null : { action: 'READABLE_SURFACE_INIT', sessionId, contentScope, words };
 }
 
 function hasSessionId(value: { sessionId?: unknown }): boolean {

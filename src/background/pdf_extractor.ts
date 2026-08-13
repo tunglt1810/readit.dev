@@ -45,8 +45,10 @@ export function isSupportedPdfSource(url: string): boolean {
 }
 
 function isPdfResponse(headers: Headers, bytes: Uint8Array): boolean {
-	return headers.get('content-type')?.toLowerCase().includes('application/pdf') === true ||
-		(bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46 && bytes[4] === 0x2d);
+	return (
+		headers.get('content-type')?.toLowerCase().includes('application/pdf') === true ||
+		(bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46 && bytes[4] === 0x2d)
+	);
 }
 
 function normalizeText(text: string): string {
@@ -59,7 +61,12 @@ function normalizeText(text: string): string {
 }
 
 function hasLayout(item: PdfTextItem): item is PdfTextItem & { transform: number[]; height: number } {
-	return Array.isArray(item.transform) && item.transform.length >= 6 && item.transform.every((value) => typeof value === 'number') && typeof item.height === 'number';
+	return (
+		Array.isArray(item.transform) &&
+		item.transform.length >= 6 &&
+		item.transform.every((value) => typeof value === 'number') &&
+		typeof item.height === 'number'
+	);
 }
 
 function joinLine(items: (PdfTextItem & { transform: number[]; height: number })[]): string {
@@ -103,8 +110,8 @@ function normalizeLayoutText(items: (PdfTextItem & { transform: number[]; height
 
 function normalizePageText(items: PdfTextItem[]): string {
 	const textItems = items.filter((item): item is PdfTextItem & { str: string } => Boolean(item.str));
-	const layoutItems = textItems.filter(
-		(item): item is PdfTextItem & { str: string; transform: number[]; height: number } => hasLayout(item),
+	const layoutItems = textItems.filter((item): item is PdfTextItem & { str: string; transform: number[]; height: number } =>
+		hasLayout(item),
 	);
 	if (textItems.length > 0 && layoutItems.length === textItems.length) {
 		return normalizeLayoutText(layoutItems);
@@ -138,10 +145,47 @@ function extractionFailure(error: PdfErrorCode): PdfArticleResponse {
 	return { success: false, error };
 }
 
-export async function extractPdfArticle(
-	source: PdfSource,
-	dependencies: PdfExtractorDependencies,
-): Promise<PdfArticleResponse | null> {
+/** Parse already-obtained PDF bytes. Shared by URL-based extraction and locally picked files. */
+export async function extractPdfArticleFromBytes(
+	bytes: Uint8Array,
+	title: string,
+	dependencies: Pick<PdfExtractorDependencies, 'loadDocument'>,
+	url = title,
+): Promise<PdfArticleResponse> {
+	let document: PdfDocument | undefined;
+	try {
+		document = await dependencies.loadDocument(bytes);
+		const metadata = await document.getMetadata();
+		const pages: string[] = [];
+		for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber++) {
+			const page = await document.getPage(pageNumber);
+			const text = normalizePageText((await page.getTextContent()).items);
+			if (text) pages.push(text);
+		}
+		const content = pages.join('\n\n');
+		if (!content) return extractionFailure(PDF_ERROR_CODES.textUnavailable);
+		return {
+			success: true,
+			article: {
+				title: documentTitle(metadata, { url, title }),
+				content,
+				url,
+				lang: detectContentLanguage(content, 'na'),
+			},
+			readableSurface: 'document-reader',
+		};
+	} catch (error) {
+		return extractionFailure(
+			error instanceof Error && error.name === 'PasswordException'
+				? PDF_ERROR_CODES.passwordProtected
+				: PDF_ERROR_CODES.extractionFailed,
+		);
+	} finally {
+		if (document) await document.destroy();
+	}
+}
+
+export async function extractPdfArticle(source: PdfSource, dependencies: PdfExtractorDependencies): Promise<PdfArticleResponse | null> {
 	if (!isSupportedPdfSource(source.url)) return null;
 
 	if (new URL(source.url).protocol === 'file:' && !(await dependencies.isFileSchemeAccessAllowed())) {
@@ -181,31 +225,5 @@ export async function extractPdfArticle(
 	if (!bytes || bytes.length === 0) return extractionFailure(PDF_ERROR_CODES.extractionFailed);
 	if (headers && !isPdfResponse(headers, bytes)) return null;
 
-	let document: PdfDocument | undefined;
-	try {
-		document = await dependencies.loadDocument(bytes);
-		const metadata = await document.getMetadata();
-		const pages: string[] = [];
-		for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber++) {
-			const page = await document.getPage(pageNumber);
-			const text = normalizePageText((await page.getTextContent()).items);
-			if (text) pages.push(text);
-		}
-		const content = pages.join('\n\n');
-		if (!content) return extractionFailure(PDF_ERROR_CODES.textUnavailable);
-		return {
-			success: true,
-			article: {
-				title: documentTitle(metadata, source),
-				content,
-				url: source.url,
-				lang: detectContentLanguage(content, 'na'),
-			},
-			readableSurface: 'document-reader',
-		};
-	} catch (error) {
-		return extractionFailure(error instanceof Error && error.name === 'PasswordException' ? PDF_ERROR_CODES.passwordProtected : PDF_ERROR_CODES.extractionFailed);
-	} finally {
-		if (document) await document.destroy();
-	}
+	return extractPdfArticleFromBytes(bytes, source.title, dependencies, source.url);
 }

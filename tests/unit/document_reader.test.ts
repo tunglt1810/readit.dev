@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isDocumentReaderSnapshot, mapDocumentReaderWords } from '../../src/shared/document_reader.ts';
+import {
+	isDocumentReaderCompletedMessage,
+	isDocumentReaderSnapshot,
+	mapDocumentReaderWords,
+} from '../../src/shared/document_reader.ts';
 
 test('maps repeated words monotonically', () => {
 	assert.deepEqual(
@@ -59,4 +63,15 @@ test('validates a strict memory-only snapshot', () => {
 	assert.equal(isDocumentReaderSnapshot({ ...snapshot, words: [{ text: 'First', globalIndex: 1 }] }), false);
 	assert.equal(isDocumentReaderSnapshot({ ...snapshot, currentWordIndex: 1.5 }), false);
 	assert.equal(isDocumentReaderSnapshot({ ...snapshot, persistedText: snapshot.content }), false);
+});
+
+test('recognizes a well-formed completion message', () => {
+	assert.equal(isDocumentReaderCompletedMessage({ action: 'DOCUMENT_READER_COMPLETED', sessionId: 'abc' }), true);
+});
+
+test('rejects completion messages with a missing or wrong shape', () => {
+	assert.equal(isDocumentReaderCompletedMessage({ action: 'DOCUMENT_READER_COMPLETED' }), false);
+	assert.equal(isDocumentReaderCompletedMessage({ action: 'DOCUMENT_READER_COMPLETED', sessionId: '' }), false);
+	assert.equal(isDocumentReaderCompletedMessage({ action: 'PLAYBACK_STATE_UPDATE', sessionId: 'abc' }), false);
+	assert.equal(isDocumentReaderCompletedMessage(null), false);
 });

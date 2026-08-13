@@ -59,6 +59,7 @@ import {
 } from './playback_state';
 import { createSelectedTextArticle } from './selected_text';
 import { prepareSelectedTextRequest } from './selected_text_request';
+import { parseReaderContentRequest } from './reader_content_request';
 import { createReadableSurfaceCoordinator } from './readable_surface';
 import { computeOpenSidePanelWindowIds, handleOpenSidePanelCommand } from '../popup/side_panel';
 import {
@@ -1469,6 +1470,14 @@ async function applyProgressMessage(message: Record<string, unknown>): Promise<v
 		const queueItemId = getQueueItemId(completedSession);
 		await clearSession();
 
+		if (completedNaturally && completedSession?.readableSurface === 'document-reader') {
+			try {
+				await chrome.runtime.sendMessage({ action: 'DOCUMENT_READER_COMPLETED', sessionId: completedSession.sessionId });
+			} catch (_error) {
+				// The Reader may be closed, so there may be no receiver for this broadcast.
+			}
+		}
+
 		if (completedNaturally && queueItemId && getPlayingItem(playlistQueue, queueItemId)) {
 			await advanceQueueAfter(queueItemId, currentSessionTabId);
 		}
@@ -1606,6 +1615,25 @@ export const handleBackgroundMessage = (
 
 			case 'START_CURRENT_PAGE':
 				return respondFromQueue(startCurrentPage, sendResponse);
+
+			case 'START_READER_CONTENT': {
+				const readerRequest = parseReaderContentRequest(msg.payload, sender.tab?.id);
+				if (!readerRequest) {
+					sendResponse({ success: false, error: ERROR_MESSAGES.noSession });
+					return undefined;
+				}
+				return respondFromQueue(async () => {
+					const response = await startPlayback({
+						contentScope: 'article',
+						source: { kind: 'tab', tabId: readerRequest.tabId, title: readerRequest.title, url: readerRequest.title },
+						content: { content: readerRequest.content, lang: readerRequest.lang },
+						readableSurface: 'document-reader',
+					});
+					// The Reader chains chapters on natural completion, so it has to recognise the
+					// session it just started: a completion for any other session is not its own.
+					return response.success && activeSession ? { ...response, sessionId: activeSession.sessionId } : response;
+				}, sendResponse);
+			}
 
 			case 'CLOSE_SIDEPANEL': {
 				const targetWindowId = (msg.payload as Record<string, unknown> | undefined)?.windowId as number | undefined;

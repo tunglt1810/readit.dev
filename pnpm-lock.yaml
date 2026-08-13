@@ -17,6 +17,9 @@ importers:
       fft.js:
         specifier: 4.0.4
         version: 4.0.4
+      jszip:
+        specifier: 3.10.1
+        version: 3.10.1
       mediabunny:
         specifier: 1.52.3
         version: 1.52.3

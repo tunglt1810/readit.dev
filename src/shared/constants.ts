@@ -11,6 +11,14 @@ export const PDF_ERROR_CODES = {
 
 export type PdfErrorCode = (typeof PDF_ERROR_CODES)[keyof typeof PDF_ERROR_CODES];
 
+export const EPUB_ERROR_CODES = {
+	parseFailed: 'epubParseFailed',
+	drmProtected: 'epubDrmProtected',
+	fileAccessDenied: 'epubFileAccessDenied',
+} as const;
+
+export type EpubErrorCode = (typeof EPUB_ERROR_CODES)[keyof typeof EPUB_ERROR_CODES];
+
 export const SUPERTONIC_HF_BASE = 'https://huggingface.co/Supertone/supertonic-3/resolve/main';
 
 export const MODEL_FILES = {
@@ -48,6 +56,7 @@ export const STORAGE_KEYS = {
 	PENDING_QUEUE_NAVIGATION: 'readit_pending_queue_navigation',
 	HAS_CUSTOM_SPEED_OVERRIDE: 'readit_has_custom_speed_override',
 	PRONUNCIATION_DICTIONARY: 'readit_pronunciation_dictionary',
+	EPUB_PROGRESS: 'readit_epub_progress',
 };
 
 export const PRIVACY_POLICY_URL = 'https://tunglt1810.github.io/readit.dev/privacy-policy/';
@@ -75,11 +84,7 @@ export function isLegacySpeedPreference(storedSpeed: unknown, hasCustomSpeedOver
 }
 
 /** Resolve an explicit or migrated speed preference, otherwise use the content language default. */
-export function resolveStoredPlaybackSpeed(
-	lang: string | undefined,
-	storedSpeed: unknown,
-	hasCustomSpeedOverride: unknown,
-): number {
+export function resolveStoredPlaybackSpeed(lang: string | undefined, storedSpeed: unknown, hasCustomSpeedOverride: unknown): number {
 	if ((hasCustomSpeedOverride === true || isLegacySpeedPreference(storedSpeed, hasCustomSpeedOverride)) && isFiniteSpeed(storedSpeed)) {
 		return storedSpeed;
 	}

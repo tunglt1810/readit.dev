@@ -8,6 +8,7 @@ import {
 	STORAGE_KEYS,
 } from '../shared/constants';
 import { openSidebarOrPanel } from '../shared/browser';
+import { isFileSystemAccessSupported } from '../reader/book_loader';
 import { getLocalizedPlaybackError, t } from '../shared/i18n';
 import { requestPlaybackState, sendPlaybackCommand, subscribePlaybackState } from '../shared/playback_client';
 import { resolvePlaybackStatus } from '../shared/playback_status';
@@ -241,6 +242,10 @@ export default function App() {
 		handleStartCurrentPage();
 	};
 
+	const handleOpenBook = () => {
+		void chrome.tabs.create({ url: chrome.runtime.getURL('src/reader/reader.html') });
+	};
+
 	const isSidePanelOpen = Boolean(sidePanelWindowId && openSidePanelWindows.includes(sidePanelWindowId));
 
 	const handleToggleSidePanel = () => {
@@ -469,6 +474,12 @@ export default function App() {
 					{session && isSessionOnAnotherTab && (
 						<button className="btn btn-secondary btn-read-current-page" onClick={handleReadCurrentPage}>
 							{t('readCurrentPage')}
+						</button>
+					)}
+
+					{isFileSystemAccessSupported() && (
+						<button className="btn btn-secondary btn-open-book" type="button" onClick={handleOpenBook}>
+							{t('openBook')}
 						</button>
 					)}
 

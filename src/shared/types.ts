@@ -35,6 +35,8 @@ export interface CommandResponse {
 	success: boolean;
 	error?: string;
 	transportError?: true;
+	/** Set by the commands that start playback, so the caller can recognise its own session. */
+	sessionId?: string;
 }
 
 export interface VoiceStyle {
