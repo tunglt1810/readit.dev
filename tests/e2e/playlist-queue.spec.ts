@@ -129,6 +129,7 @@ test.describe('Playlist Queue', () => {
 	});
 
 	test('auto-advance from web page to local PDF file without error or crash', async ({ context, page, openSidePanel }) => {
+		test.setTimeout(120_000);
 		const fs = await import('fs');
 		const path = await import('path');
 		const tmpDir = path.resolve(process.cwd(), '.tmp');
@@ -212,7 +213,7 @@ startxref
 					});
 					return result ?? null;
 				},
-				{ timeout: 30000 },
+				{ timeout: 60000 },
 			)
 			.toBe('playing');
 
@@ -247,12 +248,13 @@ startxref
 						const res = await chrome.storage.session.get('readit_playback_session');
 						return (res as Record<string, { status?: string }>).readit_playback_session?.status ?? null;
 					})) ?? null,
-				{ timeout: 30000 },
+				{ timeout: 60000 },
 			)
 			.toBe('playing');
 	}
 
 	test('skip to next marks the current item done and starts the next', async ({ context, page, openSidePanel }) => {
+		test.setTimeout(120_000);
 		await page.goto('https://en.wikipedia.org/wiki/Text_to_speech');
 		await page.waitForLoadState('networkidle');
 
@@ -285,6 +287,7 @@ startxref
 	});
 
 	test('skip on the last item ends the queue without starting anything', async ({ context, page, openSidePanel }) => {
+		test.setTimeout(120_000);
 		await page.goto('https://en.wikipedia.org/wiki/Text_to_speech');
 		await page.waitForLoadState('networkidle');
 

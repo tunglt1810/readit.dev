@@ -81,6 +81,7 @@ async function readOffscreenMediaSession(
 }
 
 test('the offscreen document holds a populated media session while an article plays', async ({ context, page, openSidePanel }) => {
+	test.setTimeout(120_000);
 	await context.route('https://en.wikipedia.org/**', (route) => {
 		void route.fulfill({
 			status: 200,

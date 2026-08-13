@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-08-13
+
 ### Added
 - read local EPUB and PDF books from the Document Reader, chaining chapters and resuming where reading stopped - [@tunglt1810]
 - center active word highlight and temporarily pause auto-scroll during user interaction - [@tunglt1810]
