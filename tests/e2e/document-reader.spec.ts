@@ -8,6 +8,8 @@ test('loads the bundled Document Reader with an empty state', async ({ context, 
 
 	await expect(reader.locator('main[aria-label="readit.dev Document Reader"]')).toBeVisible();
 	await expect(reader.locator('.document-reader-empty')).toBeVisible();
+	// Nothing has been read in this tab yet, so there is no page behind it to go back to.
+	await expect(reader.locator('.btn-back-source')).toHaveCount(0);
 });
 
 test('attaches once, renders source text, and highlights the current repeated word without persisting content', async ({
@@ -151,7 +153,7 @@ test('uses shared playback controls with toolbar and content aligned', async ({ 
 	await reader.goto(`chrome-extension://${extensionId}/src/reader/reader.html`);
 
 	await expect(reader.locator('.document-reader-toolbar .btn-primary.btn-icon-only')).toBeVisible();
-	await expect(reader.locator('.document-reader-toolbar .btn-secondary.btn-icon-only')).toBeVisible();
+	await expect(reader.locator('.document-reader-toolbar .btn-stop-reading')).toBeVisible();
 	await expect(reader.locator('#reader-voice-select.form-select')).toBeVisible();
 	await expect(reader.locator('.form-group .form-slider')).toBeVisible();
 	await expect(reader.locator('.document-reader-progress .progress-bar-container')).toBeVisible();
@@ -167,11 +169,18 @@ test('uses shared playback controls with toolbar and content aligned', async ({ 
 		if (!toolbar || !content || !speedHeader || !speedSlider || !progressHeader || !progressBar) {
 			throw new Error('Reader controls missing');
 		}
-		return { toolbar, content, speedHeader, speedSlider, progressHeader, progressBar };
+		const labelTops = [...document.querySelectorAll('.document-reader-toolbar .form-label')].map(
+			(label) => label.getBoundingClientRect().top,
+		);
+		return { toolbar, content, speedHeader, speedSlider, progressHeader, progressBar, labelTops };
 	});
 
 	expect(Math.abs(layout.toolbar.left - layout.content.left)).toBeLessThan(1);
 	expect(Math.abs(layout.toolbar.right - layout.content.right)).toBeLessThan(1);
+	// Each toolbar column holds a different amount, so anything that sizes a column to its own
+	// content drops its label onto its own line.
+	expect(layout.labelTops).toHaveLength(3);
+	expect(Math.max(...layout.labelTops) - Math.min(...layout.labelTops)).toBe(0);
 	expect(layout.speedSlider.top).toBeGreaterThanOrEqual(layout.speedHeader.bottom);
 	expect(layout.progressBar.top).toBeGreaterThanOrEqual(layout.progressHeader.bottom);
 });

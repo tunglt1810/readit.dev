@@ -541,7 +541,6 @@ test.describe('Side Panel Localization - English (en-US)', () => {
 
 		// Paste text section
 		await expect(page.getByRole('heading', { name: 'Or paste text' })).toBeVisible();
-		await expect(page.locator('.paste-divider')).toHaveText('Or paste text');
 		await expect(page.locator('.manual-meta')).toContainText('Text is processed only on this device.');
 		await expect(page.locator('.manual-meta')).toContainText('characters');
 		await expect(page.locator('.field-label')).toContainText('Text language');
@@ -588,7 +587,6 @@ test.describe('Side Panel Localization - Vietnamese (vi-VN)', () => {
 
 		// Paste text section
 		await expect(page.getByRole('heading', { name: 'Hoặc dán văn bản' })).toBeVisible();
-		await expect(page.locator('.paste-divider')).toHaveText('Hoặc dán văn bản');
 		await expect(page.locator('.manual-meta')).toContainText('Nội dung chỉ được xử lý trên thiết bị.');
 		await expect(page.locator('.manual-meta')).toContainText('ký tự');
 		await expect(page.locator('.field-label')).toContainText('Ngôn ngữ văn bản');

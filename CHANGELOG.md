@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-08-14
+
+### Added
+- read local `.docx` documents in the Document Reader - [@tunglt1810]
+- resume local PDF and DOCX where reading stopped, positioned by page - [@tunglt1810]
+
+### Changed
+- the reader's previous/next buttons step by page for PDF and DOCX, and stay chapter-based for EPUB - [@tunglt1810]
+- legacy Word `.doc` files are rejected with a message asking for `.docx` instead of a generic failure - [@tunglt1810]
+
 ## [1.2.0] - 2026-08-13
 
 ### Added

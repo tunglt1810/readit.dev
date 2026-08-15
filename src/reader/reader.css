@@ -23,9 +23,17 @@ input {
 }
 
 .document-reader {
-	width: min(920px, calc(100% - 48px));
+	/*
+	 * The whole page shares one frame, but the line does not: past about 70 characters the eye
+	 * loses the return sweep. The frame is 1120px and the type below is sized to hold the line
+	 * near 70 inside it, rather than the margin being widened to do the same job.
+	 */
+	width: min(1120px, calc(100% - 48px));
 	margin: 0 auto;
 	padding: 28px 0 72px;
+	/* The type below is sized from the frame, not the window: the frame stops growing at 860px
+	   while the window does not, and a viewport-sized type scale would keep stretching the line. */
+	container-type: inline-size;
 }
 
 .document-reader-header {
@@ -33,7 +41,9 @@ input {
 	top: 0;
 	z-index: 2;
 	display: flex;
-	align-items: center;
+	/* The left side is two lines, so centring the actions lands them in the gap between the brand
+	   and the title, level with neither. Sitting them on the title's line gives them an edge. */
+	align-items: flex-end;
 	justify-content: space-between;
 	gap: 24px;
 	padding: 18px 0;
@@ -82,8 +92,18 @@ input {
 	top: 89px;
 	z-index: 2;
 	display: grid;
-	grid-template-columns: auto minmax(140px, 200px) minmax(180px, 1fr) minmax(120px, 160px);
-	align-items: center;
+	/*
+	 * A grid track never shrinks below its own minimum, so if the four minimums plus the gaps
+	 * outgrow the card the last column simply hangs off the right edge. This layout only runs
+	 * above an 860px window — narrower goes to the two-column rule below — so the tightest frame
+	 * is 813px, leaving 727px inside the padding and gaps. Playback takes 250px, so the three
+	 * minimums here have to stay under 477.
+	 *
+	 * Speed and progress both share the slack: they read as a pair of horizontal tracks, and a
+	 * long one beside a short one looks like a mistake rather than a difference.
+	 */
+	grid-template-columns: auto minmax(120px, 200px) minmax(140px, 1fr) minmax(110px, 1fr);
+	align-items: stretch;
 	gap: 16px;
 	width: 100%;
 	padding: 14px 18px;
@@ -98,6 +118,38 @@ input {
 	display: flex;
 	align-items: center;
 	gap: 10px;
+}
+
+/*
+ * The three columns hold different amounts — a label over a select, over a slider, over a bar and
+ * a page count — so centring each one on its own height dropped the three labels onto three
+ * different lines. Stretching them to a common height and pinning the label to the top puts the
+ * labels on one line and the controls on another.
+ */
+.document-reader-toolbar .form-group {
+	justify-content: space-between;
+}
+
+/*
+ * This column carries a third line, the page count. Spreading three items over the same height
+ * as the two-item columns left it hanging in mid-air between them; it belongs with the label it
+ * qualifies, and only the bar has to reach the bottom to meet the speed slider.
+ */
+.document-reader-progress {
+	justify-content: flex-start;
+}
+
+.document-reader-progress .progress-bar-container {
+	margin-top: auto;
+}
+
+/*
+ * Two of the labels share a row with a larger value, which centres them a pixel lower than the
+ * label that stands alone. One line box height for both sizes settles all three on the same line.
+ */
+.document-reader-toolbar .form-label,
+.document-reader-toolbar .slider-value {
+	line-height: 16px;
 }
 
 .document-reader-toolbar .btn-icon-only {
@@ -118,17 +170,32 @@ input {
 
 .document-reader-content {
 	width: 100%;
-	max-width: none;
 	margin: 24px 0 0;
-	padding: clamp(32px, 7vw, 88px);
+	/* Side padding is what keeps the line short inside a wide card, so it scales with the frame. */
+	padding: clamp(28px, 4cqi, 36px) clamp(24px, 5cqi, 56px);
 	border: 1px solid var(--border-glass);
 	border-radius: 18px;
 	color: #e4e4e7;
 	background: rgba(18, 18, 24, 0.72);
 	box-shadow: 0 24px 70px rgba(0, 0, 0, 0.25);
 	font-family: Georgia, "Times New Roman", serif;
-	font-size: clamp(18px, 2vw, 22px);
-	line-height: 1.85;
+	/*
+	 * Georgia's own x-height ratio. It ships with macOS and Windows but not with Linux, where the
+	 * stack falls through to a Times-metric serif: a smaller x-height at the same nominal size, so
+	 * it reads smaller and fits a whole word more on every line. This scales any fallback up until
+	 * it sets the measure below at the length Georgia sets it.
+	 */
+	font-size-adjust: 0.481;
+	font-size: clamp(19px, 2.68cqi, 30px);
+	/* Justified, so the type has to carry the line: at a narrow margin only larger type keeps the
+	   line near 70 characters, and only a line near 70 keeps justification from opening rivers. */
+	text-align: justify;
+	/*
+	 * A paragraph break is a blank line here, not a margin: the highlight addresses the chapter by
+	 * character offset, so the text has to stay one node with its newlines intact. That makes the
+	 * gap between paragraphs exactly twice this, which is why it stays nearer 1.6 than 1.85.
+	 */
+	line-height: 1.6;
 	white-space: pre-wrap;
 }
 
@@ -171,7 +238,7 @@ input {
 	}
 
 	.document-reader-content {
-		padding: 28px 22px;
+		padding: 28px 32px;
 	}
 }
 

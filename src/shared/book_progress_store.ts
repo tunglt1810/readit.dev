@@ -5,24 +5,26 @@ const DATABASE_VERSION = 1;
 const STORE_NAME = 'handles';
 const CURRENT_BOOK_KEY = 'current-book';
 
-export interface EpubProgressRecord {
+export interface BookProgressRecord {
 	title: string;
 	chapterIndex: number;
 	charOffset: number;
 	totalChapters: number;
+	/** Length of the text the offset points into. Absent on records written before pages existed. */
+	totalChars?: number;
 	fileSize: number;
 	fileLastModified: number;
 	updatedAt: number;
 }
 
-export interface EpubBookHandleRecord {
+export interface BookHandleRecord {
 	handle: FileSystemFileHandle;
 	fileName: string;
 	fileSize: number;
 	fileLastModified: number;
 }
 
-function isEpubProgressRecord(value: unknown): value is EpubProgressRecord {
+function isBookProgressRecord(value: unknown): value is BookProgressRecord {
 	if (!value || typeof value !== 'object') {
 		return false;
 	}
@@ -32,27 +34,28 @@ function isEpubProgressRecord(value: unknown): value is EpubProgressRecord {
 		Number.isInteger(record.chapterIndex) &&
 		Number.isFinite(record.charOffset) &&
 		Number.isInteger(record.totalChapters) &&
+		(record.totalChars === undefined || Number.isFinite(record.totalChars)) &&
 		Number.isFinite(record.fileSize) &&
 		Number.isFinite(record.fileLastModified) &&
 		Number.isFinite(record.updatedAt)
 	);
 }
 
-export async function saveEpubProgress(record: EpubProgressRecord): Promise<void> {
+export async function saveBookProgress(record: BookProgressRecord): Promise<void> {
 	await chrome.storage.local.set({ [STORAGE_KEYS.EPUB_PROGRESS]: record });
 }
 
-export async function loadEpubProgress(): Promise<EpubProgressRecord | null> {
+export async function loadBookProgress(): Promise<BookProgressRecord | null> {
 	const result = (await chrome.storage.local.get([STORAGE_KEYS.EPUB_PROGRESS])) as Record<string, unknown>;
 	const stored = result[STORAGE_KEYS.EPUB_PROGRESS];
-	return isEpubProgressRecord(stored) ? stored : null;
+	return isBookProgressRecord(stored) ? stored : null;
 }
 
-export async function clearEpubProgress(): Promise<void> {
+export async function clearBookProgress(): Promise<void> {
 	await chrome.storage.local.remove(STORAGE_KEYS.EPUB_PROGRESS);
 }
 
-export function matchesSavedFile(record: EpubProgressRecord, file: { size: number; lastModified: number }): boolean {
+export function matchesSavedFile(record: BookProgressRecord, file: { size: number; lastModified: number }): boolean {
 	return record.fileSize === file.size && record.fileLastModified === file.lastModified;
 }
 
@@ -74,7 +77,7 @@ function openDatabase(factory?: IDBFactory): Promise<IDBDatabase> {
 				request.result.createObjectStore(STORE_NAME);
 			}
 		};
-		request.onerror = () => reject(request.error ?? new Error('Failed to open the EPUB library database'));
+		request.onerror = () => reject(request.error ?? new Error('Failed to open the book library database'));
 		request.onsuccess = () => resolve(request.result);
 	});
 }
@@ -89,7 +92,7 @@ async function withStore<Result>(
 		return await new Promise<Result>((resolve, reject) => {
 			const transaction = database.transaction(STORE_NAME, mode);
 			const request = operation(transaction.objectStore(STORE_NAME));
-			request.onerror = () => reject(request.error ?? new Error('EPUB library request failed'));
+			request.onerror = () => reject(request.error ?? new Error('Book library request failed'));
 			request.onsuccess = () => resolve(request.result as Result);
 		});
 	} finally {
@@ -97,15 +100,15 @@ async function withStore<Result>(
 	}
 }
 
-export async function putEpubBookHandle(record: EpubBookHandleRecord, factory?: IDBFactory): Promise<void> {
+export async function putBookHandle(record: BookHandleRecord, factory?: IDBFactory): Promise<void> {
 	await withStore(factory, 'readwrite', (store) => store.put(record, CURRENT_BOOK_KEY));
 }
 
-export async function getEpubBookHandle(factory?: IDBFactory): Promise<EpubBookHandleRecord | null> {
-	const stored = await withStore<EpubBookHandleRecord | undefined>(factory, 'readonly', (store) => store.get(CURRENT_BOOK_KEY));
+export async function getBookHandle(factory?: IDBFactory): Promise<BookHandleRecord | null> {
+	const stored = await withStore<BookHandleRecord | undefined>(factory, 'readonly', (store) => store.get(CURRENT_BOOK_KEY));
 	return stored?.handle ? stored : null;
 }
 
-export async function clearEpubBookHandle(factory?: IDBFactory): Promise<void> {
+export async function clearBookHandle(factory?: IDBFactory): Promise<void> {
 	await withStore(factory, 'readwrite', (store) => store.delete(CURRENT_BOOK_KEY));
 }

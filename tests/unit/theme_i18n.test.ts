@@ -130,7 +130,7 @@ test('THEME_TRANSLATIONS dịch ngôn ngữ vi và en hoạt động chính xác
 	assert.strictEqual(en.privacyPolicy, 'Privacy Policy');
 
 	// Queue translations
-	assert.strictEqual(vi.queueTitle, 'Queue đọc');
+	assert.strictEqual(vi.queueTitle, 'Danh sách phát');
 	assert.strictEqual(vi.queueAddCurrentTab, '+ Thêm tab hiện tại');
 	assert.strictEqual(vi.queueUrlPlaceholder, 'Dán URL...');
 	assert.strictEqual(vi.queueUrlAriaLabel, 'URL để thêm vào queue');

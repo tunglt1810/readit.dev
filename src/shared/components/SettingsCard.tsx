@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { VOICE_STYLES } from '../constants';
 import { t, uiLang, VOICE_STYLE_TRANSLATIONS } from '../i18n';
 import type { PlaybackStatus, ThemeName } from '../types';
+import { PlaybackIcon } from './PlaybackIcon';
 
 export interface SettingsCardProps {
 	theme: ThemeName;
@@ -66,9 +67,13 @@ export function SettingsCard({
 				}
 			>
 				<h2 className="settings-card-title">
-					<span aria-hidden="true">⚙️</span> {t('voiceConfig')}
+					<PlaybackIcon name="settings" /> {t('voiceConfig')}
 				</h2>
-				{collapsible && <span className="collapse-arrow">{expanded ? '▲' : '▼'}</span>}
+				{collapsible && (
+					<span className="collapse-arrow" data-expanded={expanded}>
+						<PlaybackIcon name="chevron" />
+					</span>
+				)}
 			</div>
 
 			{(!collapsible || expanded) && (

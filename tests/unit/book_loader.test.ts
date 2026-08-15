@@ -9,9 +9,20 @@ test('detects book kinds from the file extension, case-insensitively', () => {
 	assert.equal(detectBookKind('report.PDF'), 'pdf');
 });
 
+test('detectBookKind recognises DOCX', () => {
+	assert.equal(detectBookKind('report.docx'), 'docx');
+	assert.equal(detectBookKind('REPORT.DOCX'), 'docx');
+});
+
+test('detectBookKind names legacy .doc rather than rejecting it silently', () => {
+	assert.equal(detectBookKind('report.doc'), 'doc-legacy');
+	assert.equal(detectBookKind('REPORT.DOC'), 'doc-legacy');
+});
+
 test('rejects unsupported and extensionless files', () => {
 	assert.equal(detectBookKind('notes.txt'), null);
 	assert.equal(detectBookKind('archive.epub.zip'), null);
+	assert.equal(detectBookKind('archive.docx.zip'), null);
 	assert.equal(detectBookKind('README'), null);
 });
 

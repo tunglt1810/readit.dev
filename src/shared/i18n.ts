@@ -1,4 +1,4 @@
-import { EPUB_ERROR_CODES, GOOGLE_DOCS_EXPORT_UNAVAILABLE, PDF_ERROR_CODES } from './constants.ts';
+import { DOCX_ERROR_CODES, EPUB_ERROR_CODES, GOOGLE_DOCS_EXPORT_UNAVAILABLE, PDF_ERROR_CODES } from './constants.ts';
 import en from './locales/en.json' with { type: 'json' };
 import vi from './locales/vi.json' with { type: 'json' };
 
@@ -38,6 +38,12 @@ export function getPlaybackErrorTranslationKey(error: string | undefined): Trans
 			return 'epubDrmProtected';
 		case EPUB_ERROR_CODES.fileAccessDenied:
 			return 'epubFileAccessDenied';
+		case DOCX_ERROR_CODES.parseFailed:
+			return 'docxParseFailed';
+		case DOCX_ERROR_CODES.textUnavailable:
+			return 'docxTextUnavailable';
+		case DOCX_ERROR_CODES.legacyFormat:
+			return 'docLegacyFormat';
 		default:
 			return undefined;
 	}

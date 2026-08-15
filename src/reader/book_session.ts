@@ -1,16 +1,16 @@
-import type { EpubBook } from '../shared/epub_extractor.ts';
+import type { BookProgressRecord } from '../shared/book_progress_store.ts';
+import type { BookSource } from '../shared/book_source.ts';
 import { resolveChapterStart, toAbsoluteOffset } from '../shared/epub_position.ts';
-import type { EpubProgressRecord } from '../shared/epub_progress_store.ts';
 
-export interface EpubSessionDependencies {
-	book: EpubBook;
+export interface BookSessionDependencies {
+	book: BookSource;
 	file: { name: string; size: number; lastModified: number };
 	startChapter(payload: { title: string; content: string; lang: string }): Promise<{ success: boolean; sessionId?: string }>;
-	saveProgress(record: EpubProgressRecord): Promise<void>;
+	saveProgress(record: BookProgressRecord): Promise<void>;
 	now(): number;
 }
 
-export interface EpubSession {
+export interface BookSession {
 	start(from: { chapterIndex: number; charOffset: number }): Promise<boolean>;
 	/**
 	 * Take over a chapter that is already playing. The Reader tab can reload while the audio
@@ -25,16 +25,39 @@ export interface EpubSession {
 	recordPosition(sliceRangeStart: number): void;
 	prefetchNext(): void;
 	flush(): Promise<void>;
-	state(): { chapterIndex: number; chapterCount: number };
+	/** Where the reader is: a chapter for EPUB, a page for single-chapter documents. */
+	state(): { kind: 'chapter' | 'page'; index: number; count: number };
 }
 
-export function createEpubSession(dependencies: EpubSessionDependencies): EpubSession {
+export function createBookSession(dependencies: BookSessionDependencies): BookSession {
 	const { book, file } = dependencies;
 	let chapterIndex = 0;
 	let baseOffset = 0;
 	let pendingOffset = 0;
 	let prefetched: { index: number; text: string } | null = null;
 	let playingSessionId: string | null = null;
+
+	// A document with page starts is one chapter long; its navigation unit is the page.
+	const pageStarts = book.chapterCount === 1 && book.pageStarts?.length ? [...book.pageStarts] : null;
+	let totalChars: number | undefined;
+
+	/** The page containing an offset: the last start at or before it. */
+	const pageIndexAt = (offset: number): number => {
+		if (!pageStarts) {
+			return 0;
+		}
+		let low = 0;
+		let high = pageStarts.length - 1;
+		while (low < high) {
+			const middle = Math.ceil((low + high) / 2);
+			if (pageStarts[middle] <= offset) {
+				low = middle;
+			} else {
+				high = middle - 1;
+			}
+		}
+		return low;
+	};
 
 	const chapterText = async (index: number): Promise<string> => {
 		if (prefetched?.index === index) {
@@ -45,11 +68,12 @@ export function createEpubSession(dependencies: EpubSessionDependencies): EpubSe
 		return book.getChapterText(index);
 	};
 
-	const buildRecord = (): EpubProgressRecord => ({
+	const buildRecord = (): BookProgressRecord => ({
 		title: book.title || file.name,
 		chapterIndex,
 		charOffset: pendingOffset,
 		totalChapters: book.chapterCount,
+		totalChars,
 		fileSize: file.size,
 		fileLastModified: file.lastModified,
 		updatedAt: dependencies.now(),
@@ -60,6 +84,7 @@ export function createEpubSession(dependencies: EpubSessionDependencies): EpubSe
 		if (!text) {
 			return false;
 		}
+		totalChars = text.length;
 		const slice = resolveChapterStart(text, charOffset);
 		chapterIndex = index;
 		baseOffset = slice.baseOffset;
@@ -101,9 +126,17 @@ export function createEpubSession(dependencies: EpubSessionDependencies): EpubSe
 			playingSessionId = playing.sessionId;
 		},
 		async advance() {
+			if (pageStarts) {
+				const next = pageIndexAt(pendingOffset) + 1;
+				return next < pageStarts.length ? playChapter(0, pageStarts[next]) : false;
+			}
 			return seek(chapterIndex + 1, 1);
 		},
 		async previous() {
+			if (pageStarts) {
+				const previousPage = pageIndexAt(pendingOffset) - 1;
+				return previousPage >= 0 ? playChapter(0, pageStarts[previousPage]) : false;
+			}
 			return seek(chapterIndex - 1, -1);
 		},
 		isPlaying(sessionId) {
@@ -130,7 +163,9 @@ export function createEpubSession(dependencies: EpubSessionDependencies): EpubSe
 			await dependencies.saveProgress(buildRecord());
 		},
 		state() {
-			return { chapterIndex, chapterCount: book.chapterCount };
+			return pageStarts
+				? { kind: 'page' as const, index: pageIndexAt(pendingOffset), count: pageStarts.length }
+				: { kind: 'chapter' as const, index: chapterIndex, count: book.chapterCount };
 		},
 	};
 }

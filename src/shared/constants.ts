@@ -19,6 +19,14 @@ export const EPUB_ERROR_CODES = {
 
 export type EpubErrorCode = (typeof EPUB_ERROR_CODES)[keyof typeof EPUB_ERROR_CODES];
 
+export const DOCX_ERROR_CODES = {
+	parseFailed: 'docxParseFailed',
+	textUnavailable: 'docxTextUnavailable',
+	legacyFormat: 'docLegacyFormat',
+} as const;
+
+export type DocxErrorCode = (typeof DOCX_ERROR_CODES)[keyof typeof DOCX_ERROR_CODES];
+
 export const SUPERTONIC_HF_BASE = 'https://huggingface.co/Supertone/supertonic-3/resolve/main';
 
 export const MODEL_FILES = {

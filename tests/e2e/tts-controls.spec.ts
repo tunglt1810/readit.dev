@@ -119,7 +119,7 @@ test.describe('Kịch bản 3: Điều khiển TTS (TTS Controls)', () => {
 		await expect(statusDisplay).toBeVisible();
 		await expect(statusDisplay).toHaveAttribute('role', 'status');
 		await expect(sidePanelBtn).toBeVisible();
-		await expect(sidePanelBtn).toHaveAttribute('title', 'Mở Side Panel');
+		await expect(sidePanelBtn).toHaveAttribute('aria-label', 'Mở Side Panel');
 		await expect(sidePanelBtn).toHaveAttribute('aria-label', 'Mở Side Panel');
 		await expect(sidePanelBtn).toHaveAttribute('type', 'button');
 
@@ -423,7 +423,7 @@ test.describe('Popup Layout & Localization - English (en-US)', () => {
 
 		await expect(statusText).toHaveText('Ready to read page');
 		await expect(sidePanelBtn).toBeVisible();
-		await expect(sidePanelBtn).toHaveAttribute('title', 'Open Side Panel');
+		await expect(sidePanelBtn).toHaveAttribute('aria-label', 'Open Side Panel');
 		await expect(sidePanelBtn).toHaveAttribute('aria-label', 'Open Side Panel');
 		await expect(sidePanelBtn).toHaveAttribute('data-tooltip', 'Open Side Panel');
 		await expect(sidePanelBtn).toHaveAttribute('aria-pressed', 'false');
@@ -437,7 +437,7 @@ test.describe('Popup Layout & Localization - English (en-US)', () => {
 
 		await expect(sidePanelBtn).toHaveAttribute('aria-pressed', 'true');
 		await expect(sidePanelBtn).toHaveClass(/active/);
-		await expect(sidePanelBtn).toHaveAttribute('title', 'Close side panel');
+		await expect(sidePanelBtn).toHaveAttribute('aria-label', 'Close side panel');
 		await expect(sidePanelBtn).toHaveAttribute('aria-label', 'Close side panel');
 		await expect(sidePanelBtn).toHaveAttribute('data-tooltip', 'Close side panel');
 

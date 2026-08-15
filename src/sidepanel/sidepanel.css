@@ -125,10 +125,19 @@ input {
 	margin-top: var(--space-1);
 }
 
+/*
+ * One label style for every section. The cards used to mix a title-case heading with the queue's
+ * uppercase one, which read as two different kinds of section when they are the same kind.
+ */
 .current-page-card h2,
-.manual-text-card h2 {
+.manual-text-card h2,
+.queue-card h2 {
 	margin: 0;
-	font-size: 0.95rem;
+	font-size: var(--text-xs);
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: var(--tracking-eyebrow);
+	color: var(--color-text-muted);
 }
 
 .current-page-card p {
@@ -154,24 +163,6 @@ input {
 .page-info span,
 .session-host {
 	font-size: 0.78rem;
-}
-
-.paste-divider {
-	display: flex;
-	align-items: center;
-	gap: var(--space-3);
-	margin-inline: var(--space-4);
-	color: var(--color-text-secondary);
-	font-size: 0.75rem;
-	text-transform: uppercase;
-}
-
-.paste-divider::before,
-.paste-divider::after {
-	height: 1px;
-	flex: 1;
-	background: var(--border-glass);
-	content: "";
 }
 
 .manual-text-card textarea,
@@ -322,7 +313,6 @@ input:focus-visible {
 	font-weight: 700;
 }
 
-
 .session-title {
 	font-weight: 700;
 }
@@ -358,7 +348,9 @@ input:focus-visible {
 	background: #1f4219;
 	color: #8fdf53;
 	font-family: "Courier New", Courier, monospace;
-	box-shadow: inset 0 0 10px #061106, 0 0 8px rgba(143, 223, 83, 0.4);
+	box-shadow:
+		inset 0 0 10px #061106,
+		0 0 8px rgba(143, 223, 83, 0.4);
 	border-radius: 0;
 }
 
@@ -435,15 +427,6 @@ input:focus-visible {
 	align-items: center;
 }
 
-.queue-card h2 {
-	font-size: var(--font-sm, 0.95rem);
-	font-weight: 600;
-	color: var(--text-secondary, var(--color-text-secondary));
-	text-transform: uppercase;
-	letter-spacing: 0.05em;
-	margin: 0;
-}
-
 .queue-add-controls {
 	display: flex;
 	flex-direction: column;
@@ -494,12 +477,12 @@ input:focus-visible {
 	background: var(--surface-bg, rgba(255, 255, 255, 0.03));
 }
 
-.queue-item[data-status='playing'] {
+.queue-item[data-status="playing"] {
 	border-color: var(--color-primary, #099fb5);
 	background: var(--surface-active, rgba(9, 159, 181, 0.15));
 }
 
-.queue-item[data-status='done'] {
+.queue-item[data-status="done"] {
 	opacity: 0.6;
 }
 
@@ -576,4 +559,3 @@ input:focus-visible {
 	font-size: var(--font-xs, 0.75rem);
 	color: var(--text-secondary, var(--color-text-secondary));
 }
-

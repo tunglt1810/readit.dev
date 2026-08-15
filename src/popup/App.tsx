@@ -1,29 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 
-import {
-	BUY_ME_A_COFFEE_URL,
-	DEFAULT_SPEED,
-	PRIVACY_POLICY_URL,
-	resolveStoredPlaybackSpeed,
-	STORAGE_KEYS,
-} from '../shared/constants';
-import { openSidebarOrPanel } from '../shared/browser';
 import { isFileSystemAccessSupported } from '../reader/book_loader';
+import { openSidebarOrPanel } from '../shared/browser';
+import { AudioExportButton } from '../shared/components/AudioExportButton';
+import { PlaybackControlButton } from '../shared/components/PlaybackControlButton';
+import { PlaybackIcon } from '../shared/components/PlaybackIcon';
+import { SettingsCard } from '../shared/components/SettingsCard';
+import { BUY_ME_A_COFFEE_URL, DEFAULT_SPEED, PRIVACY_POLICY_URL, resolveStoredPlaybackSpeed, STORAGE_KEYS } from '../shared/constants';
 import { getLocalizedPlaybackError, t } from '../shared/i18n';
 import { requestPlaybackState, sendPlaybackCommand, subscribePlaybackState } from '../shared/playback_client';
 import { resolvePlaybackStatus } from '../shared/playback_status';
 import { isSelectionButtonEnabled } from '../shared/selection_button';
 import type { PlaybackSessionSnapshot, PlaybackStatus, ThemeName } from '../shared/types';
+import { getDisplayVersion } from '../shared/version';
 import { isWordHighlightEnabled } from '../shared/word_highlight';
-import { PlaybackIcon } from '../shared/components/PlaybackIcon';
-import { AudioExportButton } from '../shared/components/AudioExportButton';
-import { PlaybackControlButton } from '../shared/components/PlaybackControlButton';
-import { SettingsCard } from '../shared/components/SettingsCard';
 import { buildFeedbackUrl } from './feedback';
 import { openSidePanelForCurrentWindow, shouldFallbackToOpen } from './side_panel';
-import { getDisplayVersion } from '../shared/version';
-
-
 
 export default function App() {
 	// Playback state is owned by the background coordinator.
@@ -53,7 +45,6 @@ export default function App() {
 	const sessionHost = tabSource ? getHost(tabSource.url) : '';
 	const displayVersion = getDisplayVersion();
 	const feedbackUrl = buildFeedbackUrl(displayVersion);
-
 
 	// Fetch initial states on mount
 	useEffect(() => {
@@ -189,7 +180,6 @@ export default function App() {
 		};
 	}, []);
 
-
 	// Handler: Start/Stop Reading Page
 	const handleStartCurrentPage = () => {
 		setCommandError('');
@@ -252,17 +242,14 @@ export default function App() {
 		setCommandError('');
 		if (isSidePanelOpen) {
 			if (sidePanelWindowId && typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
-				chrome.runtime.sendMessage(
-					{ action: 'CLOSE_SIDEPANEL', payload: { windowId: sidePanelWindowId } },
-					(response) => {
-						if (shouldFallbackToOpen(response)) {
-							void openSidePanelForCurrentWindow({
-								windowId: sidePanelWindowId,
-								open: (options) => openSidebarOrPanel(options.windowId),
-							}).catch(() => setCommandError(t('openSidePanelFailed')));
-						}
-					},
-				);
+				chrome.runtime.sendMessage({ action: 'CLOSE_SIDEPANEL', payload: { windowId: sidePanelWindowId } }, (response) => {
+					if (shouldFallbackToOpen(response)) {
+						void openSidePanelForCurrentWindow({
+							windowId: sidePanelWindowId,
+							open: (options) => openSidebarOrPanel(options.windowId),
+						}).catch(() => setCommandError(t('openSidePanelFailed')));
+					}
+				});
 			}
 		} else {
 			void openSidePanelForCurrentWindow({
@@ -342,9 +329,9 @@ export default function App() {
 				</div>
 				<span className="extension-version">v{displayVersion}</span>
 				<a className="support-link header-support-link" href={BUY_ME_A_COFFEE_URL} target="_blank" rel="noreferrer">
-					<span aria-hidden="true">☕</span> {t('buyMeCoffee')}
+					<PlaybackIcon name="coffee" /> {t('buyMeCoffee')}
 				</a>
-				</header>
+			</header>
 
 			{/* Main Playback Area */}
 			<main className="app-main">
@@ -377,17 +364,29 @@ export default function App() {
 							</div>
 						)}
 					</div>
-					<button
-						className={`btn-icon-sidepanel ${isSidePanelOpen ? 'active' : ''}`}
-						type="button"
-						onClick={handleToggleSidePanel}
-						title={isSidePanelOpen ? t('closeSidePanel') : t('openSidePanel')}
-						aria-label={isSidePanelOpen ? t('closeSidePanel') : t('openSidePanel')}
-						aria-pressed={isSidePanelOpen}
-						data-tooltip={isSidePanelOpen ? t('closeSidePanel') : t('openSidePanel')}
-					>
-						<PlaybackIcon name="sidepanel" />
-					</button>
+					<div className="status-row-actions">
+						{isFileSystemAccessSupported() && (
+							<button
+								className="btn-icon-openbook btn-open-book"
+								type="button"
+								onClick={handleOpenBook}
+								aria-label={t('openBook')}
+								data-tooltip={t('openBook')}
+							>
+								<PlaybackIcon name="book" />
+							</button>
+						)}
+						<button
+							className={`btn-icon-sidepanel ${isSidePanelOpen ? 'active' : ''}`}
+							type="button"
+							onClick={handleToggleSidePanel}
+							aria-label={isSidePanelOpen ? t('closeSidePanel') : t('openSidePanel')}
+							aria-pressed={isSidePanelOpen}
+							data-tooltip={isSidePanelOpen ? t('closeSidePanel') : t('openSidePanel')}
+						>
+							<PlaybackIcon name="sidepanel" />
+						</button>
+					</div>
 				</div>
 
 				{session && (
@@ -477,14 +476,8 @@ export default function App() {
 						</button>
 					)}
 
-					{isFileSystemAccessSupported() && (
-						<button className="btn btn-secondary btn-open-book" type="button" onClick={handleOpenBook}>
-							{t('openBook')}
-						</button>
-					)}
-
 					<div className="privacy-disclosure" role="note">
-						<span aria-hidden="true">🔒</span>
+						<PlaybackIcon name="lock" />
 						<span>
 							{t('privacyDisclosure')}{' '}
 							<a href={PRIVACY_POLICY_URL} target="_blank" rel="noreferrer">

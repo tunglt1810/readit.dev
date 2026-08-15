@@ -1,4 +1,19 @@
-export type PlaybackIconName = 'read' | 'stop' | 'pause' | 'resume' | 'previous' | 'next' | 'sidepanel' | 'download' | 'check' | 'warning';
+export type PlaybackIconName =
+	| 'read'
+	| 'stop'
+	| 'pause'
+	| 'resume'
+	| 'previous'
+	| 'next'
+	| 'sidepanel'
+	| 'book'
+	| 'settings'
+	| 'lock'
+	| 'coffee'
+	| 'chevron'
+	| 'download'
+	| 'check'
+	| 'warning';
 
 export function PlaybackIcon({ name }: { name: PlaybackIconName }) {
 	const commonProps = {
@@ -51,6 +66,42 @@ export function PlaybackIcon({ name }: { name: PlaybackIconName }) {
 				<svg {...commonProps} width="16" height="16">
 					<rect x="3" y="3" width="18" height="18" rx="2" />
 					<line x1="15" y1="3" x2="15" y2="21" />
+				</svg>
+			);
+		case 'book':
+			// Two facing pages with a spine, sized to sit beside the side panel icon.
+			return (
+				<svg {...commonProps} width="16" height="16">
+					<path d="M12 6.5C10.5 5 8.5 4.5 4 4.5v13c4.5 0 6.5.5 8 2 1.5-1.5 3.5-2 8-2v-13c-4.5 0-6.5.5-8 2Z" />
+					<line x1="12" y1="6.5" x2="12" y2="19.5" />
+				</svg>
+			);
+		case 'settings':
+			return (
+				<svg {...commonProps} width="14" height="14">
+					<circle cx="12" cy="12" r="3.2" />
+					<path d="M12 2.5v3M12 18.5v3M21.5 12h-3M5.5 12h-3M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1M18.7 18.7l-2.1-2.1M7.4 7.4 5.3 5.3" />
+				</svg>
+			);
+		case 'lock':
+			return (
+				<svg {...commonProps} width="13" height="13">
+					<rect x="5" y="11" width="14" height="10" rx="2" />
+					<path d="M8 11V7.5a4 4 0 0 1 8 0V11" />
+				</svg>
+			);
+		case 'coffee':
+			return (
+				<svg {...commonProps} width="13" height="13">
+					<path d="M4 9h13v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V9Z" />
+					<path d="M17 10.5h1.5a2.5 2.5 0 0 1 0 5H17" />
+					<path d="M8 3v2.5M12 3v2.5" />
+				</svg>
+			);
+		case 'chevron':
+			return (
+				<svg {...commonProps} width="12" height="12">
+					<path d="m6 9 6 6 6-6" />
 				</svg>
 			);
 		case 'download':

@@ -1,7 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+import { loadPdfJsDocument } from '../background/pdfjs_loader.ts';
+import {
+	type BookProgressRecord,
+	getBookHandle,
+	loadBookProgress,
+	matchesSavedFile,
+	putBookHandle,
+	saveBookProgress,
+} from '../shared/book_progress_store.ts';
+import { AudioExportButton } from '../shared/components/AudioExportButton.tsx';
 import { PlaybackIcon } from '../shared/components/PlaybackIcon.tsx';
-import { DEFAULT_SPEED, resolveStoredPlaybackSpeed, STORAGE_KEYS, VOICE_STYLES } from '../shared/constants.ts';
+import {
+	DEFAULT_SPEED,
+	DOCX_ERROR_CODES,
+	EPUB_ERROR_CODES,
+	resolveStoredPlaybackSpeed,
+	STORAGE_KEYS,
+	VOICE_STYLES,
+} from '../shared/constants.ts';
 import {
 	DOCUMENT_READER_PORT_NAME,
 	type DocumentReaderPortMessage,
@@ -9,11 +26,17 @@ import {
 	isDocumentReaderCompletedMessage,
 	mapDocumentReaderWords,
 } from '../shared/document_reader.ts';
+import { DocxError } from '../shared/docx_extractor.ts';
+import { EpubError } from '../shared/epub_extractor.ts';
 import { getLocalizedPlaybackError, t } from '../shared/i18n.ts';
 import { isLocalBookSession } from '../shared/local_book_session.ts';
-import { extractPdfArticleFromBytes } from '../background/pdf_extractor.ts';
-import { loadPdfJsDocument } from '../background/pdfjs_loader.ts';
+import { requestPlaybackState, sendPlaybackCommand, subscribePlaybackState } from '../shared/playback_client.ts';
+import { resolvePlaybackStatus } from '../shared/playback_status.ts';
+import { performCenteredScroll, UserScrollPauseManager } from '../shared/scroll_helper.ts';
+import type { PlaybackSessionSnapshot, TabPlaybackSessionSnapshot } from '../shared/types.ts';
+import { getDisplayVersion } from '../shared/version.ts';
 import {
+	type BookKind,
 	detectBookKind,
 	ensureReadPermission,
 	hasReadPermission,
@@ -21,22 +44,8 @@ import {
 	pickBookFile,
 	sendReaderContent,
 } from './book_loader.ts';
-import { EPUB_ERROR_CODES } from '../shared/constants.ts';
-import { EpubError, openEpubBook } from '../shared/epub_extractor.ts';
-import {
-	type EpubProgressRecord,
-	getEpubBookHandle,
-	loadEpubProgress,
-	matchesSavedFile,
-	putEpubBookHandle,
-	saveEpubProgress,
-} from '../shared/epub_progress_store.ts';
-import { createEpubSession, type EpubSession } from './epub_session.ts';
-import { requestPlaybackState, sendPlaybackCommand, subscribePlaybackState } from '../shared/playback_client.ts';
-import { resolvePlaybackStatus } from '../shared/playback_status.ts';
-import { performCenteredScroll, UserScrollPauseManager } from '../shared/scroll_helper.ts';
-import type { PlaybackSessionSnapshot, TabPlaybackSessionSnapshot } from '../shared/types.ts';
-import { getDisplayVersion } from '../shared/version.ts';
+import { type BookSession, createBookSession } from './book_session.ts';
+import { openBookSource, PdfSourceError } from './book_source_loader.ts';
 
 type HighlightRegistry = {
 	set(name: string, highlight: unknown): void;
@@ -60,9 +69,9 @@ export default function App() {
 	const [speed, setSpeed] = useState(DEFAULT_SPEED);
 	const [bookError, setBookError] = useState('');
 	const [isLoadingBook, setIsLoadingBook] = useState(false);
-	const [chapterState, setChapterState] = useState<{ chapterIndex: number; chapterCount: number } | null>(null);
-	const epubSessionRef = useRef<EpubSession | null>(null);
-	const [savedProgress, setSavedProgress] = useState<EpubProgressRecord | null>(null);
+	const [positionState, setPositionState] = useState<{ kind: 'chapter' | 'page'; index: number; count: number } | null>(null);
+	const bookSessionRef = useRef<BookSession | null>(null);
+	const [savedProgress, setSavedProgress] = useState<BookProgressRecord | null>(null);
 	const portRef = useRef<chrome.runtime.Port | null>(null);
 	const contentRef = useRef<HTMLDivElement>(null);
 	const snapshotSessionIdRef = useRef<string | null>(null);
@@ -70,6 +79,12 @@ export default function App() {
 	const wordRanges = useMemo(() => (snapshot ? mapDocumentReaderWords(snapshot.content, snapshot.words) : []), [snapshot]);
 	const documentSession = isDocumentSession(session) ? session : null;
 	const isLocalBook = isLocalBookSession(documentSession);
+	/**
+	 * A live session is the only thing that says where the audio came from, and stopping clears it
+	 * — while the book stays on screen. Picking a file in this tab is the durable fact, so it is
+	 * remembered here rather than read back off the session.
+	 */
+	const [openedLocalBook, setOpenedLocalBook] = useState(false);
 	const documentSessionId = documentSession?.sessionId ?? null;
 	const documentSourceTabId = documentSession?.source.tabId ?? null;
 	const playbackStatus = documentSession?.status;
@@ -132,11 +147,16 @@ export default function App() {
 			return;
 		}
 		setSourceTabId(documentSourceTabId);
+		// The background hands a new page to the reader tab it already opened, so a book read here
+		// earlier must not go on hiding the way back to the page that replaced it.
+		if (!isLocalBook) {
+			setOpenedLocalBook(false);
+		}
 		portRef.current?.postMessage({
 			action: 'DOCUMENT_READER_ATTACH',
 			sessionId: documentSessionId,
 		} satisfies DocumentReaderPortMessage);
-	}, [documentSessionId, documentSourceTabId]);
+	}, [documentSessionId, documentSourceTabId, isLocalBook]);
 
 	useEffect(() => {
 		const manager = scrollPauseManagerRef.current;
@@ -192,30 +212,29 @@ export default function App() {
 	}, [currentWordIndex, wordRanges]);
 
 	useEffect(() => {
-		void loadEpubProgress().then(async (progress) => {
-			setSavedProgress(progress && (await getEpubBookHandle()) ? progress : null);
+		void loadBookProgress().then(async (progress) => {
+			setSavedProgress(progress && (await getBookHandle()) ? progress : null);
 		});
 	}, []);
 
-
 	useEffect(() => {
 		const handleCompleted = (message: unknown) => {
-			const epubSession = epubSessionRef.current;
+			const bookSession = bookSessionRef.current;
 			// A session this book never started — one left playing from before the tab reloaded —
 			// must not chain the next chapter out from under the chapter being opened.
-			if (!isDocumentReaderCompletedMessage(message) || !epubSession?.isPlaying(message.sessionId)) {
+			if (!isDocumentReaderCompletedMessage(message) || !bookSession?.isPlaying(message.sessionId)) {
 				return;
 			}
-			void epubSession.advance().then((advanced) => {
+			void bookSession.advance().then((advanced) => {
 				if (advanced) {
-					setChapterState(epubSession.state());
+					setPositionState(bookSession.state());
 					return;
 				}
 				// End of book: hand the tab back to the picker so another book can be loaded.
-				epubSessionRef.current = null;
-				setChapterState(null);
+				bookSessionRef.current = null;
+				setPositionState(null);
 				setSnapshot(null);
-				void loadEpubProgress().then(setSavedProgress);
+				void loadBookProgress().then(setSavedProgress);
 			});
 		};
 		chrome.runtime.onMessage.addListener(handleCompleted);
@@ -223,19 +242,19 @@ export default function App() {
 	}, []);
 
 	useEffect(() => {
-		const epubSession = epubSessionRef.current;
+		const bookSession = bookSessionRef.current;
 		const range = wordRanges[currentWordIndex];
-		if (!epubSession || !range) {
+		if (!bookSession || !range) {
 			return;
 		}
-		epubSession.recordPosition(range.start);
+		bookSession.recordPosition(range.start);
 		if ((documentSession?.progressPercentage ?? 0) >= 80) {
-			epubSession.prefetchNext();
+			bookSession.prefetchNext();
 		}
 	}, [currentWordIndex, wordRanges, documentSession?.progressPercentage]);
 
 	useEffect(() => {
-		const flush = () => void epubSessionRef.current?.flush();
+		const flush = () => void bookSessionRef.current?.flush();
 		const interval = setInterval(flush, 5000);
 		window.addEventListener('beforeunload', flush);
 		return () => {
@@ -245,12 +264,15 @@ export default function App() {
 		};
 	}, []);
 
-	const openEpubSession = async (file: File): Promise<EpubSession> =>
-		createEpubSession({
-			book: await openEpubBook(await file.arrayBuffer()),
+	const openBookSession = async (file: File, kind: BookKind): Promise<BookSession> =>
+		createBookSession({
+			book: await openBookSource(
+				{ bytes: await file.arrayBuffer(), fileName: file.name, kind },
+				{ loadPdfDocument: loadPdfJsDocument },
+			),
 			file: { name: file.name, size: file.size, lastModified: file.lastModified },
 			startChapter: (payload) => sendReaderContent(payload),
-			saveProgress: saveEpubProgress,
+			saveProgress: saveBookProgress,
 			now: () => Date.now(),
 		});
 
@@ -259,46 +281,57 @@ export default function App() {
 	 * list. A record from a different count was numbered by a different list, so its index no
 	 * longer names the chapter it was saved for.
 	 */
-	const resolveResumePoint = (saved: EpubProgressRecord | null, file: File, chapterCount: number) =>
+	const resolveResumePoint = (saved: BookProgressRecord | null, file: File, chapterCount: number) =>
 		saved && matchesSavedFile(saved, file) && saved.totalChapters === chapterCount
 			? { chapterIndex: saved.chapterIndex, charOffset: saved.charOffset }
 			: null;
 
-	const startEpubBook = async (file: File, saved: EpubProgressRecord | null): Promise<boolean> => {
-		const epubSession = await openEpubSession(file);
-		epubSessionRef.current = epubSession;
-		const from = resolveResumePoint(saved, file, epubSession.state().chapterCount) ?? { chapterIndex: 0, charOffset: 0 };
-		if (!(await epubSession.start(from))) {
-			epubSessionRef.current = null;
+	/** A paged document has one chapter, so only the file identity decides whether the offset holds. */
+	const resolvePagedResumePoint = (saved: BookProgressRecord | null, file: File) =>
+		saved && matchesSavedFile(saved, file) ? { chapterIndex: 0, charOffset: saved.charOffset } : null;
+
+	const resumePointFor = (session: BookSession, saved: BookProgressRecord | null, file: File) => {
+		const state = session.state();
+		return state.kind === 'chapter' ? resolveResumePoint(saved, file, state.count) : resolvePagedResumePoint(saved, file);
+	};
+
+	const startBook = async (file: File, kind: BookKind, saved: BookProgressRecord | null): Promise<boolean> => {
+		const bookSession = await openBookSession(file, kind);
+		bookSessionRef.current = bookSession;
+		const from = resumePointFor(bookSession, saved, file) ?? { chapterIndex: 0, charOffset: 0 };
+		if (!(await bookSession.start(from))) {
+			bookSessionRef.current = null;
 			return false;
 		}
-		setChapterState(epubSession.state());
+		setPositionState(bookSession.state());
+		setOpenedLocalBook(true);
 		return true;
 	};
 
 	// A reload leaves the audio playing but the book object gone, so natural completion would
 	// have nothing to chain the next chapter from. Take the playing chapter back over instead.
 	useEffect(() => {
-		if (epubSessionRef.current || !snapshot || !isLocalBook) {
+		if (bookSessionRef.current || !snapshot || !isLocalBook) {
 			return;
 		}
 		let cancelled = false;
 		void (async () => {
-			const stored = await getEpubBookHandle();
-			const progress = await loadEpubProgress();
+			const stored = await getBookHandle();
+			const progress = await loadBookProgress();
 			if (cancelled || !stored || !progress || !(await hasReadPermission(stored.handle))) {
 				return;
 			}
 			const file = await stored.handle.getFile();
-			if (cancelled) {
+			const kind = detectBookKind(stored.fileName);
+			if (cancelled || kind === null || kind === 'doc-legacy') {
 				return;
 			}
-			const epubSession = await openEpubSession(file);
-			const resumePoint = resolveResumePoint(progress, file, epubSession.state().chapterCount);
+			const bookSession = await openBookSession(file, kind);
+			const resumePoint = resumePointFor(bookSession, progress, file);
 			if (cancelled || !resumePoint) {
 				return;
 			}
-			await epubSession.adopt({
+			await bookSession.adopt({
 				chapterIndex: resumePoint.chapterIndex,
 				sessionId: snapshot.sessionId,
 				playingText: snapshot.content,
@@ -306,14 +339,33 @@ export default function App() {
 			if (cancelled) {
 				return;
 			}
-			epubSessionRef.current = epubSession;
-			setChapterState(epubSession.state());
+			bookSessionRef.current = bookSession;
+			setPositionState(bookSession.state());
+			setOpenedLocalBook(true);
 		})().catch(() => undefined);
 		return () => {
 			cancelled = true;
 		};
 		// A reopened book replaces the session itself, so only a fresh snapshot can need adopting.
 	}, [snapshot, isLocalBook]);
+
+	/**
+	 * A saved EPUB is a chapter out of many; a saved document is a percentage through one text. The
+	 * record carries no page list — pages come from re-parsing the file — so the page number only
+	 * appears once the book is open.
+	 */
+	const describeSavedProgress = (saved: BookProgressRecord): string => {
+		if (saved.totalChapters > 1) {
+			return `— ${t('chapterProgress')} ${saved.chapterIndex + 1}/${saved.totalChapters}`;
+		}
+		return saved.totalChars ? `— ${Math.round((saved.charOffset / saved.totalChars) * 100)}%` : '';
+	};
+
+	/** Every extractor throws a coded error; anything else is a failure with nothing to say. */
+	const resolveBookError = (error: unknown): string =>
+		(error instanceof EpubError || error instanceof DocxError || error instanceof PdfSourceError
+			? getLocalizedPlaybackError(error.code)
+			: undefined) ?? t('bookOpenFailed');
 
 	const handleOpenBook = async () => {
 		setBookError('');
@@ -322,6 +374,10 @@ export default function App() {
 			return;
 		}
 		const kind = detectBookKind(handle.name);
+		if (kind === 'doc-legacy') {
+			setBookError(getLocalizedPlaybackError(DOCX_ERROR_CODES.legacyFormat) ?? t('bookOpenFailed'));
+			return;
+		}
 		if (!kind) {
 			setBookError(t('bookOpenFailed'));
 			return;
@@ -329,32 +385,15 @@ export default function App() {
 		setIsLoadingBook(true);
 		try {
 			const file = await handle.getFile();
-			if (kind === 'pdf') {
-				const bytes = new Uint8Array(await file.arrayBuffer());
-				const extraction = await extractPdfArticleFromBytes(bytes, file.name, { loadDocument: loadPdfJsDocument });
-				if (!extraction.success) {
-					setBookError(getLocalizedPlaybackError(extraction.error) ?? t('bookOpenFailed'));
-					return;
-				}
-				const response = await sendReaderContent({
-					title: extraction.article.title,
-					content: extraction.article.content,
-					lang: extraction.article.lang,
-				});
-				if (!response.success) {
-					setBookError(t('bookOpenFailed'));
-				}
-				return;
-			}
 			// Retaining the handle only enables resume; losing it must not block reading.
-			await putEpubBookHandle({ handle, fileName: file.name, fileSize: file.size, fileLastModified: file.lastModified }).catch(
+			await putBookHandle({ handle, fileName: file.name, fileSize: file.size, fileLastModified: file.lastModified }).catch(
 				() => undefined,
 			);
-			if (!(await startEpubBook(file, null))) {
+			if (!(await startBook(file, kind, null))) {
 				setBookError(t('bookOpenFailed'));
 			}
 		} catch (error) {
-			setBookError(error instanceof EpubError ? (getLocalizedPlaybackError(error.code) ?? t('bookOpenFailed')) : t('bookOpenFailed'));
+			setBookError(resolveBookError(error));
 		} finally {
 			setIsLoadingBook(false);
 		}
@@ -363,7 +402,7 @@ export default function App() {
 	const handleResumeBook = async () => {
 		setBookError('');
 		const progress = savedProgress;
-		const stored = await getEpubBookHandle();
+		const stored = await getBookHandle();
 		if (!progress || !stored) {
 			setSavedProgress(null);
 			return;
@@ -375,11 +414,16 @@ export default function App() {
 		setIsLoadingBook(true);
 		try {
 			const file = await stored.handle.getFile();
-			if (!(await startEpubBook(file, progress))) {
+			const kind = detectBookKind(stored.fileName);
+			if (kind === null || kind === 'doc-legacy') {
+				setBookError(t('bookOpenFailed'));
+				return;
+			}
+			if (!(await startBook(file, kind, progress))) {
 				setBookError(t('bookOpenFailed'));
 			}
 		} catch (error) {
-			setBookError(error instanceof EpubError ? (getLocalizedPlaybackError(error.code) ?? t('bookOpenFailed')) : t('bookOpenFailed'));
+			setBookError(resolveBookError(error));
 		} finally {
 			setIsLoadingBook(false);
 		}
@@ -387,14 +431,14 @@ export default function App() {
 
 	// Unlike natural completion, running out of chapters here must not send the tab back to the
 	// picker: the chapter the reader is listening to simply keeps playing.
-	const handleChapterJump = (direction: 'previous' | 'next') => {
-		const epubSession = epubSessionRef.current;
-		if (!epubSession) {
+	const handlePositionJump = (direction: 'previous' | 'next') => {
+		const bookSession = bookSessionRef.current;
+		if (!bookSession) {
 			return;
 		}
-		void (direction === 'previous' ? epubSession.previous() : epubSession.advance()).then((moved) => {
+		void (direction === 'previous' ? bookSession.previous() : bookSession.advance()).then((moved) => {
 			if (moved) {
-				setChapterState(epubSession.state());
+				setPositionState(bookSession.state());
 			}
 		});
 	};
@@ -437,13 +481,16 @@ export default function App() {
 							{t('openBook')}
 						</button>
 					)}
-					{/* A locally opened book is sourced from this very tab, so there is nowhere to go back to. */}
-					{!isLocalBook && (
+					{/*
+					 * Two ways there is nowhere to go back to: this tab has not been attached to a page
+					 * yet, or the book was opened from this very tab. A permanently dead button says
+					 * neither of those; it just sits there.
+					 */}
+					{sourceTabId !== null && !isLocalBook && !openedLocalBook && (
 						<button
 							className="btn btn-secondary btn-back-source"
 							type="button"
-							disabled={sourceTabId === null}
-							onClick={() => sourceTabId !== null && void chrome.tabs.update(sourceTabId, { active: true })}
+							onClick={() => void chrome.tabs.update(sourceTabId, { active: true })}
 						>
 							{t('backToSource')}
 						</button>
@@ -455,33 +502,35 @@ export default function App() {
 				<>
 					<section className="document-reader-toolbar" aria-label={t('documentReaderControls')}>
 						<div className="playback-controls">
-							{chapterState && (
+							{/* A document with a single page or chapter has nowhere to step to. */}
+							{positionState && positionState.count > 1 && (
 								<button
 									className="btn btn-secondary btn-icon-only btn-previous-chapter"
 									type="button"
-									disabled={chapterState.chapterIndex === 0}
-									aria-label={t('previousChapter')}
-									title={t('previousChapter')}
-									onClick={() => handleChapterJump('previous')}
+									disabled={positionState.index === 0}
+									aria-label={t(positionState.kind === 'page' ? 'previousPage' : 'previousChapter')}
+									title={t(positionState.kind === 'page' ? 'previousPage' : 'previousChapter')}
+									onClick={() => handlePositionJump('previous')}
 								>
 									<PlaybackIcon name="previous" />
 								</button>
 							)}
-							{(status === 'playing' || status === 'paused') && (
-								<button
-									className="btn btn-primary btn-icon-only"
-									type="button"
-									aria-label={status === 'playing' ? t('pauseState') : t('resumeStatus')}
-									title={status === 'playing' ? t('pauseState') : t('resumeStatus')}
-									onClick={() =>
-										void sendPlaybackCommand({ action: status === 'playing' ? 'PAUSE_READING' : 'RESUME_READING' })
-									}
-								>
-									<PlaybackIcon name={status === 'playing' ? 'pause' : 'resume'} />
-								</button>
-							)}
+							{/* Held in place while stopped or loading: a transport that drops a button mid-read
+							    moves every control beside it. */}
 							<button
-								className="btn btn-secondary btn-icon-only"
+								className="btn btn-primary btn-icon-only"
+								type="button"
+								disabled={status !== 'playing' && status !== 'paused'}
+								aria-label={status === 'playing' ? t('pauseState') : t('resumeStatus')}
+								title={status === 'playing' ? t('pauseState') : t('resumeStatus')}
+								onClick={() =>
+									void sendPlaybackCommand({ action: status === 'playing' ? 'PAUSE_READING' : 'RESUME_READING' })
+								}
+							>
+								<PlaybackIcon name={status === 'playing' ? 'pause' : 'resume'} />
+							</button>
+							<button
+								className="btn btn-secondary btn-icon-only btn-stop-reading"
 								type="button"
 								disabled={status === 'stopped'}
 								aria-label={t('stopReading')}
@@ -490,18 +539,19 @@ export default function App() {
 							>
 								<PlaybackIcon name="stop" />
 							</button>
-							{chapterState && (
+							{positionState && positionState.count > 1 && (
 								<button
 									className="btn btn-secondary btn-icon-only btn-next-chapter"
 									type="button"
-									disabled={chapterState.chapterIndex >= chapterState.chapterCount - 1}
-									aria-label={t('nextChapter')}
-									title={t('nextChapter')}
-									onClick={() => handleChapterJump('next')}
+									disabled={positionState.index >= positionState.count - 1}
+									aria-label={t(positionState.kind === 'page' ? 'nextPage' : 'nextChapter')}
+									title={t(positionState.kind === 'page' ? 'nextPage' : 'nextChapter')}
+									onClick={() => handlePositionJump('next')}
 								>
 									<PlaybackIcon name="next" />
 								</button>
 							)}
+							<AudioExportButton session={documentSession} />
 						</div>
 						<div className="form-group">
 							<label className="form-label" htmlFor="reader-voice-select">
@@ -537,12 +587,14 @@ export default function App() {
 						</div>
 						<div className="form-group document-reader-progress" role="status">
 							<div className="slider-label-group">
-								<span className="form-label">PROGRESS</span>
+								<span className="form-label">{t('progressLabel')}</span>
 								<span className="slider-value">{Math.round(documentSession?.progressPercentage ?? 0)}%</span>
 							</div>
-							{chapterState && (
+							{/* "Page 1/1" states nothing the reader does not already see. */}
+							{positionState && positionState.count > 1 && (
 								<span className="slider-value">
-									{t('chapterProgress')} {chapterState.chapterIndex + 1}/{chapterState.chapterCount}
+									{t(positionState.kind === 'page' ? 'pageProgress' : 'chapterProgress')} {positionState.index + 1}/
+									{positionState.count}
 								</span>
 							)}
 							<div className="progress-bar-container">
@@ -576,8 +628,7 @@ export default function App() {
 									disabled={isLoadingBook}
 									onClick={() => void handleResumeBook()}
 								>
-									{t('resumeReading')}: {savedProgress.title} — {t('chapterProgress')} {savedProgress.chapterIndex + 1}/
-									{savedProgress.totalChapters}
+									{t('resumeReading')}: {savedProgress.title} {describeSavedProgress(savedProgress)}
 								</button>
 							)}
 						</div>

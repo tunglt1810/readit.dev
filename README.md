@@ -14,11 +14,13 @@
 | Google Docs | Popup or Side Panel, via the document's plain-text export |
 | PDF | A PDF open in a tab, or a file picked from disk |
 | EPUB | A file picked from disk, in the Document Reader |
+| DOCX | A file picked from disk, in the Document Reader. Legacy `.doc` is not supported |
 
 **While reading**
 
 - **Word-level highlighting** synchronized with speech, projected into whichever surface owns the text — the page itself, the Side Panel, or the Document Reader — with the active word kept centered and auto-scroll paused while the reader scrolls by hand.
 - **Chapter navigation** for EPUB books: chapters chain automatically as each finishes, previous/next steps through them, and the position is restored on the next visit. Chapters are numbered from the book's own table of contents, not from raw spine files.
+- **Page navigation** for local PDF and DOCX: the same buttons step by page, and reading resumes where it stopped on the next visit. PDF pages come from the document itself; DOCX has no stored pagination, so pages are evenly sized and cut at paragraph boundaries.
 - **Playback controls**: play/pause/stop, reading speed, and a choice of voice styles.
 - **Playlist queue** to line up several pages and play them in order.
 - **System media controls** through the MediaSession API, so hardware and OS keys work.
@@ -151,6 +153,7 @@ This starts the local Cloudflare Worker with the local D1 database configuration
 - [Readable Surface Architecture](./docs/specs/2026-07-28-readable-surface-architecture-design.md)
 - [Document Reader Design](./docs/specs/2026-07-28-document-reader-design.md)
 - [EPUB Reading & Local Book Loading](./docs/specs/2026-08-12-epub-reading-design.md)
+- [DOCX Reading & Page-Based Resume](./docs/specs/2026-08-14-docx-reading-and-page-resume-design.md)
 - [Deployment Guide](./docs/DEPLOYMENT.md)
 - [Release Guide](./docs/RELEASING.md)
 - [Architecture Decision Record](./docs/adr)

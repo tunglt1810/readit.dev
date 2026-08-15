@@ -50,6 +50,8 @@ test('creates an Article from page-ordered PDF text and metadata title', async (
 			url: source.url,
 			lang: 'na',
 		},
+		// 'First page.' is 11 characters, plus the blank line joining it to the next page.
+		pageStarts: [0, 13],
 	});
 });
 
@@ -125,6 +127,7 @@ test('uses tab title and filename fallbacks, recognizes PDF signatures, and igno
 		success: true,
 		readableSurface: 'document-reader',
 		article: { title: 'Tab title', content: 'Body', url: source.url, lang: 'na' },
+		pageStarts: [0],
 	});
 	assert.equal(
 		await extractPdfArticle(
@@ -266,6 +269,46 @@ test('reports textless PDFs from raw bytes', async () => {
 	});
 
 	assert.deepEqual(response, { success: false, error: PDF_ERROR_CODES.textUnavailable });
+});
+
+test('page starts mark where each extracted page begins in the joined text', async () => {
+	const pages = ['First page text.', 'Second page text.', 'Third page text.'];
+	const response = await extractPdfArticleFromBytes(new Uint8Array([0x25, 0x50, 0x44, 0x46]), 'Paged.pdf', {
+		loadDocument: async () => ({
+			numPages: pages.length,
+			getMetadata: async () => ({}),
+			getPage: async (pageNumber: number) => ({
+				getTextContent: async () => ({ items: [{ str: pages[pageNumber - 1] }] }),
+			}),
+			destroy: async () => undefined,
+		}),
+	});
+
+	assert.equal(response.success, true);
+	if (!response.success) return;
+	// "First page text." is 16 characters; the "\n\n" joining it to the next page costs two more.
+	assert.deepEqual(response.pageStarts, [0, 18, 37]);
+	for (const [index, start] of response.pageStarts.entries()) {
+		assert.equal(response.article.content.slice(start, start + pages[index].length), pages[index]);
+	}
+});
+
+test('pages with no extractable text do not get a page start', async () => {
+	const pages = ['First page text.', '', 'Third page text.'];
+	const response = await extractPdfArticleFromBytes(new Uint8Array([0x25, 0x50, 0x44, 0x46]), 'Gappy.pdf', {
+		loadDocument: async () => ({
+			numPages: pages.length,
+			getMetadata: async () => ({}),
+			getPage: async (pageNumber: number) => ({
+				getTextContent: async () => ({ items: [{ str: pages[pageNumber - 1] }] }),
+			}),
+			destroy: async () => undefined,
+		}),
+	});
+
+	assert.equal(response.success, true);
+	if (!response.success) return;
+	assert.deepEqual(response.pageStarts, [0, 18]);
 });
 
 test('maps password-protected PDFs from raw bytes', async () => {

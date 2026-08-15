@@ -1,28 +1,30 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { PlaybackControlButton } from '../shared/components/PlaybackControlButton.tsx';
+import { deriveQueueHost } from '../background/playlist_queue.ts';
+import { buildSidePanelRegisterMessage } from '../popup/side_panel.ts';
+import { isFileSystemAccessSupported } from '../reader/book_loader.ts';
 import { AudioExportButton } from '../shared/components/AudioExportButton.tsx';
+import { PlaybackControlButton } from '../shared/components/PlaybackControlButton.tsx';
 import { PlaybackIcon } from '../shared/components/PlaybackIcon.tsx';
 import { SettingsCard } from '../shared/components/SettingsCard.tsx';
-import {
-	BUY_ME_A_COFFEE_URL,
-	DEFAULT_SPEED,
-	resolveStoredPlaybackSpeed,
-	STORAGE_KEYS,
-} from '../shared/constants.ts';
+import { BUY_ME_A_COFFEE_URL, DEFAULT_SPEED, resolveStoredPlaybackSpeed, STORAGE_KEYS } from '../shared/constants.ts';
 import { getLocalizedPlaybackError, t } from '../shared/i18n.ts';
+import { isLocalBookSession } from '../shared/local_book_session.ts';
 import { normalizeManualText } from '../shared/manual_text.ts';
 import { requestPlaybackState, sendPlaybackCommand, sendRuntimeRequest, subscribePlaybackState } from '../shared/playback_client.ts';
 import { resolvePlaybackStatus } from '../shared/playback_status.ts';
 import { isSelectionButtonEnabled } from '../shared/selection_button.ts';
-import { isLocalBookSession } from '../shared/local_book_session.ts';
-import { isFileSystemAccessSupported } from '../reader/book_loader.ts';
-import type { ManualTextLanguage, PageInfoResponse, PlaybackSessionSnapshot, PlaybackStatus, PlaylistQueue, ThemeName } from '../shared/types.ts';
-import { isWordHighlightEnabled } from '../shared/word_highlight.ts';
-import { buildSidePanelRegisterMessage } from '../popup/side_panel.ts';
-import { advanceManualHighlight, createManualHighlightCursor, type ManualWordRange } from './manual_word_highlight.ts';
+import type {
+	ManualTextLanguage,
+	PageInfoResponse,
+	PlaybackSessionSnapshot,
+	PlaybackStatus,
+	PlaylistQueue,
+	ThemeName,
+} from '../shared/types.ts';
 import { getDisplayVersion } from '../shared/version.ts';
-import { deriveQueueHost } from '../background/playlist_queue.ts';
+import { isWordHighlightEnabled } from '../shared/word_highlight.ts';
+import { advanceManualHighlight, createManualHighlightCursor, type ManualWordRange } from './manual_word_highlight.ts';
 
 const EMPTY_PAGE_INFO: PageInfoResponse = { available: false };
 
@@ -109,7 +111,9 @@ export default function App() {
 					setActiveVoice(storedVoice);
 				}
 				if (latestSessionSpeed === undefined) {
-					setSpeed(resolveStoredPlaybackSpeed(latestSessionLanguage, storedSpeed, result[STORAGE_KEYS.HAS_CUSTOM_SPEED_OVERRIDE]));
+					setSpeed(
+						resolveStoredPlaybackSpeed(latestSessionLanguage, storedSpeed, result[STORAGE_KEYS.HAS_CUSTOM_SPEED_OVERRIDE]),
+					);
 				}
 				if (storedTheme === 'default' || storedTheme === 'winamp' || storedTheme === 'wmp12') {
 					setTheme(storedTheme);
@@ -163,10 +167,7 @@ export default function App() {
 			const value = message as Record<string, unknown>;
 			if (value.action === 'PLAYBACK_STATE_UPDATE') {
 				const nextSession = value.session as PlaybackSessionSnapshot | null;
-				if (
-					nextSession?.contentScope === 'manual' &&
-					nextSession.source.panelInstanceId === panelInstanceId
-				) {
+				if (nextSession?.contentScope === 'manual' && nextSession.source.panelInstanceId === panelInstanceId) {
 					manualReaderSessionIdRef.current = nextSession.sessionId;
 				}
 				return;
@@ -507,7 +508,7 @@ export default function App() {
 				</h1>
 				<span className="extension-version">v{displayVersion}</span>
 				<a className="header-support-link" href={BUY_ME_A_COFFEE_URL} target="_blank" rel="noreferrer">
-					<span aria-hidden="true">☕</span> {t('buyMeCoffee')}
+					<PlaybackIcon name="coffee" /> {t('buyMeCoffee')}
 				</a>
 			</header>
 
@@ -518,9 +519,24 @@ export default function App() {
 			)}
 
 			<section className="current-page-card" aria-labelledby="current-page-title">
-				<div className="status-display" data-status={status} role="status">
-					<div className="status-dot-pulse" data-status={status} />
-					<span className="status-text">{getStatusText(session)}</span>
+				<div className="status-row">
+					<div className="status-display" data-status={status} role="status">
+						<div className="status-dot-pulse" data-status={status} />
+						<span className="status-text">{getStatusText(session)}</span>
+					</div>
+					{isFileSystemAccessSupported() && (
+						<div className="status-row-actions">
+							<button
+								className="btn-icon-openbook btn-open-book"
+								type="button"
+								onClick={() => void chrome.tabs.create({ url: chrome.runtime.getURL('src/reader/reader.html') })}
+								aria-label={t('openBook')}
+								data-tooltip={t('openBook')}
+							>
+								<PlaybackIcon name="book" />
+							</button>
+						</div>
+					)}
 				</div>
 				<h2 id="current-page-title">{t('currentPage')}</h2>
 				{session && session.source.kind === 'tab' ? (
@@ -583,15 +599,6 @@ export default function App() {
 						) : (
 							<p>{t('currentPageUnavailable')}</p>
 						)}
-						{isFileSystemAccessSupported() && (
-							<button
-								className="secondary-button"
-								type="button"
-								onClick={() => void chrome.tabs.create({ url: chrome.runtime.getURL('src/reader/reader.html') })}
-							>
-								{t('openBook')}
-							</button>
-						)}
 						<div className="playback-controls">
 							<PlaybackControlButton
 								status="stopped"
@@ -604,13 +611,14 @@ export default function App() {
 				)}
 			</section>
 
-			<div className="paste-divider">{t('orPasteText')}</div>
-
 			<section className="manual-text-card" aria-labelledby="manual-text-title">
 				<h2 id="manual-text-title">{t('orPasteText')}</h2>
 				{manualReaderLocked ? (
 					<div ref={readerRef} className="manual-reader" role="textbox" aria-label={t('manualReaderLabel')} aria-readonly="true">
-						{manualHighlight && readerBeforeHighlight !== null && readerActiveHighlight !== null && readerAfterHighlight !== null ? (
+						{manualHighlight &&
+						readerBeforeHighlight !== null &&
+						readerActiveHighlight !== null &&
+						readerAfterHighlight !== null ? (
 							<>
 								{readerBeforeHighlight}
 								<mark className="manual-reader-active-word">{readerActiveHighlight}</mark>
@@ -636,7 +644,11 @@ export default function App() {
 				</div>
 				<label className="field-label">
 					<span>{t('manualLanguage')}</span>
-					<select disabled={manualReaderLocked} value={language} onChange={(event) => setLanguage(event.target.value as ManualTextLanguage)}>
+					<select
+						disabled={manualReaderLocked}
+						value={language}
+						onChange={(event) => setLanguage(event.target.value as ManualTextLanguage)}
+					>
 						<option value="auto">{t('languageAuto')}</option>
 						<option value="en">{t('languageEnglish')}</option>
 						<option value="vi">{t('languageVietnamese')}</option>
@@ -647,7 +659,12 @@ export default function App() {
 					<button className="secondary-button" type="button" disabled={manualReaderLocked} onClick={() => setDraft('')}>
 						{t('clearText')}
 					</button>
-					<button className="primary-button" type="button" disabled={manualReaderLocked || !draft.trim()} onClick={handleReadManualText}>
+					<button
+						className="primary-button"
+						type="button"
+						disabled={manualReaderLocked || !draft.trim()}
+						onClick={handleReadManualText}
+					>
 						{t('readPastedText')}
 					</button>
 				</div>
@@ -734,12 +751,7 @@ export default function App() {
 							}}
 							aria-label={t('queueUrlAriaLabel')}
 						/>
-						<button
-							className="secondary-button"
-							type="button"
-							disabled={!urlInput.trim()}
-							onClick={() => void handleAddUrl()}
-						>
+						<button className="secondary-button" type="button" disabled={!urlInput.trim()} onClick={() => void handleAddUrl()}>
 							{t('queueAddUrl')}
 						</button>
 					</div>
@@ -754,7 +766,8 @@ export default function App() {
 					<>
 						<ul className="queue-list" aria-label={t('queueListAriaLabel')}>
 							{queue.items.map((item) => {
-								const icon = item.status === 'playing' ? '▶' : item.status === 'done' ? '✓' : item.status === 'error' ? '✕' : '·';
+								const icon =
+									item.status === 'playing' ? '▶' : item.status === 'done' ? '✓' : item.status === 'error' ? '✕' : '·';
 								const hostname = deriveQueueHost(item.url);
 								return (
 									<li key={item.id} className="queue-item" data-status={item.status}>
@@ -769,7 +782,11 @@ export default function App() {
 										</div>
 										<div className="queue-item-actions">
 											{(item.status === 'done' || item.status === 'error') && (
-												<button className="queue-action-btn" type="button" onClick={() => handleRequeueItem(item.id)}>
+												<button
+													className="queue-action-btn"
+													type="button"
+													onClick={() => handleRequeueItem(item.id)}
+												>
 													{t('queueReadd')}
 												</button>
 											)}
@@ -791,11 +808,7 @@ export default function App() {
 						<div className="queue-footer">
 							<div className="queue-footer-actions">
 								{queue.items.some((i) => i.status === 'pending') ? (
-									<button
-										className="primary-button queue-play-btn"
-										type="button"
-										onClick={() => void handlePlayQueue()}
-									>
+									<button className="primary-button queue-play-btn" type="button" onClick={() => void handlePlayQueue()}>
 										{t('queuePlay')}
 									</button>
 								) : queue.items.length > 0 ? (

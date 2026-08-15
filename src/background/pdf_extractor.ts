@@ -27,8 +27,12 @@ export interface PdfExtractorDependencies {
 }
 
 export type PdfArticleResponse =
-	| { success: true; article: Article; readableSurface: 'document-reader' }
-	| { success: false; error: PdfErrorCode };
+	/**
+	 * `pageStarts` rides on the response rather than on `Article` on purpose: `Article` is serialised
+	 * across `chrome.runtime` messages into the background and offscreen, and page offsets have no
+	 * business travelling there.
+	 */
+	{ success: true; article: Article; readableSurface: 'document-reader'; pageStarts: number[] } | { success: false; error: PdfErrorCode };
 
 export interface PdfSource {
 	url: string;
@@ -157,10 +161,16 @@ export async function extractPdfArticleFromBytes(
 		document = await dependencies.loadDocument(bytes);
 		const metadata = await document.getMetadata();
 		const pages: string[] = [];
+		const pageStarts: number[] = [];
+		let offset = 0;
 		for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber++) {
 			const page = await document.getPage(pageNumber);
 			const text = normalizePageText((await page.getTextContent()).items);
-			if (text) pages.push(text);
+			if (!text) continue;
+			// Pages are joined with a blank line, which every page after the first must pay for.
+			pageStarts.push(offset);
+			offset += text.length + 2;
+			pages.push(text);
 		}
 		const content = pages.join('\n\n');
 		if (!content) return extractionFailure(PDF_ERROR_CODES.textUnavailable);
@@ -173,6 +183,7 @@ export async function extractPdfArticleFromBytes(
 				lang: detectContentLanguage(content, 'na'),
 			},
 			readableSurface: 'document-reader',
+			pageStarts,
 		};
 	} catch (error) {
 		return extractionFailure(

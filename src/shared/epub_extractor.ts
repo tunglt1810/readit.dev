@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 
+import type { BookSource } from './book_source.ts';
 import { EPUB_ERROR_CODES, type EpubErrorCode } from './constants.ts';
 
 const CONTAINER_PATH = 'META-INF/container.xml';
@@ -16,12 +17,7 @@ export class EpubError extends Error {
 	}
 }
 
-export interface EpubBook {
-	title: string;
-	lang: string;
-	chapterCount: number;
-	getChapterText(index: number): Promise<string>;
-}
+export type EpubBook = BookSource;
 
 export interface EpubChapter {
 	title: string;

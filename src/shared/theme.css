@@ -1,7 +1,12 @@
 /* Core Variables and Colors (Dark Glassmorphism Theme) */
 :root {
-	--font-sans: "Inter", system-ui, -apple-system, sans-serif;
-	--font-display: "Outfit", var(--font-sans);
+	/*
+	 * The system UI face, named honestly: nothing here loads Inter or Outfit, so asking for them
+	 * only meant the stack fell through to whatever the OS supplies. Naming what actually renders
+	 * keeps the type scale below meaningful.
+	 */
+	--font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+	--font-display: var(--font-sans);
 
 	--bg-app: #09090b; /* Zinc 950 */
 	--bg-glass: rgba(18, 18, 24, 0.78);
@@ -11,6 +16,8 @@
 
 	--color-text-primary: #f4f4f5;
 	--color-text-secondary: #a1a1aa;
+	/* A third rank for captions and meta, which until now shared the secondary grey with body copy. */
+	--color-text-muted: #71717a;
 	--color-logo-span: #099fb5;
 
 	/* Brand Gradients – Teal to Cyan */
@@ -27,6 +34,41 @@
 	--space-3: 12px;
 	--space-4: 16px;
 	--space-5: 20px;
+
+	/*
+	 * Six type sizes, one job each: eyebrow, caption, body, lead, section heading, page title.
+	 * They replace the 24 loose values the three surfaces had drifted into.
+	 */
+	--text-xs: 11px;
+	--text-sm: 12px;
+	--text-base: 13px;
+	--text-md: 15px;
+	--text-lg: 18px;
+	--text-xl: 24px;
+	/* Uppercase labels need the extra tracking; everything else reads better without it. */
+	--tracking-eyebrow: 0.08em;
+
+	--radius-sm: 8px;
+	--radius-lg: 14px;
+
+	/*
+	 * Aliases the surface stylesheets already referenced without anything defining them, so every
+	 * one of those rules had been running on its own hand-written fallback.
+	 */
+	--text-primary: var(--color-text-primary);
+	--text-secondary: var(--color-text-secondary);
+	--border-color: var(--border-glass);
+	--card-bg: var(--bg-glass);
+	--color-primary: var(--color-logo-span);
+	--color-error: var(--color-danger);
+	--input-bg: color-mix(in srgb, var(--bg-app) 82%, white 3%);
+	--surface-bg: rgba(255, 255, 255, 0.03);
+	--surface-active: rgba(9, 159, 181, 0.15);
+	--space-xs: var(--space-2);
+	--space-sm: var(--space-3);
+	--space-md: var(--space-4);
+	--font-xs: var(--text-sm);
+	--font-sm: var(--text-base);
 }
 
 /* WINAMP THEME VARIABLES */
@@ -77,15 +119,32 @@
 	width: fit-content;
 }
 
-.btn-icon-sidepanel {
+/* Keeps both icon buttons together on the right, rather than letting space-between split them. */
+.status-row-actions {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	flex-shrink: 0;
+}
+
+.btn-icon-sidepanel,
+.btn-icon-openbook {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
+	/*
+	 * A fixed square box: an inline SVG alone leaves a baseline gap, and the Side Panel's blanket
+	 * `button { min-height: 38px }` would otherwise stretch these into upright rectangles.
+	 */
+	width: 28px;
+	height: 28px;
+	min-height: 28px;
+	padding: 0;
+	line-height: 1;
 	background: transparent;
 	border: none;
 	color: var(--color-text-secondary);
 	cursor: pointer;
-	padding: 4px;
 	border-radius: 6px;
 	transition: all 0.2s ease;
 	flex-shrink: 0;
@@ -96,7 +155,44 @@
 	background: rgba(255, 255, 255, 0.12);
 }
 
-.btn-icon-sidepanel:focus-visible {
+/* Opening a local file is the one action with no other entry point, so it carries the brand fill. */
+.btn-icon-openbook {
+	background: var(--gradient-brand);
+	color: #fff;
+	box-shadow:
+		0 4px 12px rgba(0, 135, 113, 0.32),
+		inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.btn-icon-openbook:hover {
+	background: var(--gradient-brand-hover);
+	transform: translateY(-1px);
+	box-shadow:
+		0 6px 16px rgba(0, 135, 113, 0.42),
+		inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+.btn-icon-openbook:active {
+	transform: translateY(0);
+}
+
+/* The retro themes have their own accent; the brand teal would sit outside their palette. */
+[data-theme="winamp"] .btn-icon-openbook,
+[data-theme="wmp12"] .btn-icon-openbook {
+	background: var(--color-logo-span);
+	color: var(--bg-app);
+	box-shadow: none;
+}
+
+[data-theme="winamp"] .btn-icon-openbook:hover,
+[data-theme="wmp12"] .btn-icon-openbook:hover {
+	background: var(--color-logo-span);
+	filter: brightness(1.15);
+	box-shadow: none;
+}
+
+.btn-icon-sidepanel:focus-visible,
+.btn-icon-openbook:focus-visible {
 	outline: 2px solid var(--border-glass-focus);
 	outline-offset: 1px;
 }
@@ -109,15 +205,18 @@
 	box-shadow: 0 0 8px rgba(9, 159, 181, 0.35);
 }
 
-.btn-icon-sidepanel[data-tooltip] {
+.btn-icon-sidepanel[data-tooltip],
+.btn-icon-openbook[data-tooltip] {
 	position: relative;
 }
 
-.btn-icon-sidepanel[data-tooltip]::before {
+.btn-icon-sidepanel[data-tooltip]::before,
+.btn-icon-openbook[data-tooltip]::before {
 	content: none;
 }
 
-.btn-icon-sidepanel[data-tooltip]::after {
+.btn-icon-sidepanel[data-tooltip]::after,
+.btn-icon-openbook[data-tooltip]::after {
 	content: attr(data-tooltip);
 	position: absolute;
 	top: calc(100% + 6px);
@@ -140,11 +239,16 @@
 	opacity: 0;
 	visibility: hidden;
 	transform: translateY(-2px);
-	transition: opacity 0.12s ease, transform 0.12s ease, visibility 0.12s;
+	transition:
+		opacity 0.12s ease,
+		transform 0.12s ease,
+		visibility 0.12s;
 }
 
 .btn-icon-sidepanel[data-tooltip]:hover::after,
-.btn-icon-sidepanel[data-tooltip]:focus-visible::after {
+.btn-icon-sidepanel[data-tooltip]:focus-visible::after,
+.btn-icon-openbook[data-tooltip]:hover::after,
+.btn-icon-openbook[data-tooltip]:focus-visible::after {
 	opacity: 1;
 	visibility: visible;
 	transform: translateY(0);
@@ -694,17 +798,37 @@
 	user-select: none;
 }
 
+/* Same eyebrow as every other section label, so Settings reads as one card among several. */
 .settings-card-title {
 	font-family: var(--font-display);
-	font-size: 13px;
+	font-size: var(--text-xs);
 	font-weight: 600;
-	color: var(--color-text-primary);
+	color: var(--color-text-muted);
 	display: flex;
 	align-items: center;
 	gap: 6px;
 	margin: 0;
 	text-transform: uppercase;
-	letter-spacing: 0.5px;
+	letter-spacing: var(--tracking-eyebrow);
+}
+
+.settings-card-title svg {
+	color: var(--color-text-muted);
+}
+
+.collapse-arrow svg {
+	display: block;
+	transition: transform 0.2s ease;
+}
+
+.collapse-arrow[data-expanded="true"] svg {
+	transform: rotate(180deg);
+}
+
+/* The support link and privacy note each pair a small icon with one line of text. */
+.header-support-link svg,
+.privacy-disclosure svg {
+	flex: none;
 }
 
 .collapse-arrow {
@@ -794,7 +918,9 @@
 	border: 2px solid;
 	border-color: #8d8d8d #060606 #060606 #8d8d8d;
 	border-radius: 0;
-	box-shadow: inset 0 0 10px #061106, 0 -4px 16px rgba(0, 0, 0, 0.8);
+	box-shadow:
+		inset 0 0 10px #061106,
+		0 -4px 16px rgba(0, 0, 0, 0.8);
 }
 
 [data-theme="winamp"] .theme-opt-btn {
@@ -824,7 +950,9 @@
 	color: #8fdf53;
 	font-family: "Courier New", Courier, monospace;
 	border-radius: 0;
-	box-shadow: inset 0 0 10px #061106, 0 0 8px rgba(143, 223, 83, 0.4);
+	box-shadow:
+		inset 0 0 10px #061106,
+		0 0 8px rgba(143, 223, 83, 0.4);
 }
 
 [data-theme="winamp"] .primary-button:hover:not(:disabled),
@@ -927,7 +1055,9 @@
 	background: #101517;
 	border: 1px solid #43525b;
 	border-radius: 6px;
-	box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5), 0 -4px 16px rgba(0, 0, 0, 0.6);
+	box-shadow:
+		inset 0 0 10px rgba(0, 0, 0, 0.5),
+		0 -4px 16px rgba(0, 0, 0, 0.6);
 }
 
 [data-theme="wmp12"] .theme-opt-btn {
@@ -957,7 +1087,9 @@
 	color: #ffffff;
 	font-family: "Segoe UI", system-ui, sans-serif;
 	border-radius: 6px;
-	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 0 10px rgba(27, 146, 223, 0.5);
+	box-shadow:
+		inset 0 1px 0 rgba(255, 255, 255, 0.3),
+		0 0 10px rgba(27, 146, 223, 0.5);
 }
 
 [data-theme="wmp12"] .primary-button:hover:not(:disabled),
@@ -990,7 +1122,9 @@
 	pointer-events: none;
 	opacity: 0;
 	z-index: 10000;
-	transition: opacity 0.12s ease-out, transform 0.12s ease-out;
+	transition:
+		opacity 0.12s ease-out,
+		transform 0.12s ease-out;
 }
 
 [data-tooltip]::after {
@@ -1012,7 +1146,7 @@
 }
 
 [data-tooltip]::before {
-	content: '';
+	content: "";
 	bottom: calc(100% + 3px);
 	transform: translateX(-50%) translateY(4px);
 	border-width: 5px 5px 0 5px;

@@ -1,7 +1,7 @@
 import { sendPlaybackCommand } from '../shared/playback_client.ts';
 import type { CommandResponse } from '../shared/types.ts';
 
-export type BookKind = 'epub' | 'pdf';
+export type BookKind = 'epub' | 'pdf' | 'docx';
 
 interface FilePickerWindow {
 	showOpenFilePicker?: (options: {
@@ -14,12 +14,19 @@ export function isFileSystemAccessSupported(): boolean {
 	return typeof (window as FilePickerWindow).showOpenFilePicker === 'function';
 }
 
-export function detectBookKind(fileName: string): BookKind | null {
+/** `.doc` is named rather than lumped in with unknown files, so the caller can explain itself. */
+export function detectBookKind(fileName: string): BookKind | 'doc-legacy' | null {
 	const lowered = fileName.toLowerCase();
 	if (lowered.endsWith('.epub')) {
 		return 'epub';
 	}
-	return lowered.endsWith('.pdf') ? 'pdf' : null;
+	if (lowered.endsWith('.pdf')) {
+		return 'pdf';
+	}
+	if (lowered.endsWith('.docx')) {
+		return 'docx';
+	}
+	return lowered.endsWith('.doc') ? 'doc-legacy' : null;
 }
 
 /** Resolves to null when the user dismisses the native picker. */
@@ -31,7 +38,19 @@ export async function pickBookFile(): Promise<FileSystemFileHandle | null> {
 	try {
 		const [handle] = await picker({
 			multiple: false,
-			types: [{ description: 'Books', accept: { 'application/epub+zip': ['.epub'], 'application/pdf': ['.pdf'] } }],
+			types: [
+				{
+					description: 'Books',
+					accept: {
+						'application/epub+zip': ['.epub'],
+						'application/pdf': ['.pdf'],
+						'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+						// Selectable on purpose: a .doc the reader can pick and be told about beats one
+						// greyed out for no visible reason.
+						'application/msword': ['.doc'],
+					},
+				},
+			],
 		});
 		return handle ?? null;
 	} catch {
