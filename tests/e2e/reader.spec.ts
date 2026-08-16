@@ -1,3 +1,4 @@
+import { buildDocxFixture } from './docx_fixture';
 import { expect, test } from './fixtures';
 
 test.describe('Kịch bản 2: Trích xuất nội dung (Reader Mode)', () => {
@@ -273,6 +274,62 @@ test.describe('Kịch bản 2: Trích xuất nội dung (Reader Mode)', () => {
 		await expect(requestArticle(extPage)).resolves.toEqual({
 			success: false,
 			error: 'googleDocsExportUnavailable',
+		});
+	});
+
+	const WORD_GUID = '2c444ed6-0def-4010-82d2-79c12f3ec8c5';
+	const WORD_PAGE_BODY =
+		'<html lang="vi"><head><title>Tài liệu</title></head><body><div id="WACViewPanel"><iframe></iframe></div></body></html>';
+
+	test('reads a Word Online document from the same-origin download endpoint', async ({ context, extensionId }) => {
+		const docx = await buildDocxFixture(['Đoạn Word thứ nhất.', 'Đoạn Word thứ hai.']);
+		await context.route('https://onedrive.live.com/personal/cid/_layouts/15/doc.aspx**', (route) =>
+			route.fulfill({ contentType: 'text/html; charset=utf-8', body: WORD_PAGE_BODY }),
+		);
+		await context.route(`https://onedrive.live.com/personal/cid/_layouts/15/download.aspx?UniqueId=${WORD_GUID}`, (route) =>
+			route.fulfill({
+				contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+				body: docx,
+			}),
+		);
+
+		const documentPage = await context.newPage();
+		await documentPage.goto(`https://onedrive.live.com/personal/cid/_layouts/15/doc.aspx?sourcedoc=%7B${WORD_GUID}%7D&action=edit`);
+		const extPage = await context.newPage();
+		await extPage.goto('chrome-extension://' + extensionId + '/src/popup/popup.html');
+		await documentPage.bringToFront();
+
+		const result = (await requestArticle(extPage)) as {
+			success: boolean;
+			readableSurface?: string;
+			docxBase64?: string;
+			source?: { title: string };
+		};
+
+		expect(result.success).toBe(true);
+		expect(result.readableSurface).toBe('document-reader');
+		// "UEsDBA" is the base64 prefix of the ZIP signature, so this asserts real archive bytes crossed.
+		expect(result.docxBase64?.startsWith('UEsDBA')).toBe(true);
+		expect(result.source?.title).toBe('Tài liệu');
+	});
+
+	test('returns the shared code when the Word Online download is denied', async ({ context, extensionId }) => {
+		await context.route('https://onedrive.live.com/personal/denied/_layouts/15/doc.aspx**', (route) =>
+			route.fulfill({ contentType: 'text/html; charset=utf-8', body: WORD_PAGE_BODY }),
+		);
+		await context.route(`https://onedrive.live.com/personal/denied/_layouts/15/download.aspx?UniqueId=${WORD_GUID}`, (route) =>
+			route.fulfill({ status: 403, contentType: 'text/plain; charset=utf-8', body: '' }),
+		);
+
+		const documentPage = await context.newPage();
+		await documentPage.goto(`https://onedrive.live.com/personal/denied/_layouts/15/doc.aspx?sourcedoc=%7B${WORD_GUID}%7D`);
+		const extPage = await context.newPage();
+		await extPage.goto('chrome-extension://' + extensionId + '/src/popup/popup.html');
+		await documentPage.bringToFront();
+
+		await expect(requestArticle(extPage)).resolves.toEqual({
+			success: false,
+			error: 'wordOnlineDownloadUnavailable',
 		});
 	});
 });

@@ -3,7 +3,8 @@ readit.dev là tiện ích mở rộng miễn phí giúp chuyển đổi nội d
 ✨ Các tính năng nổi bật:
 
 • Tự động trích xuất nội dung: Tự động lọc nội dung chính của bài báo, bỏ qua quảng cáo, menu và thanh bên gây phiền nhiễu.
-• Hỗ trợ đa dạng định dạng: Đọc trang web, Google Docs, tệp PDF, tệp Word DOCX và sách điện tử EPUB — đều tự động lưu vị trí đọc, theo chương với EPUB và theo trang với PDF, DOCX.
+• Hỗ trợ đa dạng định dạng: Đọc trang web, Google Docs, Word Online, tệp PDF, tệp Word DOCX và sách điện tử EPUB — đều tự động lưu vị trí đọc, theo chương với EPUB và theo trang với PDF, DOCX.
+• Word Online & Google Docs, không cần đăng nhập thêm: Mở tài liệu trên OneDrive, SharePoint hay Google Docs rồi bấm Play. Tiện ích đọc bằng chính phiên đăng nhập sẵn có của tab — không phải kết nối thêm tài khoản, không xin thêm quyền nào.
 • Theo dõi từng từ (Word-level Highlighting): Đánh dấu từ đang phát âm theo thời gian thực, tự động căn giữa và cuộn trang thông minh.
 • 100% On-device & Bảo mật: Chạy hoàn toàn trên máy tính thông qua WebGPU/WASM, không gửi bất kỳ dữ liệu hay văn bản nào lên máy chủ.
 • Xuất tệp âm thanh MP3: Tải bản đọc dưới dạng tệp MP3 để nghe lại ngoại tuyến mọi lúc mọi nơi.
@@ -26,9 +27,10 @@ readit.dev là tiện ích mở rộng miễn phí giúp chuyển đổi nội d
 - Mở Side Panel (Bảng điều khiển bên) của readit.dev.
 - Dán văn bản vào khung và nhấn "Play".
 
-4. Đọc sách EPUB, tệp PDF, DOCX & Google Docs:
+4. Đọc sách EPUB, tệp PDF, DOCX, Google Docs & Word Online:
 - Đối với PDF/DOCX/EPUB: Mở Document Reader từ menu/Side Panel và chọn tệp từ máy tính. Sách EPUB tự động nối tiếp từng chương; PDF và DOCX chuyển theo từng trang. Đóng tab rồi mở lại vẫn nghe tiếp đúng chỗ đang dang dở. (Tệp Word .doc đời cũ chưa được hỗ trợ, hãy lưu lại thành .docx.)
 - Đối với Google Docs: Nhấn "Play" ngay trên tab Google Docs đang mở để đọc nội dung trực tiếp.
+- Đối với Word Online: Mở tài liệu Word trên OneDrive hoặc SharePoint rồi nhấn "Play". Nếu tài liệu không tải xuống được — tệp chỉ cho xem, hoặc phiên đăng nhập đã hết hạn — bạn sẽ nhận được thông báo rõ ràng thay vì im lặng.
 
 5. Sử dụng Danh sách phát (Playlist Queue):
 - Mở Side Panel, chọn "+ Thêm tab hiện tại" hoặc chuột phải vào liên kết bất kỳ chọn "Thêm vào danh sách phát".

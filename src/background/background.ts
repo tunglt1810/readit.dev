@@ -6,8 +6,10 @@ import {
 	MODEL_FILES,
 	PDF_ERROR_CODES,
 	STORAGE_KEYS,
+	WORD_ONLINE_DOWNLOAD_UNAVAILABLE,
 	type PdfErrorCode,
 } from '../shared/constants';
+import { base64ToBytes } from '../shared/base64.ts';
 import { t } from '../shared/i18n.ts';
 import { buildMediaSessionMetadata } from '../shared/media_session_metadata.ts';
 import { isInternalAudioExportOffscreenCommand } from '../shared/audio_export.ts';
@@ -35,7 +37,8 @@ import type {
 	PlaybackStatus,
 } from '../shared/types';
 import { requestActionPopup } from './action_popup';
-import { isMissingReceiverError, requestArticleFromTab, type ArticleResponse } from './article_request';
+import { isMissingReceiverError, requestArticleFromTab, type ResolvedArticleResponse } from './article_request';
+import { buildWordOnlineArticle } from './word_online_article.ts';
 import { syncPlaybackBadge } from './badge';
 import { prepareManualStart } from './manual_text';
 import {
@@ -102,6 +105,7 @@ const ERROR_MESSAGES = {
 
 function getExtractionError(error: string | undefined): string {
 	if (error === GOOGLE_DOCS_EXPORT_UNAVAILABLE) return error;
+	if (error === WORD_ONLINE_DOWNLOAD_UNAVAILABLE) return error;
 	if (error && Object.values(PDF_ERROR_CODES).includes(error as PdfErrorCode)) return error;
 	return ERROR_MESSAGES.extraction;
 }
@@ -218,7 +222,7 @@ function getQueueItemId(session: PlaybackSessionSnapshot | null): string | undef
 	return 'queueItemId' in session && typeof session.queueItemId === 'string' ? session.queueItemId : undefined;
 }
 
-async function requestCurrentTabArticle(tabId: number, title: string | undefined, url: string): Promise<ArticleResponse> {
+async function requestCurrentTabArticle(tabId: number, title: string | undefined, url: string): Promise<ResolvedArticleResponse> {
 	const requestPdfFallback = () =>
 		extractPdfArticle(
 			{ url, title: title || url },
@@ -233,13 +237,7 @@ async function requestCurrentTabArticle(tabId: number, title: string | undefined
 						payload: { url: fileUrl },
 					})) as { success: boolean; base64?: string; error?: string };
 					if (response?.success && typeof response.base64 === 'string' && response.base64.length > 0) {
-						const binaryString = atob(response.base64);
-						const len = binaryString.length;
-						const bytes = new Uint8Array(len);
-						for (let i = 0; i < len; i++) {
-							bytes[i] = binaryString.charCodeAt(i);
-						}
-						return bytes;
+						return base64ToBytes(response.base64);
 					}
 					return null;
 				},
@@ -251,6 +249,11 @@ async function requestCurrentTabArticle(tabId: number, title: string | undefined
 			sendMessage: (targetTabId, message) => chrome.tabs.sendMessage(targetTabId, message),
 			executeScript: (options) => chrome.scripting.executeScript(options),
 		});
+		// A recognized Word Online page is a final answer either way. Falling through would send the
+		// OneDrive page URL into the PDF fallback, which cannot succeed and only costs a request.
+		if ('docxBase64' in articleResponse) {
+			return await buildWordOnlineArticle(articleResponse.docxBase64, articleResponse.source);
+		}
 		if (
 			articleResponse.success &&
 			isArticle(articleResponse.article) &&

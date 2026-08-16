@@ -62,6 +62,7 @@
 	"readSelectedText": "Read selected text",
 	"showWordHighlight": "Word highlight",
 	"googleDocsExportUnavailable": "Unable to read this Google Doc. Check view or download permission, or read selected/pasted text instead.",
+	"wordOnlineDownloadUnavailable": "Unable to read this Word document. Check view or download permission, or read selected/pasted text instead.",
 	"pdfFileAccessRequired": "To read local PDF files, enable “Allow access to file URLs” in the extension details page in Chrome.",
 	"pdfPasswordProtected": "This password-protected PDF is not currently supported.",
 	"pdfTextUnavailable": "No readable text was found in this PDF. Scanned PDFs are not supported.",

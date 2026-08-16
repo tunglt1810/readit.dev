@@ -1,6 +1,7 @@
 import type { VoiceStyle } from './types.ts';
 
 export const GOOGLE_DOCS_EXPORT_UNAVAILABLE = 'googleDocsExportUnavailable';
+export const WORD_ONLINE_DOWNLOAD_UNAVAILABLE = 'wordOnlineDownloadUnavailable';
 
 export const PDF_ERROR_CODES = {
 	fileAccessRequired: 'pdfFileAccessRequired',

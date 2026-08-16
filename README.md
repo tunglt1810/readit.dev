@@ -12,6 +12,7 @@
 | Selected text | Floating button on selection, or the context menu |
 | Pasted text | Side Panel's Manual Reader |
 | Google Docs | Popup or Side Panel, via the document's plain-text export |
+| Word Online | A document open on OneDrive or SharePoint, read from Popup or Side Panel. The `.docx` is downloaded through the tab's existing session, so nothing extra is signed into |
 | PDF | A PDF open in a tab, or a file picked from disk |
 | EPUB | A file picked from disk, in the Document Reader |
 | DOCX | A file picked from disk, in the Document Reader. Legacy `.doc` is not supported |
@@ -47,7 +48,7 @@ flowchart TD
 	A -->|Current page and controls| B["Background service worker<br/>Coordinate one playback session"]
 	C -->|Current page, manual text, and controls| B
 	D["Selection button or context menu<br/>Selected text"] --> B
-	B -->|Request website, selection, or Google Docs content| E["Content script<br/>Extract Article and project website highlights"]
+	B -->|Request website, selection, Google Docs, or Word Online content| E["Content script<br/>Extract Article and project website highlights"]
 	E -->|Article + website-dom or none| B
 	B -->|Extract tab PDF| P["Background PDF.js extractor<br/>Article + none"]
 	P --> B
@@ -69,7 +70,7 @@ surface kinds:
 
 - `website-dom` projects spoken-word updates into the source page through the content script.
 - `manual-reader` projects updates into the Side Panel's locked pasted-text reader.
-- `document-reader` projects updates into the Document Reader page, which renders the text it was given — a Google Docs export, a PDF, or one EPUB chapter — and pulls its own snapshot rather than receiving the words up front.
+- `document-reader` projects updates into the Document Reader page, which renders the text it was given — a Google Docs export, a Word Online document, a PDF, or one EPUB chapter — and pulls its own snapshot rather than receiving the words up front.
 - `none` keeps playback text-only when no open surface can show the source.
 
 The offscreen document emits one canonical initialize/update/clear protocol. The background Readable Surface coordinator validates events
@@ -100,13 +101,13 @@ an MV3 service worker cannot keep audio alive.
 | Term | Meaning |
 | --- | --- |
 | **Article** | Titled text extracted from a tab for current-page or selected-text playback. |
-| **Content Source** | Origin from which readable text is obtained: website, Google Docs export, PDF, EPUB, selection, or manual input. |
+| **Content Source** | Origin from which readable text is obtained: website, Google Docs export, Word Online download, PDF, EPUB, selection, or manual input. |
 | **Readable Surface** | User-visible text that can project the current spoken position, or explicitly has no projection. |
 | **Playback Session** | Single active reading lifecycle that owns content, progress, voice settings, and its Readable Surface. |
 | **Manual Reader** | Side Panel text area that owns pasted-text playback independently of tab lifecycle. |
 
 A website Article or selection uses the page DOM as its Readable Surface. The Manual Reader is both a Content Source and a Readable
-Surface. Google Docs, PDF, and EPUB have no source view of their own, so they are rendered in the Document Reader, which becomes their
+Surface. Google Docs, Word Online, PDF, and EPUB have no source view of their own, so they are rendered in the Document Reader, which becomes their
 Readable Surface. Use **Content Source** for extraction origin; use Playback Session ownership for runtime lifecycle.
 
 ## Quick start
@@ -154,6 +155,7 @@ This starts the local Cloudflare Worker with the local D1 database configuration
 - [Document Reader Design](./docs/specs/2026-07-28-document-reader-design.md)
 - [EPUB Reading & Local Book Loading](./docs/specs/2026-08-12-epub-reading-design.md)
 - [DOCX Reading & Page-Based Resume](./docs/specs/2026-08-14-docx-reading-and-page-resume-design.md)
+- [Word Online Reading via Same-Origin Download](./docs/specs/2026-08-16-word-online-reading-design.md)
 - [Deployment Guide](./docs/DEPLOYMENT.md)
 - [Release Guide](./docs/RELEASING.md)
 - [Architecture Decision Record](./docs/adr)

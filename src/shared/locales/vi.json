@@ -62,6 +62,7 @@
 	"readSelectedText": "Đọc văn bản đã chọn",
 	"showWordHighlight": "Tô sáng từ",
 	"googleDocsExportUnavailable": "Không thể đọc Google Docs này. Hãy kiểm tra quyền xem hoặc tải xuống, hoặc đọc văn bản đã chọn/dán.",
+	"wordOnlineDownloadUnavailable": "Không thể đọc tài liệu Word này. Hãy kiểm tra quyền xem hoặc tải xuống, hoặc đọc văn bản đã chọn/dán.",
 	"pdfFileAccessRequired": "Để đọc file PDF trên máy, hãy bật “Cho phép truy cập URL tệp” trong trang chi tiết tiện ích của Chrome.",
 	"pdfPasswordProtected": "PDF này được bảo vệ bằng mật khẩu và chưa được hỗ trợ.",
 	"pdfTextUnavailable": "Không tìm thấy văn bản có thể đọc trong PDF này. PDF scan chưa được hỗ trợ.",

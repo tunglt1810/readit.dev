@@ -1,4 +1,15 @@
-export type ArticleResponse = { success: true; article: unknown; readableSurface: unknown } | { success: false; error?: string };
+/** What the caller of `requestCurrentTabArticle` sees: the docx variant has already been resolved. */
+export type ResolvedArticleResponse = { success: true; article: unknown; readableSurface: unknown } | { success: false; error?: string };
+
+/** What the content script may put on the wire, including raw Word Online bytes awaiting parsing. */
+export type ArticleResponse =
+	| ResolvedArticleResponse
+	| {
+			success: true;
+			docxBase64: string;
+			source: { url: string; title: string; lang: string };
+			readableSurface: unknown;
+	  };
 
 export interface ArticleRequestDependencies {
 	sendMessage: (tabId: number, message: { action: 'EXTRACT_ARTICLE' }) => Promise<ArticleResponse>;

@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- read Microsoft Word documents opened from OneDrive and SharePoint, downloading the `.docx` through the tab's own session with no sign-in and no new permission - [@tunglt1810]
+
 ## [1.2.1] - 2026-08-14
 
 ### Added

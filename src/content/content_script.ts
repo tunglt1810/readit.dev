@@ -4,9 +4,16 @@ import { claimContentScriptInitialization } from './content_script_state';
 import { extractGoogleDocsArticle } from './google_docs_extractor';
 import { installSelectionButton } from './selection_button';
 import { installWordHighlight } from './word_highlight';
+import { extractWordOnlineDocx } from './word_online_extractor';
 
 type ArticleExtractionResponse =
 	| { success: true; article: Article; readableSurface: 'website-dom' | 'document-reader' | 'none' }
+	| {
+			success: true;
+			docxBase64: string;
+			source: { url: string; title: string; lang: string };
+			readableSurface: 'document-reader';
+	  }
 	| { success: false; error: string };
 
 function getDocumentLanguage(): string {
@@ -14,16 +21,20 @@ function getDocumentLanguage(): string {
 }
 
 async function extractArticle(): Promise<ArticleExtractionResponse> {
-	const googleDocsResult = await extractGoogleDocsArticle(
-		{
-			title: document.title || 'Untitled Article',
-			url: document.location.href,
-			lang: getDocumentLanguage(),
-		},
-		globalThis.fetch.bind(globalThis),
-	);
+	const page = {
+		title: document.title || 'Untitled Article',
+		url: document.location.href,
+		lang: getDocumentLanguage(),
+	};
+
+	const googleDocsResult = await extractGoogleDocsArticle(page, globalThis.fetch.bind(globalThis));
 	if (googleDocsResult) {
 		return googleDocsResult;
+	}
+
+	const wordOnlineResult = await extractWordOnlineDocx(page, globalThis.fetch.bind(globalThis));
+	if (wordOnlineResult) {
+		return wordOnlineResult;
 	}
 
 	const article = extractArticleFromDocument(document);

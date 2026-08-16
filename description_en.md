@@ -3,7 +3,8 @@ readit.dev is a free Chrome extension that reads web pages, documents, and books
 ✨ Key Features:
 
 • Smart Content Extraction: Automatically extracts article content while stripping away ads, sidebars, and clutter.
-• Multi-format Document Support: Read web pages, Google Docs, PDF documents, Word DOCX files, and EPUB e-books — all with auto-resume, by chapter for EPUB and by page for PDF and DOCX.
+• Multi-format Document Support: Read web pages, Google Docs, Word Online, PDF documents, Word DOCX files, and EPUB e-books — all with auto-resume, by chapter for EPUB and by page for PDF and DOCX.
+• Word Online & Google Docs, no sign-in: Open a document on OneDrive, SharePoint, or Google Docs and press Play. The extension reads it through the session your browser tab already has — no extra account connection and no extra permission.
 • Word-level Highlighting: Real-time synchronized highlighting with smart centering and smooth auto-scrolling.
 • 100% On-device & Private: Runs completely in your browser via WebGPU/WASM. Your text is never sent to any server.
 • MP3 Audio Export: Export any reading session directly to an MP3 file for offline listening on any device.
@@ -26,9 +27,10 @@ readit.dev is a free Chrome extension that reads web pages, documents, and books
 - Open the readit.dev Side Panel.
 - Paste your custom text into the input field and press "Play".
 
-4. Read EPUB, PDF, DOCX & Google Docs:
+4. Read EPUB, PDF, DOCX, Google Docs & Word Online:
 - For PDF / DOCX / EPUB: Open the Document Reader from the extension menu/Side Panel and pick a file from your computer. EPUB books chain chapter by chapter; PDF and DOCX step page by page. Whichever you pick, closing the tab keeps your place — reopen and continue where you stopped. (Legacy Word .doc files are not supported; save them as .docx.)
 - For Google Docs: Open your doc tab and click "Play" to extract and read plain text instantly.
+- For Word Online: Open a Word document from OneDrive or SharePoint and click "Play". If the document cannot be downloaded — a view-only file, or an expired session — you get a clear message instead of silence.
 
 5. Manage Playlist Queue:
 - Open Side Panel, click "+ Add current tab" or right-click any link and select "Add to Queue".

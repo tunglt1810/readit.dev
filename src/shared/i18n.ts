@@ -1,4 +1,10 @@
-import { DOCX_ERROR_CODES, EPUB_ERROR_CODES, GOOGLE_DOCS_EXPORT_UNAVAILABLE, PDF_ERROR_CODES } from './constants.ts';
+import {
+	DOCX_ERROR_CODES,
+	EPUB_ERROR_CODES,
+	GOOGLE_DOCS_EXPORT_UNAVAILABLE,
+	PDF_ERROR_CODES,
+	WORD_ONLINE_DOWNLOAD_UNAVAILABLE,
+} from './constants.ts';
 import en from './locales/en.json' with { type: 'json' };
 import vi from './locales/vi.json' with { type: 'json' };
 
@@ -24,6 +30,8 @@ export function getPlaybackErrorTranslationKey(error: string | undefined): Trans
 	switch (error) {
 		case GOOGLE_DOCS_EXPORT_UNAVAILABLE:
 			return 'googleDocsExportUnavailable';
+		case WORD_ONLINE_DOWNLOAD_UNAVAILABLE:
+			return 'wordOnlineDownloadUnavailable';
 		case PDF_ERROR_CODES.fileAccessRequired:
 			return 'pdfFileAccessRequired';
 		case PDF_ERROR_CODES.passwordProtected:
