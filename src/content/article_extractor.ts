@@ -157,7 +157,7 @@ const ELEMENT_NODE_TYPE = typeof Node !== 'undefined' ? Node.ELEMENT_NODE : 1;
 
 // When an element uses <br> as line separators (common in XenForo span.xf-body-paragraph
 // bullet lists), split it into individual text blocks so each line gets its own TTS pause.
-function extractBrBlocks(element: Element, seen: Set<string>, blocks: string[]): void {
+function extractBrBlocks(element: Element, blocks: string[]): void {
 	const segments: string[] = [];
 	let current = '';
 	for (const child of element.childNodes) {
@@ -174,11 +174,7 @@ function extractBrBlocks(element: Element, seen: Set<string>, blocks: string[]):
 	segments.push(current);
 
 	for (const seg of segments) {
-		const text = normaliseText(seg);
-		if (text && !seen.has(text)) {
-			seen.add(text);
-			blocks.push(text);
-		}
+		appendBlock(blocks, normaliseText(seg));
 	}
 }
 
@@ -197,8 +193,20 @@ function skipSubtree(walker: TreeWalker): Element | null {
 	return next;
 }
 
+// Guards against emitting the same text twice for the same DOM position — a container and the
+// child it just consumed, or a flushed run that duplicates the block that follows. It deliberately
+// only compares against the block just emitted, never the whole document: a phrase can legitimately
+// appear more than once in an article (an x.com longform post lists its sections up front, then
+// opens each section with that same phrase in bold), and de-duplicating globally silently deleted
+// the repeat from what gets read aloud — which also put the spoken word list out of step with the
+// DOM the highlighter walks.
+function appendBlock(blocks: string[], text: string): void {
+	if (text && blocks[blocks.length - 1] !== text) {
+		blocks.push(text);
+	}
+}
+
 export function getTextBlocks(root: Element): string[] {
-	const seen = new Set<string>();
 	const blocks: string[] = [];
 	const ownerDoc = root.ownerDocument ?? document;
 
@@ -219,13 +227,9 @@ export function getTextBlocks(root: Element): string[] {
 
 		if (isStandardBlock || isLongOrphanInline) {
 			if (node.querySelector('br')) {
-				extractBrBlocks(node, seen, blocks);
+				extractBrBlocks(node, blocks);
 			} else {
-				const text = normaliseText(extractBlockText(node));
-				if (text && !seen.has(text)) {
-					seen.add(text);
-					blocks.push(text);
-				}
+				appendBlock(blocks, normaliseText(extractBlockText(node)));
 			}
 			node = skipSubtree(walker);
 		} else {
@@ -237,9 +241,8 @@ export function getTextBlocks(root: Element): string[] {
 			let run = '';
 			const flushRun = (): void => {
 				const text = normaliseText(run);
-				if (text.length >= LONG_SPAN_MIN_LENGTH && !seen.has(text)) {
-					seen.add(text);
-					blocks.push(text);
+				if (text.length >= LONG_SPAN_MIN_LENGTH) {
+					appendBlock(blocks, text);
 				}
 				run = '';
 			};
@@ -300,8 +303,25 @@ function hasQualityText(text: string, blockCount: number, linkTextLength: number
 	return normalisedLength >= 120 && blockCount > 0 && linkTextLength / normalisedLength < 0.6;
 }
 
-function getArticleTitle(root: Element, fallback: string): string {
-	return normaliseText(root.querySelector('h1')?.textContent || '') || fallback || 'Untitled Article';
+// A title has to be text the page actually renders, because it leads the spoken content and
+// therefore leads the word list the highlighter maps against the live DOM. `document.title` often
+// is not: x.com wraps the real heading in chrome it never displays — an unread count and a " / X"
+// suffix — and its heading is not an <h1>, so the usual lookup misses it. Speaking that string
+// reads the unread count aloud, and its extra words ("on", "X") match arbitrary spots further down
+// the page, dragging the mapping cursor off the article before the body even starts.
+//
+// So when there is no in-root heading, prefer a block the page renders that the tab title merely
+// wraps. A page with no such block keeps the tab title exactly as before.
+const MIN_RENDERED_TITLE_LENGTH = 10;
+
+export function resolveArticleTitle(root: Element, blocks: readonly string[], documentTitle: string): string {
+	const heading = normaliseText(root.querySelector('h1')?.textContent || '');
+	if (heading) {
+		return heading;
+	}
+	const tabTitle = normaliseText(documentTitle);
+	const rendered = blocks.find((block) => block.length >= MIN_RENDERED_TITLE_LENGTH && tabTitle.includes(block));
+	return rendered || tabTitle || 'Untitled Article';
 }
 
 function getLanguage(sourceDocument: Document): string {
@@ -315,8 +335,8 @@ function getLanguage(sourceDocument: Document): string {
 function articleFromRoot(root: Element, sourceDocument: Document, fallbackTitle?: string): Article | null {
 	cleanContentTree(root);
 
-	const title = getArticleTitle(root, fallbackTitle || sourceDocument.title);
 	const blocks = getTextBlocks(root);
+	const title = resolveArticleTitle(root, blocks, fallbackTitle || sourceDocument.title);
 	const contentBlocks = blocks.filter((block) => block !== title);
 	const content = [title, ...contentBlocks].join('\n\n').trim();
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { cleanContentTree, getTextBlocks } from '../../src/content/article_extractor.ts';
+import { cleanContentTree, getTextBlocks, resolveArticleTitle } from '../../src/content/article_extractor.ts';
 
 interface MockNodeInit {
 	tagName?: string;
@@ -254,6 +254,64 @@ test('prevents duplicate extraction when element has no next sibling (skipSubtre
 	const matches = blocks.filter((b) => b.includes('2,35–2,375 triệu xe/năm'));
 	// Must appear inside the paragraph block, NEVER as a separate standalone duplicate block
 	assert.equal(matches.length, 1);
+});
+
+test('prefers an in-root heading over the tab title', () => {
+	const root = createFakeArticleRoot([{ tagName: 'H1', text: 'Tiêu đề bài viết' }]);
+	assert.equal(resolveArticleTitle(root, ['Tiêu đề bài viết'], 'Tiêu đề bài viết - Báo X'), 'Tiêu đề bài viết');
+});
+
+test('uses the rendered heading block when the tab title merely wraps it in site chrome', () => {
+	// x.com: the tab title carries an unread count and a " / X" suffix that the page never renders,
+	// and the visible heading is not an <h1>. Speaking the tab title reads the count aloud, and its
+	// extra words match arbitrary spots further down, dragging the highlight cursor off the article.
+	const root = createFakeArticleRoot([{ tagName: 'DIV', text: 'The AI Engineering Skills Map' }]);
+	const blocks = ['The AI Engineering Skills Map', 'I am delighted to present it.'];
+	assert.equal(
+		resolveArticleTitle(root, blocks, '(1) Andrew Ng on X: "The AI Engineering Skills Map" / X'),
+		'The AI Engineering Skills Map',
+	);
+});
+
+test('falls back to the tab title when no block matches it', () => {
+	const root = createFakeArticleRoot([{ tagName: 'DIV', text: 'Nội dung không liên quan tới tiêu đề.' }]);
+	const blocks = ['Nội dung không liên quan tới tiêu đề.'];
+	assert.equal(resolveArticleTitle(root, blocks, 'Tiêu đề bài viết - Báo X'), 'Tiêu đề bài viết - Báo X');
+});
+
+test('does not mistake a short incidental block for the title', () => {
+	const root = createFakeArticleRoot([{ tagName: 'DIV', text: 'x' }]);
+	assert.equal(resolveArticleTitle(root, ['Báo X'], 'Tiêu đề bài viết - Báo X'), 'Tiêu đề bài viết - Báo X');
+});
+
+test('keeps a phrase that legitimately repeats later in the article', () => {
+	// x.com longform posts list their sections up front, then open each section with the same
+	// phrase in bold. Dropping the repeat silently removed it from what was read aloud, and left
+	// the spoken word list out of step with the DOM the highlighter walks.
+	const root = createFakeArticleRoot([
+		{ tagName: 'LI', text: 'Building and deploying AI applications' },
+		{ tagName: 'LI', text: 'Software engineering fundamentals' },
+		{
+			tagName: 'DIV',
+			children: [
+				{ tagName: 'STRONG', text: 'Building and deploying AI applications' },
+				'. The key difference between AI and non-AI applications is that the former has unpredictable outputs.',
+			],
+		},
+	]);
+
+	const blocks = getTextBlocks(root);
+	const occurrences = blocks.filter((block) => block.includes('Building and deploying AI applications')).length;
+	assert.equal(occurrences, 2);
+});
+
+test('still drops a block repeated immediately by its own container', () => {
+	const root = createFakeArticleRoot([
+		{ tagName: 'P', text: 'Một đoạn văn bản đủ dài để được nhận diện là nội dung chính.' },
+		{ tagName: 'P', text: 'Một đoạn văn bản đủ dài để được nhận diện là nội dung chính.' },
+	]);
+
+	assert.equal(getTextBlocks(root).length, 1);
 });
 
 test('merges direct text nodes and short inline formatting tags into a single paragraph', () => {

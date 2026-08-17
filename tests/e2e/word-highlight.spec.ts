@@ -777,6 +777,117 @@ test('recovers after a word split across inline markup instead of staying stuck 
 	await expect.poll(() => currentHighlightText(page)).toBe('nhanh');
 });
 
+test('re-anchors the cursor after it is dragged past the body by words that match late in the page', async ({ context }) => {
+	const targetUrl = 'https://readit.test/word-highlight-reanchor';
+	await context.route(targetUrl, (route) =>
+		route.fulfill({
+			contentType: 'text/html; charset=utf-8',
+			// The x.com shape: the spoken text opens with a title assembled from document.title, whose
+			// words only exist further down the page (here a trailing block). Matching them drags the
+			// forward-only cursor past the body, so every real word afterwards sits behind it.
+			body: `<!doctype html><html lang="en"><head><title>Reanchor page</title></head><body>
+					<article>
+						<p id="content">I am delighted to present it today.</p>
+						<p id="trailing">Skills Map</p>
+					</article>
+				</body></html>`,
+		}),
+	);
+	const page = await context.newPage();
+	await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+
+	const serviceWorker = await findExtensionServiceWorker(context);
+	const tabId = await getTabId(serviceWorker);
+
+	const words = ['Skills', 'Map', 'I', 'am', 'delighted', 'to', 'present'];
+	await initializeWordHighlight(serviceWorker, tabId, { sessionId: 'e2e-reanchor', words });
+	for (const wordIndex of words.keys()) {
+		await sendWordHighlightMessage(serviceWorker, tabId, { action: 'WORD_HIGHLIGHT_UPDATE', sessionId: 'e2e-reanchor', wordIndex });
+	}
+
+	await expect
+		.poll(() =>
+			page.evaluate((name) => {
+				const highlight = (CSS as unknown as { highlights: Map<string, Iterable<Range>> }).highlights.get(name);
+				const [range] = highlight ? [...highlight] : [];
+				return range ? { matched: range.toString(), host: range.startContainer.parentElement?.id ?? null } : null;
+			}, highlightRegistryName),
+		)
+		.toEqual({ matched: 'present', host: 'content' });
+});
+
+test('recovers on the next word after the page rebuilds the nodes its ranges pointed at', async ({ context }) => {
+	const targetUrl = 'https://readit.test/word-highlight-remount';
+	await context.route(targetUrl, (route) =>
+		route.fulfill({
+			contentType: 'text/html; charset=utf-8',
+			body: `<!doctype html><html lang="en"><head><title>Remount page</title></head><body>
+					<article><p id="content"><span>alpha</span> <span>beta</span></p></article>
+				</body></html>`,
+		}),
+	);
+	const page = await context.newPage();
+	await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+
+	const serviceWorker = await findExtensionServiceWorker(context);
+	const tabId = await getTabId(serviceWorker);
+	await initializeWordHighlight(serviceWorker, tabId, { sessionId: 'e2e-remount', words: ['alpha', 'beta'] });
+	await sendWordHighlightMessage(serviceWorker, tabId, { action: 'WORD_HIGHLIGHT_UPDATE', sessionId: 'e2e-remount', wordIndex: 0 });
+	await expect.poll(() => currentHighlightText(page)).toBe('alpha');
+
+	// A virtualized timeline (x.com) unmounts and re-renders the text the ranges point at, which
+	// kills every precomputed range even though the same words are still on screen.
+	await page.locator('#content').evaluate((element) => {
+		element.innerHTML = '<span>alpha</span> <span>beta</span>';
+	});
+
+	// The word whose own range just died still clears rather than jumping to some other copy of
+	// itself, but it marks the map stale, so the next word maps against the rebuilt DOM.
+	await sendWordHighlightMessage(serviceWorker, tabId, { action: 'WORD_HIGHLIGHT_UPDATE', sessionId: 'e2e-remount', wordIndex: 0 });
+	await expect.poll(() => hasCurrentHighlight(page)).toBe(false);
+
+	await sendWordHighlightMessage(serviceWorker, tabId, { action: 'WORD_HIGHLIGHT_UPDATE', sessionId: 'e2e-remount', wordIndex: 1 });
+	await expect.poll(() => currentHighlightText(page)).toBe('beta');
+});
+
+test('finishes initialization promptly for a word list that matches nothing on the page', async ({ context }) => {
+	const targetUrl = 'https://readit.test/word-highlight-unmatchable';
+	await context.route(targetUrl, (route) =>
+		route.fulfill({
+			contentType: 'text/html; charset=utf-8',
+			body: `<!doctype html><html lang="en"><head><title>Unmatchable page</title></head><body>
+					<article><p>${Array.from({ length: 400 }, (_, i) => `paragraph word ${i}`).join(' ')}</p></article>
+				</body></html>`,
+		}),
+	);
+	const page = await context.newPage();
+	await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+
+	const serviceWorker = await findExtensionServiceWorker(context);
+	const tabId = await getTabId(serviceWorker);
+
+	// Re-anchoring rescans the whole root, so an unbounded version turns a word list that matches
+	// nothing into a quadratic sweep — measured at 47s on a real article. The cap must keep this
+	// close to the cost of not re-anchoring at all.
+	const resolvedInTime = await serviceWorker.evaluate(
+		async ({ id, msg }) => {
+			const timeout = new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 5000));
+			return Promise.race([chrome.tabs.sendMessage(id, msg), timeout]);
+		},
+		{
+			id: tabId,
+			msg: {
+				action: 'WORD_HIGHLIGHT_INIT',
+				sessionId: 'e2e-unmatchable',
+				contentScope: 'article',
+				words: Array.from({ length: 2000 }, (_, globalIndex) => ({ text: `zzq${globalIndex}xk`, globalIndex })),
+			},
+		},
+	);
+
+	expect(resolvedInTime).toEqual({ success: true });
+});
+
 test('highlights every real word of a realistic multi-paragraph Vietnamese article in order, with no dead zones', async ({ context }) => {
 	test.setTimeout(60_000);
 	// A comprehensive regression net: a single narrow scenario per test (as above) only catches the

@@ -57,6 +57,20 @@ function resolveWalkerRoot(startRange: Range | null): Node {
 // an entry cannot be found so later words can still be mapped.
 const MAX_NODES_SCANNED_PER_WORD = 15;
 
+// Restoring the cursor is not enough once it has been dragged *past* the body text, because the
+// walk only ever moves forward: every remaining word then sits behind it and can never be reached.
+// That happens whenever the spoken text opens with words the page renders somewhere else — most
+// visibly a title falling back to `document.title` on a site with no in-article heading (x.com),
+// where it left 7% of words mapped, and on English Wikipedia, where it left 13%. After this many
+// consecutive misses, rewind to the root and search the whole walk once for the current word.
+const REANCHOR_AFTER_CONSECUTIVE_MISSES = 3;
+
+// Each re-anchor rescans every text node under the root, so a word list that matches nothing at all
+// would otherwise become a quadratic sweep — measured at 47s on a large article, against ~1s for
+// the same list without re-anchoring. A bounded allowance keeps that worst case near the cost of
+// never re-anchoring, while being far more than a page whose text actually matches ever needs.
+const MAX_REANCHORS_PER_PRECOMPUTE = 20;
+
 // The spoken word (from the TTS pipeline) is always NFC-normalized (see vietnamese/tokenizer.ts
 // and latin/speech_units.ts), but the live page's own HTML text is not guaranteed to be NFC — so
 // compare against both normalization forms. We only ever transform the (short) search target,
@@ -118,6 +132,9 @@ function selectionSearchBounds(range: Range, node: Text, cursorOffset: number): 
 type MappedWordRange = { range: Range; variants: readonly string[] };
 
 let wordRanges: Map<number, MappedWordRange> | null = null;
+let sessionWords: readonly ReadableSurfaceWord[] | null = null;
+let sessionScopeRange: Range | null = null;
+let wordRangesStale = false;
 let currentWordIndex = -1;
 let currentSessionId: string | null = null;
 let enabled = true;
@@ -147,6 +164,9 @@ function disposeCurrentHighlightSession(): void {
 	}
 	currentSessionId = null;
 	wordRanges = null;
+	sessionWords = null;
+	sessionScopeRange = null;
+	wordRangesStale = false;
 	currentWordIndex = -1;
 	clearHighlight();
 }
@@ -159,9 +179,62 @@ function isMappedRangeUsable(mapped: MappedWordRange): boolean {
 	return wordVariants(range.toString()).some((variant) => mapped.variants.includes(variant));
 }
 
+type WordSearchHit = { range: Range; node: Text; nextOffset: number };
+
+// Advances `walker` looking for `variants`, starting at `startNode`/`startOffset` and giving up
+// after `maxNodes` text nodes. Leaves the walker wherever it stopped; the caller owns the cursor.
+function searchForWord(
+	walker: TreeWalker,
+	startNode: Text | null,
+	startOffset: number,
+	variants: readonly string[],
+	maxNodes: number,
+	scopeRange: Range | null,
+): WordSearchHit | null {
+	let node = startNode;
+	let offset = startOffset;
+	let nodesScanned = 0;
+
+	while (node && variants.length > 0 && nodesScanned < maxNodes) {
+		const searchText = (node.textContent ?? '').toLocaleLowerCase();
+		let searchStart = offset;
+		let searchEnd = searchText.length;
+		if (scopeRange) {
+			const bounds = selectionSearchBounds(scopeRange, node, offset);
+			if (bounds === 'after') {
+				return null;
+			}
+			if (bounds === null) {
+				node = walker.nextNode() as Text | null;
+				offset = 0;
+				nodesScanned++;
+				continue;
+			}
+			searchStart = bounds.start;
+			searchEnd = bounds.end;
+		}
+		for (const variant of variants) {
+			const matchIndex = findWordBoundaryMatch(searchText, variant, searchStart);
+			if (matchIndex === -1 || matchIndex + variant.length > searchEnd) {
+				continue;
+			}
+			const range = document.createRange();
+			range.setStart(node, matchIndex);
+			range.setEnd(node, matchIndex + variant.length);
+			return { range, node, nextOffset: matchIndex + variant.length };
+		}
+		node = walker.nextNode() as Text | null;
+		offset = 0;
+		nodesScanned++;
+	}
+
+	return null;
+}
+
 function precomputeWordRanges(words: readonly ReadableSurfaceWord[], scopeRange: Range | null): Map<number, MappedWordRange> {
 	const ranges = new Map<number, MappedWordRange>();
-	const walker = createWalker(resolveWalkerRoot(scopeRange));
+	const walkerRoot = resolveWalkerRoot(scopeRange);
+	const walker = createWalker(walkerRoot);
 	let node = walker.nextNode() as Text | null;
 	let offset = 0;
 
@@ -181,51 +254,32 @@ function precomputeWordRanges(words: readonly ReadableSurfaceWord[], scopeRange:
 		}
 	}
 
+	let consecutiveMisses = 0;
+	let reanchorsSpent = 0;
+
 	for (const { text, globalIndex } of words) {
 		const startNode = node;
 		const startOffset = offset;
 		const variants = wordVariants(text);
-		let found = false;
-		let nodesScanned = 0;
-		while (node && variants.length > 0 && nodesScanned < MAX_NODES_SCANNED_PER_WORD && !found) {
-			const searchText = (node.textContent ?? '').toLocaleLowerCase();
-			let searchStart = offset;
-			let searchEnd = searchText.length;
-			if (scopeRange) {
-				const bounds = selectionSearchBounds(scopeRange, node, offset);
-				if (bounds === 'after') {
-					node = null;
-					break;
-				}
-				if (bounds === null) {
-					node = walker.nextNode() as Text | null;
-					offset = 0;
-					nodesScanned++;
-					continue;
-				}
-				searchStart = bounds.start;
-				searchEnd = bounds.end;
-			}
-			for (const variant of variants) {
-				const matchIndex = findWordBoundaryMatch(searchText, variant, searchStart);
-				if (matchIndex === -1 || matchIndex + variant.length > searchEnd) {
-					continue;
-				}
-				const range = document.createRange();
-				range.setStart(node, matchIndex);
-				range.setEnd(node, matchIndex + variant.length);
-				ranges.set(globalIndex, { range, variants });
-				offset = matchIndex + variant.length;
-				found = true;
-				break;
-			}
-			if (!found) {
-				node = walker.nextNode() as Text | null;
-				offset = 0;
-				nodesScanned++;
+		let hit = searchForWord(walker, node, offset, variants, MAX_NODES_SCANNED_PER_WORD, scopeRange);
+
+		if (!hit) {
+			consecutiveMisses++;
+			if (consecutiveMisses >= REANCHOR_AFTER_CONSECUTIVE_MISSES && reanchorsSpent < MAX_REANCHORS_PER_PRECOMPUTE) {
+				reanchorsSpent++;
+				consecutiveMisses = 0;
+				walker.currentNode = walkerRoot;
+				hit = searchForWord(walker, walker.nextNode() as Text | null, 0, variants, Number.POSITIVE_INFINITY, scopeRange);
 			}
 		}
-		if (!found && startNode) {
+
+		if (hit) {
+			ranges.set(globalIndex, { range: hit.range, variants });
+			walker.currentNode = hit.node;
+			node = hit.node;
+			offset = hit.nextOffset;
+			consecutiveMisses = 0;
+		} else if (startNode) {
 			walker.currentNode = startNode;
 			node = startNode;
 			offset = startOffset;
@@ -241,9 +295,26 @@ function scrollIntoViewIfNeeded(range: Range): void {
 	performCenteredScroll(rect, window.innerHeight, scrollPauseManager, (opts) => window.scrollBy(opts), prefersReducedMotion);
 }
 
+// A range dies when the page re-renders the text it points at — a virtualized timeline (x.com)
+// does this constantly, and highlighting scrolls the page itself, so it happens mid-read. Remapping
+// the dead word right away would paint some other copy of it, which is exactly what the reader is
+// not looking at, so that word still clears. Instead the map is marked stale and rebuilt for the
+// next word, which is the one the reader is about to hear.
+function rebuildWordRangesIfStale(): void {
+	if (!wordRangesStale || !sessionWords) {
+		return;
+	}
+	wordRangesStale = false;
+	wordRanges = precomputeWordRanges(sessionWords, sessionScopeRange);
+}
+
 function applyHighlightForIndex(wordIndex: number): void {
+	rebuildWordRangesIfStale();
 	const mapped = wordRanges?.get(wordIndex);
 	if (!mapped || !isMappedRangeUsable(mapped)) {
+		if (mapped) {
+			wordRangesStale = true;
+		}
 		wordRanges?.delete(wordIndex);
 		clearHighlight();
 		return;
@@ -310,6 +381,9 @@ export function installWordHighlight(): void {
 				}
 				currentSessionId = msg.sessionId;
 				wordRanges = null;
+				sessionWords = null;
+				sessionScopeRange = null;
+				wordRangesStale = false;
 				currentWordIndex = -1;
 				activatePendingSelectionScope(msg.sessionId, msg.selectionText);
 				clearHighlight();
@@ -324,10 +398,13 @@ export function installWordHighlight(): void {
 				}
 				scrollPauseManager.setPlaybackState(true);
 				const selectionRange = message.contentScope === 'selection' ? getActiveSelectionRange(message.sessionId) : null;
-				wordRanges =
-					message.contentScope === 'selection' && !selectionRange
-						? new Map()
-						: precomputeWordRanges(message.words, selectionRange ?? null);
+				const failsClosed = message.contentScope === 'selection' && !selectionRange;
+				// Kept so a map invalidated by the page re-rendering its nodes can be rebuilt later. A
+				// selection session with no captured range fails closed, and must keep failing closed.
+				sessionWords = failsClosed ? null : message.words;
+				sessionScopeRange = selectionRange ?? null;
+				wordRangesStale = false;
+				wordRanges = failsClosed ? new Map() : precomputeWordRanges(message.words, selectionRange ?? null);
 				sendResponse({ success: true });
 			} else if (isWordHighlightUpdateMessage(message)) {
 				if (message.sessionId !== currentSessionId || !wordRanges) {
