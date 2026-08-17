@@ -5,6 +5,7 @@ readit.dev là tiện ích mở rộng miễn phí giúp chuyển đổi nội d
 • Tự động trích xuất nội dung: Tự động lọc nội dung chính của bài báo, bỏ qua quảng cáo, menu và thanh bên gây phiền nhiễu.
 • Hỗ trợ đa dạng định dạng: Đọc trang web, Google Docs, Word Online, tệp PDF, tệp Word DOCX và sách điện tử EPUB — đều tự động lưu vị trí đọc, theo chương với EPUB và theo trang với PDF, DOCX.
 • Word Online & Google Docs, không cần đăng nhập thêm: Mở tài liệu trên OneDrive, SharePoint hay Google Docs rồi bấm Play. Tiện ích đọc bằng chính phiên đăng nhập sẵn có của tab — không phải kết nối thêm tài khoản, không xin thêm quyền nào.
+• Dịch & đọc (Translate & Read): Nghe trang tiếng nước ngoài bằng Tiếng Việt, Tiếng Anh hoặc Tiếng Trung. Bản dịch chạy ngay trên máy bằng trình dịch tích hợp của Chrome, rồi mở trong Document Reader kèm tô sáng từng từ và một nút xem lại bản gốc. (Chỉ hiện trên các phiên bản Chrome có sẵn tính năng dịch.)
 • Theo dõi từng từ (Word-level Highlighting): Đánh dấu từ đang phát âm theo thời gian thực, tự động căn giữa và cuộn trang thông minh.
 • 100% On-device & Bảo mật: Chạy hoàn toàn trên máy tính thông qua WebGPU/WASM, không gửi bất kỳ dữ liệu hay văn bản nào lên máy chủ.
 • Xuất tệp âm thanh MP3: Tải bản đọc dưới dạng tệp MP3 để nghe lại ngoại tuyến mọi lúc mọi nơi.
@@ -18,6 +19,7 @@ readit.dev là tiện ích mở rộng miễn phí giúp chuyển đổi nội d
 1. Đọc trang web / Bài viết hiện tại:
 - Mở bài viết bạn muốn nghe.
 - Nhấp vào biểu tượng readit.dev trên thanh công cụ (Popup) hoặc bấm phím tắt và nhấn "Play".
+- Muốn nghe bằng ngôn ngữ khác: bấm nút "Dịch & đọc". Chọn ngôn ngữ ở mục "Dịch sang" trong thẻ Cấu hình.
 
 2. Đọc đoạn văn bản chọn lọc (Selected Text):
 - Bôi đen đoạn văn bản bất kỳ trên trang web.

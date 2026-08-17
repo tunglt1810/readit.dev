@@ -5,6 +5,7 @@ readit.dev is a free Chrome extension that reads web pages, documents, and books
 • Smart Content Extraction: Automatically extracts article content while stripping away ads, sidebars, and clutter.
 • Multi-format Document Support: Read web pages, Google Docs, Word Online, PDF documents, Word DOCX files, and EPUB e-books — all with auto-resume, by chapter for EPUB and by page for PDF and DOCX.
 • Word Online & Google Docs, no sign-in: Open a document on OneDrive, SharePoint, or Google Docs and press Play. The extension reads it through the session your browser tab already has — no extra account connection and no extra permission.
+• Translate & Read: Hear a foreign-language page in Vietnamese, English, or Chinese. Chrome's built-in translator runs on your device, and the translation opens in the Document Reader with word highlighting and the original text one click away. (Shown only on Chrome versions that include built-in translation.)
 • Word-level Highlighting: Real-time synchronized highlighting with smart centering and smooth auto-scrolling.
 • 100% On-device & Private: Runs completely in your browser via WebGPU/WASM. Your text is never sent to any server.
 • MP3 Audio Export: Export any reading session directly to an MP3 file for offline listening on any device.
@@ -18,6 +19,7 @@ readit.dev is a free Chrome extension that reads web pages, documents, and books
 1. Read Current Web Page / Article:
 - Open any web page or article.
 - Click the readit.dev icon in your toolbar (or use keyboard shortcut) and hit "Play".
+- To hear it in another language, press "Translate and read" instead. Pick the language under "Translate into" in the Configuration card.
 
 2. Read Selected Text:
 - Highlight any text on a page.

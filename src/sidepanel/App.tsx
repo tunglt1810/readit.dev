@@ -7,6 +7,7 @@ import { AudioExportButton } from '../shared/components/AudioExportButton.tsx';
 import { PlaybackControlButton } from '../shared/components/PlaybackControlButton.tsx';
 import { PlaybackIcon } from '../shared/components/PlaybackIcon.tsx';
 import { SettingsCard } from '../shared/components/SettingsCard.tsx';
+import { TranslateReadButton } from '../shared/components/TranslateReadButton.tsx';
 import { BUY_ME_A_COFFEE_URL, DEFAULT_SPEED, resolveStoredPlaybackSpeed, STORAGE_KEYS } from '../shared/constants.ts';
 import { getLocalizedPlaybackError, t } from '../shared/i18n.ts';
 import { isLocalBookSession } from '../shared/local_book_session.ts';
@@ -14,6 +15,8 @@ import { normalizeManualText } from '../shared/manual_text.ts';
 import { requestPlaybackState, sendPlaybackCommand, sendRuntimeRequest, subscribePlaybackState } from '../shared/playback_client.ts';
 import { resolvePlaybackStatus } from '../shared/playback_status.ts';
 import { isSelectionButtonEnabled } from '../shared/selection_button.ts';
+import { isTranslationAvailable } from '../shared/translation_availability.ts';
+import { readTranslationTarget, writeTranslationTarget } from '../shared/translation_target_store.ts';
 import type {
 	ManualTextLanguage,
 	PageInfoResponse,
@@ -21,6 +24,7 @@ import type {
 	PlaybackStatus,
 	PlaylistQueue,
 	ThemeName,
+	TranslationTarget,
 } from '../shared/types.ts';
 import { getDisplayVersion } from '../shared/version.ts';
 import { isWordHighlightEnabled } from '../shared/word_highlight.ts';
@@ -64,6 +68,9 @@ export default function App() {
 	const [manualCheckpointState, setManualCheckpointState] = useState<'suspended' | null>(null);
 	const [language, setLanguage] = useState<ManualTextLanguage>('auto');
 	const [commandError, setCommandError] = useState('');
+	// Non-null exactly when this browser can translate, which is also what reveals the control.
+	const [translationTarget, setTranslationTarget] = useState<TranslationTarget | null>(null);
+	const [translationNotice, setTranslationNotice] = useState('');
 	const [session, setSession] = useState<PlaybackSessionSnapshot | null>(null);
 	const [queue, setQueue] = useState<PlaylistQueue>({ items: [], activeIndex: null });
 	const [urlInput, setUrlInput] = useState('');
@@ -354,6 +361,36 @@ export default function App() {
 		}
 	};
 
+	useEffect(() => {
+		void isTranslationAvailable().then(async (available) => {
+			if (available) {
+				setTranslationTarget(await readTranslationTarget());
+			}
+		});
+	}, []);
+
+	const handleTranslationTargetChange = (target: TranslationTarget) => {
+		setTranslationTarget(target);
+		void writeTranslationTarget(target);
+	};
+
+	const handleTranslateAndRead = async () => {
+		setCommandError('');
+		setTranslationNotice('');
+		const response = await sendPlaybackCommand({ action: 'START_CURRENT_PAGE_TRANSLATED' });
+		if (!response.success) {
+			setCommandError(
+				response.transportError ? t('startReadingFailed') : (getLocalizedPlaybackError(response.error) ?? t('startReadingFailed')),
+			);
+			return;
+		}
+		// Silence here is what made the feature look broken: the page is read untranslated and
+		// nothing says why.
+		if (response.translated === false) {
+			setTranslationNotice(t('translationSkipped'));
+		}
+	};
+
 	const handleReadManualText = async () => {
 		if (!draft.trim()) {
 			return;
@@ -518,6 +555,12 @@ export default function App() {
 				</div>
 			)}
 
+			{translationNotice && (
+				<div className="alert alert-info translation-skipped-notice" role="status">
+					{translationNotice}
+				</div>
+			)}
+
 			<section className="current-page-card" aria-labelledby="current-page-title">
 				<div className="status-row">
 					<div className="status-display" data-status={status} role="status">
@@ -605,6 +648,8 @@ export default function App() {
 								onClick={handleReadCurrentPage}
 								buttonRef={status === 'playing' || status === 'paused' ? undefined : primaryButtonRef}
 							/>
+							{/* Beside the read button, not beside export: it is another way to start, not a follow-up. */}
+							{translationTarget && <TranslateReadButton target={translationTarget} onClick={handleTranslateAndRead} />}
 							{!session && <AudioExportButton session={null} />}
 						</div>
 					</>
@@ -838,11 +883,13 @@ export default function App() {
 				selectionButtonEnabled={selectionButtonEnabled}
 				wordHighlightEnabled={wordHighlightEnabled}
 				playbackStatus={session?.status ?? 'stopped'}
+				translationTarget={translationTarget}
 				onVoiceChange={handleVoiceChange}
 				onSpeedChange={handleSpeedChange}
 				onSelectionButtonEnabledChange={handleSelectionButtonEnabledChange}
 				onWordHighlightEnabledChange={handleWordHighlightEnabledChange}
 				onThemeChange={handleThemeChange}
+				onTranslationTargetChange={handleTranslationTargetChange}
 			/>
 		</main>
 	);

@@ -13,7 +13,8 @@ export type PlaybackIconName =
 	| 'chevron'
 	| 'download'
 	| 'check'
-	| 'warning';
+	| 'warning'
+	| 'translate';
 
 export function PlaybackIcon({ name }: { name: PlaybackIconName }) {
 	const commonProps = {
@@ -124,6 +125,19 @@ export function PlaybackIcon({ name }: { name: PlaybackIconName }) {
 					<path d="M12 3 2.8 20h18.4L12 3Z" />
 					<path d="M12 9v4" />
 					<path d="M12 17h.01" />
+				</svg>
+			);
+		case 'translate':
+			// A latin glyph turning into a stroke script: the same shape family as the rest, and it
+			// reads as "language" rather than as the globe that means "web page" elsewhere.
+			return (
+				<svg {...commonProps}>
+					<path d="M4 5h9" />
+					<path d="M8.5 3v2" />
+					<path d="M11 5c0 4.5-2.8 8-7 9.5" />
+					<path d="M6 10.5c1.4 2.1 3.4 3.6 5.8 4.3" />
+					<path d="m13 21 4.2-9.5L21.5 21" />
+					<path d="M14.6 17.6h5.2" />
 				</svg>
 			);
 		default:

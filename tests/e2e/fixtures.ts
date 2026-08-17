@@ -324,6 +324,50 @@ export const test = base.extend<{
 	},
 });
 
+/**
+ * Bundled Chromium ships no built-in AI at all, so `Translator` and `LanguageDetector` are simply
+ * undefined there and the real translation can never run under Playwright. These stubs assert the
+ * wiring around it — which surface is used, what the notice says, whether highlighting follows the
+ * translated text — and nothing about translation quality. That is verified by hand in Chrome.
+ */
+const TRANSLATOR_STUB_SOURCE = (table: Record<string, string>) => {
+	const globals = globalThis as Record<string, unknown>;
+	globals.LanguageDetector = {
+		availability: async () => 'available',
+		create: async () => ({
+			detect: async () => [{ detectedLanguage: 'en', confidence: 0.99 }],
+		}),
+	};
+	globals.Translator = {
+		availability: async () => 'available',
+		create: async () => ({
+			translate: async (input: string) => table[input] ?? `VI:${input}`,
+		}),
+	};
+};
+
+/** Installs the stub in a page context, which is what the popup and side panel feature-detect. */
+export async function installTranslatorStub(page: Page, translations: Record<string, string> = {}): Promise<void> {
+	await page.addInitScript(TRANSLATOR_STUB_SOURCE, translations);
+}
+
+/**
+ * Installs the stub in the extension's service worker, which is where the translation actually
+ * runs. `addInitScript` cannot reach a worker, so it is evaluated directly inside it.
+ */
+export async function installWorkerTranslatorStub(
+	context: BrowserContext,
+	translations: Record<string, string> = {},
+): Promise<void> {
+	let worker = context.serviceWorkers().find((candidate) => candidate.url().startsWith('chrome-extension://'));
+	if (!worker) {
+		worker = await context.waitForEvent('serviceworker', {
+			predicate: (candidate) => candidate.url().startsWith('chrome-extension://'),
+		});
+	}
+	await worker.evaluate(TRANSLATOR_STUB_SOURCE, translations);
+}
+
 export { expect } from '@playwright/test';
 
 /**

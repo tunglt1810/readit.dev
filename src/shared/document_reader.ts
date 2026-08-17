@@ -1,4 +1,5 @@
 import type { ReadableSurfaceWord } from './readable_surface.ts';
+import type { TranslationInfo } from './types.ts';
 
 export const DOCUMENT_READER_PORT_NAME = 'document-reader';
 
@@ -10,6 +11,10 @@ export interface DocumentReaderSnapshot {
 	content: string;
 	words: readonly ReadableSurfaceWord[];
 	currentWordIndex: number;
+	/** The pre-translation text, present only on a translated session. */
+	originalContent?: string;
+	/** Which pair produced `content`, present only on a translated session. */
+	translation?: TranslationInfo;
 }
 
 export type DocumentReaderPortMessage =
@@ -48,10 +53,7 @@ function findBoundedMatch(text: string, target: string, fromOffset: number): Doc
 	return null;
 }
 
-export function mapDocumentReaderWords(
-	content: string,
-	words: readonly ReadableSurfaceWord[],
-): Array<DocumentReaderRange | null> {
+export function mapDocumentReaderWords(content: string, words: readonly ReadableSurfaceWord[]): Array<DocumentReaderRange | null> {
 	const ranges: Array<DocumentReaderRange | null> = [];
 	let nextOffset = 0;
 	for (const word of words) {
@@ -68,6 +70,24 @@ export function mapDocumentReaderWords(
 		}
 	}
 	return ranges;
+}
+
+const SNAPSHOT_KEYS = new Set(['sessionId', 'title', 'content', 'words', 'currentWordIndex', 'originalContent', 'translation']);
+
+const TRANSLATION_TARGETS = new Set(['vi', 'en', 'zh']);
+
+function isTranslationInfo(value: unknown): boolean {
+	if (!value || typeof value !== 'object') {
+		return false;
+	}
+	const info = value as Record<string, unknown>;
+	return (
+		typeof info.sourceLanguage === 'string' &&
+		info.sourceLanguage.length > 0 &&
+		typeof info.targetLanguage === 'string' &&
+		TRANSLATION_TARGETS.has(info.targetLanguage) &&
+		Object.keys(info).length === 2
+	);
 }
 
 export function isDocumentReaderSnapshot(value: unknown): value is DocumentReaderSnapshot {
@@ -93,7 +113,11 @@ export function isDocumentReaderSnapshot(value: unknown): value is DocumentReade
 		Number.isInteger(snapshot.currentWordIndex) &&
 		(snapshot.currentWordIndex as number) >= -1 &&
 		(snapshot.currentWordIndex as number) < words.length &&
-		Object.keys(snapshot).length === 5
+		Object.keys(snapshot).every((key) => SNAPSHOT_KEYS.has(key)) &&
+		// Both translation fields travel together: the banner needs the descriptor and the
+		// "view original" panel needs the text, and one without the other is a bug upstream.
+		'originalContent' in snapshot === 'translation' in snapshot &&
+		(!('translation' in snapshot) || (typeof snapshot.originalContent === 'string' && isTranslationInfo(snapshot.translation)))
 	);
 }
 

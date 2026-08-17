@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react';
 import { VOICE_STYLES } from '../constants';
-import { t, uiLang, VOICE_STYLE_TRANSLATIONS } from '../i18n';
-import type { PlaybackStatus, ThemeName } from '../types';
+import { t, translationTargetLabel, uiLang, VOICE_STYLE_TRANSLATIONS } from '../i18n';
+import { isTranslationTarget, TRANSLATION_TARGETS } from '../translation_policy';
+import type { PlaybackStatus, ThemeName, TranslationTarget } from '../types';
 import { PlaybackIcon } from './PlaybackIcon';
 
 export interface SettingsCardProps {
@@ -11,6 +12,8 @@ export interface SettingsCardProps {
 	selectionButtonEnabled: boolean;
 	wordHighlightEnabled: boolean;
 	playbackStatus: PlaybackStatus;
+	/** `null` wherever translation cannot run, which hides the control entirely. */
+	translationTarget: TranslationTarget | null;
 	collapsible?: boolean;
 	defaultExpanded?: boolean;
 	onVoiceChange: (voice: string) => void;
@@ -18,6 +21,7 @@ export interface SettingsCardProps {
 	onSelectionButtonEnabledChange: (enabled: boolean) => void;
 	onWordHighlightEnabledChange: (enabled: boolean) => void;
 	onThemeChange: (theme: ThemeName) => void;
+	onTranslationTargetChange: (target: TranslationTarget) => void;
 }
 
 export function SettingsCard({
@@ -27,6 +31,7 @@ export function SettingsCard({
 	selectionButtonEnabled,
 	wordHighlightEnabled,
 	playbackStatus,
+	translationTarget,
 	collapsible = false,
 	defaultExpanded = true,
 	onVoiceChange,
@@ -34,6 +39,7 @@ export function SettingsCard({
 	onSelectionButtonEnabledChange,
 	onWordHighlightEnabledChange,
 	onThemeChange,
+	onTranslationTargetChange,
 }: SettingsCardProps) {
 	const [expanded, setExpanded] = useState(defaultExpanded);
 	const [themeMenuOpen, setThemeMenuOpen] = useState(false);
@@ -114,6 +120,28 @@ export function SettingsCard({
 							onChange={(e) => onSpeedChange(Number.parseFloat(e.target.value))}
 						/>
 					</label>
+
+					{translationTarget !== null && (
+						<label className="selection-button-setting translation-target-setting">
+							<span className="setting-label">{t('translationTargetLabel')}</span>
+							<select
+								className="form-select inline-select"
+								aria-label={t('translationTargetLabel')}
+								value={translationTarget}
+								onChange={(e) => {
+									if (isTranslationTarget(e.target.value)) {
+										onTranslationTargetChange(e.target.value);
+									}
+								}}
+							>
+								{TRANSLATION_TARGETS.map((option) => (
+									<option key={option} value={option}>
+										{translationTargetLabel(option)}
+									</option>
+								))}
+							</select>
+						</label>
+					)}
 
 					<div className="settings-card-divider" />
 

@@ -20,6 +20,14 @@ export interface ExtractedArticle {
 export type ManualTextLanguage = 'auto' | 'en' | 'vi' | 'zh';
 export type ResolvedManualTextLanguage = Exclude<ManualTextLanguage, 'auto'>;
 
+/** The languages the Supertonic engine can speak, and therefore the only translation targets. */
+export type TranslationTarget = 'vi' | 'en' | 'zh';
+
+export interface TranslationInfo {
+	sourceLanguage: string;
+	targetLanguage: TranslationTarget;
+}
+
 export type PageInfoResponse = { available: true; title: string; url: string; lang: string } | { available: false };
 
 export interface StartManualTextMessage {
@@ -37,6 +45,11 @@ export interface CommandResponse {
 	transportError?: true;
 	/** Set by the commands that start playback, so the caller can recognise its own session. */
 	sessionId?: string;
+	/**
+	 * Set only when translation was asked for. `false` means playback started on the original text,
+	 * which the caller has to say out loud — otherwise a request to translate looks like a no-op.
+	 */
+	translated?: boolean;
 }
 
 export interface VoiceStyle {

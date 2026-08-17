@@ -309,6 +309,11 @@ input:focus-visible {
 	font-size: 0.82rem;
 }
 
+.alert-info {
+	border-color: rgba(56, 189, 248, 0.35);
+	color: #bae6fd;
+}
+
 .session-title {
 	font-weight: 700;
 }

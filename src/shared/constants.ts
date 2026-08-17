@@ -2,6 +2,7 @@ import type { VoiceStyle } from './types.ts';
 
 export const GOOGLE_DOCS_EXPORT_UNAVAILABLE = 'googleDocsExportUnavailable';
 export const WORD_ONLINE_DOWNLOAD_UNAVAILABLE = 'wordOnlineDownloadUnavailable';
+export const TRANSLATION_FAILED = 'translationFailed';
 
 export const PDF_ERROR_CODES = {
 	fileAccessRequired: 'pdfFileAccessRequired',
@@ -65,6 +66,7 @@ export const STORAGE_KEYS = {
 	PENDING_QUEUE_NAVIGATION: 'readit_pending_queue_navigation',
 	HAS_CUSTOM_SPEED_OVERRIDE: 'readit_has_custom_speed_override',
 	PRONUNCIATION_DICTIONARY: 'readit_pronunciation_dictionary',
+	TRANSLATION_TARGET: 'readit_translation_target',
 	EPUB_PROGRESS: 'readit_epub_progress',
 };
 

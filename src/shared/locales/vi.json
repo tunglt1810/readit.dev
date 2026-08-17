@@ -170,5 +170,17 @@
 		"F3": "Nữ 3 (Cao)",
 		"F4": "Nữ 4 (Mềm)",
 		"F5": "Nữ 5 (Vang)"
-	}
+	},
+	"translationFailed": "Không dịch được trang này.",
+	"translationTargetLabel": "Dịch sang",
+	"translationSkipped": "Không có gì để dịch — đang đọc bản gốc.",
+	"translationLanguageVi": "Tiếng Việt",
+	"translationLanguageEn": "Tiếng Anh",
+	"translationLanguageZh": "Tiếng Trung",
+	"translateAndReadIn": "Dịch & đọc bằng {language}",
+	"translationNoticeTitle": "Bản dịch tự động",
+	"translationNoticeBody": "Dịch trên máy bằng Chrome Translator. Dịch máy có thể sai nghĩa.",
+	"translationViewOriginal": "Xem bản gốc",
+	"translationHideOriginal": "Ẩn bản gốc",
+	"translationOriginalHeading": "Văn bản gốc"
 }

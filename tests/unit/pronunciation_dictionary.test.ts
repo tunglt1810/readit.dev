@@ -132,6 +132,52 @@ test('empty replacement removes matched text', () => {
 	assert.equal(units[0].synthesisText, ' HTML content');
 });
 
+// --- Cycle 9: Whole-word boundaries hold at every match, not just the first ---
+
+test('wholeWord=true leaves later matches inside words alone', () => {
+	const units = [makeUnit('AI is the topic, and OpenAI is not.')];
+	applyPronunciationDictionary(units, [makeRule('AI', 'ÂY AI')], 'en');
+	assert.equal(units[0].synthesisText, 'ÂY AI is the topic, and OpenAI is not.');
+});
+
+test('wholeWord=true still applies when the first match is inside a word', () => {
+	const units = [makeUnit('OpenAI builds AI.')];
+	applyPronunciationDictionary(units, [makeRule('AI', 'ÂY AI')], 'en');
+	assert.equal(units[0].synthesisText, 'OpenAI builds ÂY AI.');
+});
+
+test('wholeWord=true matches a word wrapped in punctuation', () => {
+	const units = [makeUnit('the (AI) report and "AI" too')];
+	applyPronunciationDictionary(units, [makeRule('AI', 'ÂY AI')], 'en');
+	assert.equal(units[0].synthesisText, 'the (ÂY AI) report and "ÂY AI" too');
+});
+
+test('wholeWord=true does not treat a diacritic neighbour as a boundary', () => {
+	const units = [makeUnit('người Thái ai cũng biết')];
+	applyPronunciationDictionary(units, [makeRule('ai', 'ây ai')], 'vi');
+	assert.equal(units[0].synthesisText, 'người Thái ây ai cũng biết');
+});
+
+// --- Cycle 10: Rules that would overrun synthesis capacity ---
+
+test('a rule that pushes a unit past synthesis capacity leaves the unit as written', () => {
+	// 290 characters, which is inside the 300-character limit the unit was planned against.
+	const text = `${'AI '.repeat(6)}${'x'.repeat(272)}`;
+	assert.equal(text.length, 290);
+	const units = [makeUnit(text)];
+	applyPronunciationDictionary(units, [makeRule('AI', 'ÂY AI')], 'vi');
+	// Six replacements add 18 characters, so applying them would make the unit unsynthesizable.
+	assert.equal(units[0].synthesisText, undefined);
+	assert.equal(units[0].text, text);
+});
+
+test('a rule still applies when the lengthened unit stays within capacity', () => {
+	const text = `${'AI '.repeat(6)}${'x'.repeat(250)}`;
+	const units = [makeUnit(text)];
+	applyPronunciationDictionary(units, [makeRule('AI', 'ÂY AI')], 'vi');
+	assert.equal(units[0].synthesisText, `${'ÂY AI '.repeat(6)}${'x'.repeat(250)}`);
+});
+
 test('multiple rules match different positions in same unit', () => {
 	const units = [makeUnit('HTML and CSS')];
 	const rules = [

@@ -6,9 +6,12 @@ import {
 	MODEL_FILES,
 	PDF_ERROR_CODES,
 	STORAGE_KEYS,
+	TRANSLATION_FAILED,
 	WORD_ONLINE_DOWNLOAD_UNAVAILABLE,
 	type PdfErrorCode,
 } from '../shared/constants';
+import { createChromeTranslationDependencies, type TranslatedArticleText, translateArticleText } from './translate_article.ts';
+import { readTranslationTarget } from '../shared/translation_target_store.ts';
 import { base64ToBytes } from '../shared/base64.ts';
 import { t } from '../shared/i18n.ts';
 import { buildMediaSessionMetadata } from '../shared/media_session_metadata.ts';
@@ -35,6 +38,7 @@ import type {
 	PlaybackProgress,
 	PlaybackSessionSnapshot,
 	PlaybackStatus,
+	TranslationInfo,
 } from '../shared/types';
 import { requestActionPopup } from './action_popup';
 import { isMissingReceiverError, requestArticleFromTab, type ResolvedArticleResponse } from './article_request';
@@ -101,6 +105,7 @@ const ERROR_MESSAGES = {
 	setup: 'Không thể bắt đầu đọc trang này. Vui lòng thử lại.',
 	startupTimeout: 'Khởi tạo phát âm thanh quá lâu. Vui lòng thử lại.',
 	invalidSpeed: 'Tốc độ đọc không hợp lệ.',
+	translationFailed: TRANSLATION_FAILED,
 } as const;
 
 function getExtractionError(error: string | undefined): string {
@@ -117,6 +122,8 @@ type StartPlaybackInput =
 			content: PlaybackContent;
 			readableSurface: 'website-dom' | 'document-reader' | 'none';
 			queueItemId?: string;
+			/** Translate before speaking. Only the article scope offers it today. */
+			translate?: boolean;
 	  }
 	| {
 			contentScope: 'selection';
@@ -159,7 +166,13 @@ const readableSurface = createReadableSurfaceCoordinator({
 			{ action: 'GET_DOCUMENT_READER_SNAPSHOT', payload: { sessionId } },
 			sendAudioHostCommand,
 		);
-		return response.success ? (response.snapshot ?? null) : null;
+		const snapshot = response.success ? (response.snapshot ?? null) : null;
+		if (!snapshot || !activeTranslation) {
+			return snapshot;
+		}
+		// The offscreen document owns the snapshot but knows nothing about translation, so the
+		// original text and the pair are attached here rather than threaded through playback.
+		return { ...snapshot, originalContent: activeTranslation.originalContent, translation: activeTranslation.translation };
 	},
 	detachDocumentReader: async (sessionId) => {
 		await sendOffscreenCommand(
@@ -704,6 +717,9 @@ const modelCacheWarmer = createModelCacheWarmer(async () => {
 
 async function stopActiveSession(_reason: string): Promise<void> {
 	await settlePendingStart();
+	// The pre-translation text belongs to the session being torn down. Cleared before the early
+	// return below, so it cannot outlive its session and leak onto the next one's snapshot.
+	activeTranslation = null;
 	const activePlaybackSession = activeSession;
 	const queueItemId = getQueueItemId(activePlaybackSession);
 	// 'queue-skipped' leaves the queue alone: advanceQueueAfter owns that item's next
@@ -828,8 +844,53 @@ async function discardManualCheckpoint(panelInstanceId: string): Promise<boolean
 	return true;
 }
 
-async function startPlayback(input: StartPlaybackInput): Promise<CommandResponse> {
+/**
+ * The pre-translation text for the active session. The offscreen document builds reader snapshots
+ * and knows nothing about translation, so the background attaches this on the way out.
+ */
+let activeTranslation: { originalContent: string; translation: TranslationInfo } | null = null;
+
+/**
+ * Produces the text a translated session should speak. `null` means read the original: either the
+ * browser has no Translator, or the source is already in the target language, or the detector was
+ * not confident enough to name a source at all.
+ */
+async function translateForPlayback(content: PlaybackContent): Promise<TranslatedArticleText | null | 'failed'> {
+	const dependencies = createChromeTranslationDependencies();
+	if (!dependencies) {
+		return null;
+	}
+	try {
+		return await translateArticleText(content.content, await readTranslationTarget(), dependencies);
+	} catch {
+		return 'failed';
+	}
+}
+
+async function startPlayback(initialInput: StartPlaybackInput): Promise<CommandResponse> {
 	await ensureHydrated();
+
+	// Translated before anything is torn down, so a failure leaves the current session playing.
+	let input = initialInput;
+	let translationForSession: { originalContent: string; translation: TranslationInfo } | null = null;
+	const translationRequested = initialInput.contentScope === 'article' && initialInput.translate === true;
+	if (input.contentScope === 'article' && input.translate) {
+		const translated = await translateForPlayback(input.content);
+		if (translated === 'failed') {
+			return { success: false, error: ERROR_MESSAGES.translationFailed };
+		}
+		if (translated) {
+			translationForSession = { originalContent: input.content.content, translation: translated.translation };
+			input = {
+				...input,
+				content: { ...input.content, content: translated.content, lang: translated.translation.targetLanguage },
+				// A translation cannot be highlighted onto the original page DOM, so it always reads
+				// in the Document Reader.
+				readableSurface: 'document-reader',
+			};
+		}
+	}
+
 	if (input.contentScope === 'manual') {
 		const checkpoint = await getSuspendedManualCheckpoint();
 		if (checkpoint) {
@@ -843,6 +904,9 @@ async function startPlayback(input: StartPlaybackInput): Promise<CommandResponse
 		}
 		await stopActiveSession('session-replaced');
 	}
+
+	// Set after the teardown above, which clears it along with the session it belonged to.
+	activeTranslation = translationForSession;
 
 	if (
 		input.contentScope === 'article' &&
@@ -906,6 +970,15 @@ async function startPlayback(input: StartPlaybackInput): Promise<CommandResponse
 	readableSurface.activate(session);
 	await publishSession(session);
 
+	if (translationForSession) {
+		// The translated text exists nowhere but the Document Reader — the original page's DOM holds
+		// the untranslated words, so it cannot be highlighted. Unlike a Google Doc or a PDF, whose
+		// own page stays in front of the reader, a translated session has no other visible surface,
+		// so opening it is part of starting rather than a separate command. The reader can attach
+		// before the offscreen document has words; `initialize()` delivers the snapshot when it does.
+		await openDocumentReader();
+	}
+
 	// Read here, not in the offscreen document: `chrome.storage` is not reliably available
 	// inside the Chrome offscreen document (see storage.ts).
 	const pronunciationStorageResult = await chrome.storage.local.get(STORAGE_KEYS.PRONUNCIATION_DICTIONARY);
@@ -939,7 +1012,7 @@ async function startPlayback(input: StartPlaybackInput): Promise<CommandResponse
 	// the model cache and the offscreen document — seconds on a cold start — and must not hold the
 	// session lane, or every surface's state read and control command would block behind it.
 	pendingStart = loadAndPlay(session, playPayload, input).catch(() => undefined);
-	return { success: true };
+	return { success: true, ...(translationRequested ? { translated: translationForSession !== null } : {}) };
 }
 
 /**
@@ -1009,7 +1082,12 @@ async function loadAndPlay(
 	}, STARTUP_TIMEOUT_MS);
 }
 
-async function startCurrentPage(targetTabId?: number, queueItemId?: string, fallbackUrl?: string): Promise<CommandResponse> {
+async function startCurrentPage(
+	targetTabId?: number,
+	queueItemId?: string,
+	fallbackUrl?: string,
+	translate = false,
+): Promise<CommandResponse> {
 	await ensureHydrated();
 	if (!queueItemId) {
 		await cancelPendingQueueNavigation();
@@ -1073,6 +1151,7 @@ async function startCurrentPage(targetTabId?: number, queueItemId?: string, fall
 		},
 		content: articleResponse.article,
 		readableSurface: articleResponse.readableSurface,
+		translate,
 		...(queueItemId ? { queueItemId } : {}),
 	});
 }
@@ -1618,6 +1697,9 @@ export const handleBackgroundMessage = (
 
 			case 'START_CURRENT_PAGE':
 				return respondFromQueue(startCurrentPage, sendResponse);
+
+			case 'START_CURRENT_PAGE_TRANSLATED':
+				return respondFromQueue(() => startCurrentPage(undefined, undefined, undefined, true), sendResponse);
 
 			case 'START_READER_CONTENT': {
 				const readerRequest = parseReaderContentRequest(msg.payload, sender.tab?.id);

@@ -170,5 +170,17 @@
 		"F3": "Female 3 (High)",
 		"F4": "Female 4 (Soft)",
 		"F5": "Female 5 (Resonant)"
-	}
+	},
+	"translationFailed": "Could not translate this page.",
+	"translationTargetLabel": "Translate into",
+	"translationSkipped": "Nothing to translate here — reading the original.",
+	"translationLanguageVi": "Vietnamese",
+	"translationLanguageEn": "English",
+	"translationLanguageZh": "Chinese",
+	"translateAndReadIn": "Translate and read in {language}",
+	"translationNoticeTitle": "Automatic translation",
+	"translationNoticeBody": "Translated on your device by Chrome Translator. Machine translation can get the meaning wrong.",
+	"translationViewOriginal": "View original",
+	"translationHideOriginal": "Hide original",
+	"translationOriginalHeading": "Original text"
 }

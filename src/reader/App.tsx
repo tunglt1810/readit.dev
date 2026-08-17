@@ -69,6 +69,7 @@ export default function App() {
 	const [speed, setSpeed] = useState(DEFAULT_SPEED);
 	const [bookError, setBookError] = useState('');
 	const [isLoadingBook, setIsLoadingBook] = useState(false);
+	const [showOriginal, setShowOriginal] = useState(false);
 	const [positionState, setPositionState] = useState<{ kind: 'chapter' | 'page'; index: number; count: number } | null>(null);
 	const bookSessionRef = useRef<BookSession | null>(null);
 	const [savedProgress, setSavedProgress] = useState<BookProgressRecord | null>(null);
@@ -110,6 +111,8 @@ export default function App() {
 				snapshotSessionIdRef.current = message.snapshot.sessionId;
 				setSnapshot(message.snapshot);
 				setCurrentWordIndex(message.snapshot.currentWordIndex);
+				// A new document arrives collapsed: the panel belongs to the text it was opened for.
+				setShowOriginal(false);
 			} else if (message.action === 'DOCUMENT_READER_UPDATE') {
 				setCurrentWordIndex((current) => (message.sessionId === snapshotSessionIdRef.current ? message.wordIndex : current));
 			} else if (message.action === 'DOCUMENT_READER_CLEAR' && message.sessionId === snapshotSessionIdRef.current) {
@@ -459,10 +462,25 @@ export default function App() {
 
 	const status = resolvePlaybackStatus(documentSession);
 
+	// A session that fails before it produces words leaves this page on its empty state forever, and
+	// the reader is the only surface in front of the reader on a translated session — the popup that
+	// would otherwise carry the message is closed. Worded the same way the popup words it.
+	const playbackError = status === 'error' ? (getLocalizedPlaybackError(documentSession?.error) ?? t('startReadingFailed')) : '';
+
 	const displayVersion = getDisplayVersion();
 
 	return (
 		<main className="document-reader" aria-label="readit.dev Document Reader">
+			{/*
+			 * Above the document rather than inside the empty state: a session that dies after its text
+			 * has been delivered leaves this page showing a perfectly normal document that simply never
+			 * speaks, which is the case most in need of an explanation.
+			 */}
+			{playbackError && (
+				<div className="alert alert-danger document-reader-playback-error" role="alert">
+					{playbackError}
+				</div>
+			)}
 			<header className="document-reader-header">
 				<div>
 					<span className="document-reader-brand">
@@ -602,6 +620,31 @@ export default function App() {
 							</div>
 						</div>
 					</section>
+					{snapshot.translation && snapshot.originalContent && (
+						<aside className="translation-notice">
+							<h2>{t('translationNoticeTitle')}</h2>
+							<p>
+								{t('translationNoticeBody')}{' '}
+								<span className="translation-notice-pair">
+									({snapshot.translation.sourceLanguage} → {snapshot.translation.targetLanguage})
+								</span>
+							</p>
+							<button type="button" onClick={() => setShowOriginal((shown) => !shown)}>
+								{showOriginal ? t('translationHideOriginal') : t('translationViewOriginal')}
+							</button>
+							{showOriginal && (
+								<div className="translation-original">
+									<h3>{t('translationOriginalHeading')}</h3>
+									<p>{snapshot.originalContent}</p>
+								</div>
+							)}
+						</aside>
+					)}
+					{/*
+					 * The original text lives in its own panel rather than replacing this element:
+					 * highlight positioning reads `contentRef.current.firstChild`, which has to keep
+					 * pointing at the text being spoken.
+					 */}
 					<article ref={contentRef} className="document-reader-content">
 						{snapshot.content}
 					</article>

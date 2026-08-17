@@ -140,6 +140,12 @@ body::before {
 	color: #fca5a5;
 }
 
+.alert-info {
+	background: rgba(56, 189, 248, 0.12);
+	border: 1px solid rgba(56, 189, 248, 0.22);
+	color: #bae6fd;
+}
+
 
 .session-meta {
 	display: flex;
@@ -366,7 +372,8 @@ body::before {
 }
 
 .winamp-deck .theme-primary,
-.winamp-deck .theme-stop {
+.winamp-deck .theme-stop,
+.winamp-deck .btn-translate-read {
 	width: auto;
 	min-width: 44px;
 	height: 30px;
@@ -379,9 +386,26 @@ body::before {
 }
 
 .winamp-deck .theme-primary:active:not(:disabled),
-.winamp-deck .theme-stop:active:not(:disabled) {
+.winamp-deck .theme-stop:active:not(:disabled),
+.winamp-deck .btn-translate-read:active:not(:disabled) {
 	transform: translate(1px, 1px);
 	border-color: #141414 #f0f0f0 #f0f0f0 #141414;
+}
+
+/*
+ * Both retro decks are pastiches of real players, where every control is glyph-only and cut from
+ * the deck's own material. The translate control borrows that material rather than dropping a
+ * glass circle into it, and drops the engraved code with it — its tooltip carries the language.
+ */
+.winamp-deck .btn-translate-read svg,
+.wmp-transport .btn-translate-read svg {
+	width: 14px;
+	height: 14px;
+}
+
+.winamp-deck .btn-translate-read .translate-read-target,
+.wmp-transport .btn-translate-read .translate-read-target {
+	display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -494,6 +518,15 @@ body:has(.app-container[data-theme="wmp12"])::before {
 .wmp-transport .theme-stop {
 	width: 28px;
 	height: 28px;
+}
+
+/*
+ * Borrows the deck's brushed metal but keeps the shared control size. The 28px of `.theme-stop`
+ * exists to sit small beside the sphere; this control's neighbour is the 52px export button, and
+ * the two never appear alongside the stop button anyway.
+ */
+.wmp-transport .theme-stop,
+.wmp-transport .btn-translate-read {
 	border: 1px solid #778990;
 	border-radius: 7px;
 	background: linear-gradient(#60717a, #26353b);
@@ -539,16 +572,20 @@ body:has(.app-container[data-theme="wmp12"])::before {
 	transform: translateY(1px);
 }
 
-.wmp-transport .theme-stop:hover {
+.wmp-transport .theme-stop:hover,
+.wmp-transport .btn-translate-read:hover:not(:disabled) {
 	background: linear-gradient(#71838c, #30434a);
+	transform: none;
 }
 
-.wmp-transport .theme-stop:active {
+.wmp-transport .theme-stop:active,
+.wmp-transport .btn-translate-read:active:not(:disabled) {
 	transform: translateY(1px);
 }
 
 .wmp-transport .theme-primary:focus-visible,
-.wmp-transport .theme-stop:focus-visible {
+.wmp-transport .theme-stop:focus-visible,
+.wmp-transport .btn-translate-read:focus-visible {
 	outline: 3px solid #fff;
 	outline-offset: 3px;
 }

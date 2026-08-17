@@ -260,3 +260,55 @@ input {
 .document-reader-empty-actions .btn {
 	padding: 8px 16px;
 }
+
+.translation-notice {
+	margin: 0 0 1.5rem;
+	padding: 0.875rem 1rem;
+	border: 1px solid var(--border-glass);
+	border-left-width: 4px;
+	border-radius: 6px;
+	background: var(--color-surface-raised, rgba(127, 127, 127, 0.08));
+	font-size: 0.9rem;
+}
+
+.translation-notice h2 {
+	margin: 0 0 0.375rem;
+	font-size: 0.95rem;
+}
+
+.translation-notice p {
+	margin: 0 0 0.625rem;
+}
+
+.translation-notice-pair {
+	font-variant-numeric: tabular-nums;
+	opacity: 0.75;
+}
+
+.translation-original {
+	margin-top: 0.875rem;
+	padding-top: 0.875rem;
+	border-top: 1px solid var(--border-glass);
+	white-space: pre-wrap;
+}
+
+.translation-original h3 {
+	margin: 0 0 0.5rem;
+	font-size: 0.9rem;
+}
+
+/*
+ * The reader page does not carry the popup's alert styles, so this states its own. It sits above the
+ * document title because a session that failed after delivering its text leaves a page that looks
+ * entirely normal, and the reader has to meet that before reading on.
+ */
+.document-reader-playback-error {
+	margin-bottom: 1rem;
+	padding: 0.625rem 0.875rem;
+	border: 1px solid rgba(239, 68, 68, 0.25);
+	border-radius: 8px;
+	background: rgba(239, 68, 68, 0.15);
+	color: #fca5a5;
+	font-size: 0.875rem;
+	line-height: 1.4;
+}
