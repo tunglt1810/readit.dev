@@ -1546,6 +1546,16 @@ async function applyProgressMessage(message: Record<string, unknown>): Promise<v
 	}
 
 	if (updatedSession.status === 'stopped') {
+		// Tearing the audio down always reports `stopped`, so after a failure that report arrives a
+		// few frames behind the error. Clearing here would broadcast `stopped` and then `null` over
+		// the error, and the only surface carrying the message loses it before it can be read. The
+		// failure teardown does the same cleanup while leaving the error as the last word.
+		if (activeSession.status === 'error') {
+			await failSession(activeSession.error ?? ERROR_MESSAGES.setup);
+			await closeOffscreenWhenIdle();
+			return;
+		}
+
 		const completedNaturally = (message.progress as unknown as Record<string, unknown>)?.completedNaturally === true;
 		const completedSession = activeSession;
 		const currentSessionTabId = completedSession?.source.kind === 'tab' ? completedSession.source.tabId : undefined;

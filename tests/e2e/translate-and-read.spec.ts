@@ -126,8 +126,8 @@ test('tells the reader when a translated session cannot be prepared', async ({ c
 	// spoken or highlighted.
 	await installWorkerTranslatorStub(context, { [ENGLISH_PARAGRAPH]: 'ủ'.repeat(400) });
 
-	// Opened up front because a failing session announces itself once; a reader still booting when
-	// that happens has nothing to render. Closing that race is tracked separately.
+	// Opened up front because the failure clears the session as it tears down, so a reader that
+	// boots afterwards asks for the state and is told there is none.
 	const reader = await context.newPage();
 	await reader.goto(`chrome-extension://${extensionId}/src/reader/reader.html`);
 	await expect(reader.locator('.document-reader')).toBeVisible();
@@ -149,6 +149,15 @@ test('tells the reader when a translated session cannot be prepared', async ({ c
 	// Without this the reader shows a normal-looking document that never speaks, and the popup that
 	// would carry the message is closed the moment the reader takes the foreground.
 	await expect(reader.locator('.document-reader-playback-error')).toBeVisible({ timeout: 20_000 });
+
+	// And it has to still be there once the teardown has run, which is the part a machine-speed
+	// assertion cannot see: the offscreen document reports `stopped` as it tears the audio down, a
+	// few frames behind the error, and treating that report as an ordinary completion cleared the
+	// session out from under the message. It survived about 150ms — long enough for a fast poll to
+	// catch, far too short for a person to read. Waiting for the session to be gone rather than for
+	// a fixed delay is what makes this hold on a loaded machine as well as an idle one.
+	await expect.poll(async () => await readSession(sender), { timeout: 15_000 }).toBeNull();
+	await expect(reader.locator('.document-reader-playback-error')).toBeVisible();
 });
 
 test('leaves the reader closed when nothing was translated', async ({ context, extensionId }) => {
