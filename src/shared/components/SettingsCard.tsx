@@ -236,6 +236,16 @@ export function SettingsCard({
 							</div>
 						</div>
 					</div>
+
+					{/* The dictionary lives on a page of its own; this is the way in from either surface. */}
+					<button
+						type="button"
+						className="dictionary-link"
+						onClick={() => void chrome.tabs.create({ url: chrome.runtime.getURL('src/settings/settings.html') })}
+					>
+						<PlaybackIcon name="book" />
+						<span className="setting-label">{t('pronunciationDictionary')}</span>
+					</button>
 				</div>
 			)}
 		</section>

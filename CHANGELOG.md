@@ -6,10 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-08-18
+
 ### Added
 - read Microsoft Word documents opened from OneDrive and SharePoint, downloading the `.docx` through the tab's own session with no sign-in and no new permission - [@tunglt1810]
 - improvements to the word highlighting feature on x.com - [@tunglt1810]
 - add translate and play - [@tunglt1810]
+
+### Changed
+- synchronize UI theme for reader surface - [@tunglt1810]
+- refactor open pronunciation dictionary - [@tunglt1810]
 
 ## [1.2.1] - 2026-08-14
 

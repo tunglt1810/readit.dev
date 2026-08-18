@@ -880,6 +880,35 @@
 	margin-block: var(--space-1);
 }
 
+/* The one row in the card that leaves the surface rather than changing a value on it. */
+.dictionary-link {
+	display: flex;
+	align-items: center;
+	gap: var(--space-2);
+	width: 100%;
+	padding: 8px 10px;
+	border: 1px solid var(--border-glass);
+	border-radius: var(--radius-sm);
+	background: rgba(255, 255, 255, 0.03);
+	color: var(--color-text-primary);
+	cursor: pointer;
+	transition:
+		background 0.2s ease,
+		border-color 0.2s ease;
+}
+
+.dictionary-link:hover {
+	background: rgba(255, 255, 255, 0.07);
+	border-color: var(--border-glass-focus);
+}
+
+.dictionary-link svg {
+	flex: 0 0 auto;
+	width: 14px;
+	height: 14px;
+	color: var(--color-logo-span);
+}
+
 [data-theme="winamp"] .progress-bar-container {
 	height: 10px;
 	border: 2px solid;
@@ -911,6 +940,23 @@
 	border: none;
 	color: #71ea64;
 	font-family: "Courier New", Courier, monospace;
+}
+
+[data-theme="winamp"] .dictionary-link {
+	border: 2px solid;
+	border-color: #8d8d8d #060606 #060606 #8d8d8d;
+	border-radius: 0;
+	background: #141414;
+	color: #71ea64;
+	font-family: "Courier New", Courier, monospace;
+}
+
+[data-theme="winamp"] .dictionary-link:hover {
+	background: #1f2a1c;
+}
+
+[data-theme="winamp"] .dictionary-link svg {
+	color: #8fdf53;
 }
 
 [data-theme="winamp"] .selection-button-toggle {
@@ -1032,6 +1078,23 @@
 	background: transparent;
 	border: none;
 	color: #eaf8ff;
+}
+
+[data-theme="wmp12"] .dictionary-link {
+	background: #101517;
+	border: 1px solid #43525b;
+	border-radius: 6px;
+	color: #eaf8ff;
+	font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+[data-theme="wmp12"] .dictionary-link:hover {
+	background: #16222a;
+	border-color: #1b92df;
+}
+
+[data-theme="wmp12"] .dictionary-link svg {
+	color: #56c6fb;
 }
 
 [data-theme="wmp12"] .selection-button-toggle {

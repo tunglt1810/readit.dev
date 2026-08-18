@@ -158,12 +158,55 @@ test.describe('Pronunciation Dictionary Settings Page', () => {
 	});
 });
 
-test.describe('Popup Pronunciation Dictionary Link', () => {
-	test('popup footer has Pronunciation Dictionary link', async ({ page, extensionId }) => {
-		const popupUrl = `chrome-extension://${extensionId}/src/popup/popup.html`;
-		await page.goto(popupUrl);
+test.describe('Pronunciation Dictionary Entry Point', () => {
+	async function captureCreatedTabs(page: import('@playwright/test').Page) {
+		await page.evaluate(() => {
+			(window as { createdTabUrls?: string[] }).createdTabUrls = [];
+			chrome.tabs.create = (async (options: chrome.tabs.CreateProperties) => {
+				(window as { createdTabUrls?: string[] }).createdTabUrls?.push(options.url ?? '');
+				return {} as chrome.tabs.Tab;
+			}) as typeof chrome.tabs.create;
+		});
+	}
 
-		const link = page.locator('.pronunciation-link');
-		await expect(link).toBeVisible();
+	test('popup opens the dictionary page from its settings card', async ({ page, extensionId }) => {
+		await page.goto(`chrome-extension://${extensionId}/src/popup/popup.html`);
+		await captureCreatedTabs(page);
+
+		const entry = page.locator('.settings-card .dictionary-link');
+		await expect(entry).toBeVisible();
+		await entry.click();
+
+		await expect
+			.poll(() =>
+				page.evaluate(() => ((window as { createdTabUrls?: string[] }).createdTabUrls ?? []).map((url) => new URL(url).pathname)),
+			)
+			.toEqual(['/src/settings/settings.html']);
+	});
+
+	test('side panel opens the dictionary page from its settings card', async ({ page, extensionId }) => {
+		await page.goto(`chrome-extension://${extensionId}/src/sidepanel/sidepanel.html`);
+		await captureCreatedTabs(page);
+
+		// The side panel keeps its settings card collapsed until it is asked for.
+		await page.locator('.settings-card-header').click();
+
+		const entry = page.locator('.settings-card .dictionary-link');
+		await expect(entry).toBeVisible();
+		await entry.click();
+
+		await expect
+			.poll(() =>
+				page.evaluate(() => ((window as { createdTabUrls?: string[] }).createdTabUrls ?? []).map((url) => new URL(url).pathname)),
+			)
+			.toEqual(['/src/settings/settings.html']);
+	});
+
+	test('popup footer no longer duplicates the dictionary entry point', async ({ page, extensionId }) => {
+		await page.goto(`chrome-extension://${extensionId}/src/popup/popup.html`);
+
+		await expect(page.locator('.footer-links .pronunciation-link')).toHaveCount(0);
+		await expect(page.locator('.footer-links .feedback-link')).toBeVisible();
+		await expect(page.locator('.footer-links .privacy-link')).toBeVisible();
 	});
 });

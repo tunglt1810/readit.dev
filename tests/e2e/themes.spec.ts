@@ -312,3 +312,116 @@ test('synchronizes title logo span (.dev) color with --color-logo-span CSS varia
 	await selectTheme(page, '💿 Vista Aero (2006)');
 	await expect(logoSpan).toHaveCSS('color', 'rgb(86, 198, 251)');
 });
+
+test('Document Reader wears the saved theme and follows a change made while it is open', async ({ context, extensionId }) => {
+	const reader = await context.newPage();
+	await reader.goto(`chrome-extension://${extensionId}/src/reader/reader.html`);
+
+	const readerRoot = reader.locator('.document-reader');
+	await expect(readerRoot).toHaveAttribute('data-theme', 'default');
+
+	// The theme is switched elsewhere — a popup or side panel — while this tab stays open.
+	await reader.evaluate(() => chrome.storage.local.set({ readit_active_theme: 'winamp' }));
+	await expect(readerRoot).toHaveAttribute('data-theme', 'winamp');
+
+	await reader.evaluate(() => chrome.storage.local.set({ readit_active_theme: 'wmp12' }));
+	await expect(readerRoot).toHaveAttribute('data-theme', 'wmp12');
+
+	await reader.reload();
+	await expect(reader.locator('.document-reader')).toHaveAttribute('data-theme', 'wmp12');
+});
+
+test('Popup follows a theme change made from another surface while it is open', async ({ page, openPopup }) => {
+	await installPopupRuntimeMock(page, { session: null, currentTabId: 7 });
+	await openPopup(page);
+
+	await expect(page.locator('.app-container')).toHaveAttribute('data-theme', 'default');
+
+	await page.evaluate(() => chrome.storage.local.set({ readit_active_theme: 'winamp' }));
+	await expect(page.locator('.app-container')).toHaveAttribute('data-theme', 'winamp');
+});
+
+test('Settings page follows a theme change made from another surface while it is open', async ({ page, extensionId }) => {
+	await page.goto(`chrome-extension://${extensionId}/src/settings/settings.html`);
+
+	await page.evaluate(() => chrome.storage.local.set({ readit_active_theme: 'winamp' }));
+	await expect(page.locator('html')).toHaveAttribute('data-theme', 'winamp');
+});
+
+/**
+ * The reader only draws its toolbar once a document has arrived, so the skin cannot be inspected
+ * on the empty state alone: this stubs the port the page attaches to and hands it one.
+ */
+async function openThemedReader(context: import('@playwright/test').BrowserContext, extensionId: string, theme: 'winamp' | 'wmp12') {
+	const readerSession = {
+		...playingSession,
+		readableSurface: 'document-reader' as const,
+		source: { ...playingSession.source, tabId: 42 },
+	};
+	const readerSnapshot = {
+		sessionId: readerSession.sessionId,
+		title: 'Theme document',
+		content: 'A themed document reads on.',
+		words: [{ text: 'A', globalIndex: 0 }],
+		currentWordIndex: 0,
+	};
+	const reader = await context.newPage();
+	await reader.addInitScript(
+		({ initialSession, initialSnapshot }) => {
+			const portListeners = new Set<Function>();
+			chrome.runtime.onMessage.addListener = () => {};
+			chrome.runtime.onMessage.removeListener = () => {};
+			(chrome.runtime as any).connect = () => ({
+				name: 'document-reader',
+				onMessage: {
+					addListener: (listener: Function) => portListeners.add(listener),
+					removeListener: (listener: Function) => portListeners.delete(listener),
+				},
+				postMessage: (message: { action?: string }) => {
+					if (message.action === 'DOCUMENT_READER_ATTACH') {
+						queueMicrotask(() => {
+							for (const listener of portListeners) {
+								listener({ action: 'DOCUMENT_READER_SNAPSHOT', snapshot: initialSnapshot });
+							}
+						});
+					}
+				},
+				disconnect: () => {},
+			});
+			chrome.runtime.sendMessage = (message: { action?: string }, callback?: (response: unknown) => void) => {
+				callback?.(message.action === 'GET_PLAYBACK_STATE' ? { session: initialSession } : { success: true });
+				return true;
+			};
+		},
+		{ initialSession: readerSession, initialSnapshot: readerSnapshot },
+	);
+	await reader.goto(`chrome-extension://${extensionId}/src/reader/reader.html`);
+	await reader.evaluate((nextTheme) => chrome.storage.local.set({ readit_active_theme: nextTheme }), theme);
+	await expect(reader.locator('.document-reader')).toHaveAttribute('data-theme', theme);
+	await expect(reader.locator('.document-reader-toolbar')).toBeVisible();
+	return reader;
+}
+
+test('Winamp dresses the Document Reader chrome and leaves the reading surface alone', async ({ context, extensionId }) => {
+	const reader = await openThemedReader(context, extensionId, 'winamp');
+
+	await expect(reader.locator('body')).toHaveCSS('background-image', /repeating-linear-gradient/);
+	await expect(reader.locator('.document-reader-toolbar')).toHaveCSS('border-radius', '0px');
+	await expect(reader.locator('.document-reader-header')).toHaveCSS('border-bottom-style', 'solid');
+	await expect(reader.locator('.document-reader-brand')).toHaveCSS('font-family', /Courier/);
+
+	// The book itself keeps its reading colours: a green-on-black chassis is a frame, not a page.
+	await expect(reader.locator('.document-reader-content')).toHaveCSS('color', 'rgb(228, 228, 231)');
+	await expect(reader.locator('.document-reader-content')).toHaveCSS('font-family', /Georgia/);
+});
+
+test('WMP dresses the Document Reader chrome and leaves the reading surface alone', async ({ context, extensionId }) => {
+	const reader = await openThemedReader(context, extensionId, 'wmp12');
+
+	await expect(reader.locator('body')).toHaveCSS('background-image', /linear-gradient/);
+	await expect(reader.locator('.document-reader-toolbar')).toHaveCSS('border-radius', '8px');
+	await expect(reader.locator('.document-reader-toolbar')).toHaveCSS('border-top-color', 'rgb(67, 82, 91)');
+
+	await expect(reader.locator('.document-reader-content')).toHaveCSS('color', 'rgb(228, 228, 231)');
+	await expect(reader.locator('.document-reader-content')).toHaveCSS('font-family', /Georgia/);
+});

@@ -33,7 +33,7 @@ import { isLocalBookSession } from '../shared/local_book_session.ts';
 import { requestPlaybackState, sendPlaybackCommand, subscribePlaybackState } from '../shared/playback_client.ts';
 import { resolvePlaybackStatus } from '../shared/playback_status.ts';
 import { performCenteredScroll, UserScrollPauseManager } from '../shared/scroll_helper.ts';
-import type { PlaybackSessionSnapshot, TabPlaybackSessionSnapshot } from '../shared/types.ts';
+import type { PlaybackSessionSnapshot, TabPlaybackSessionSnapshot, ThemeName } from '../shared/types.ts';
 import { getDisplayVersion } from '../shared/version.ts';
 import {
 	type BookKind,
@@ -69,6 +69,7 @@ export default function App() {
 	const [speed, setSpeed] = useState(DEFAULT_SPEED);
 	const [bookError, setBookError] = useState('');
 	const [isLoadingBook, setIsLoadingBook] = useState(false);
+	const [theme, setTheme] = useState<ThemeName>('default');
 	const [showOriginal, setShowOriginal] = useState(false);
 	const [positionState, setPositionState] = useState<{ kind: 'chapter' | 'page'; index: number; count: number } | null>(null);
 	const bookSessionRef = useRef<BookSession | null>(null);
@@ -89,6 +90,32 @@ export default function App() {
 	const documentSessionId = documentSession?.sessionId ?? null;
 	const documentSourceTabId = documentSession?.source.tabId ?? null;
 	const playbackStatus = documentSession?.status;
+
+	/**
+	 * The theme is picked in the popup or the side panel, never here — and this tab outlives both of
+	 * them, so a stored value read once at load would go stale the moment the choice is changed.
+	 */
+	useEffect(() => {
+		const isThemeName = (value: unknown): value is ThemeName => value === 'default' || value === 'winamp' || value === 'wmp12';
+
+		chrome.storage.local.get(STORAGE_KEYS.THEME, (result) => {
+			const storedTheme = result[STORAGE_KEYS.THEME];
+			if (isThemeName(storedTheme)) {
+				setTheme(storedTheme);
+			}
+		});
+
+		const handleStorageChange = (changes: { [key: string]: chrome.storage.StorageChange }) => {
+			const nextTheme = changes[STORAGE_KEYS.THEME]?.newValue;
+			if (isThemeName(nextTheme)) {
+				setTheme(nextTheme);
+			}
+		};
+		chrome.storage.onChanged.addListener(handleStorageChange);
+		return () => {
+			chrome.storage.onChanged.removeListener(handleStorageChange);
+		};
+	}, []);
 
 	useEffect(() => {
 		let latestSessionSpeed: number | undefined;
@@ -470,7 +497,7 @@ export default function App() {
 	const displayVersion = getDisplayVersion();
 
 	return (
-		<main className="document-reader" aria-label="readit.dev Document Reader">
+		<main className="document-reader" data-theme={theme} aria-label="readit.dev Document Reader">
 			{/*
 			 * Above the document rather than inside the empty state: a session that dies after its text
 			 * has been delivered leaves this page showing a perfectly normal document that simply never

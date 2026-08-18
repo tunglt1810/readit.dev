@@ -156,14 +156,30 @@ export function SettingsApp() {
 	const [editingId, setEditingId] = useState<string | null>(null);
 	const [loaded, setLoaded] = useState(false);
 
-	// Load and apply theme from storage (same as popup)
+	// Load and apply theme from storage (same as popup), then keep following it: the theme can be
+	// switched from the popup or the side panel while this page sits open in its own tab.
 	useEffect(() => {
-		browserStorage.get(STORAGE_KEYS.THEME).then((result) => {
-			const theme = result[STORAGE_KEYS.THEME] as string | undefined;
-			if (theme && theme !== 'default') {
+		const applyTheme = (theme: unknown) => {
+			if (typeof theme === 'string' && theme !== 'default') {
 				document.documentElement.setAttribute('data-theme', theme);
+			} else {
+				document.documentElement.removeAttribute('data-theme');
 			}
+		};
+
+		browserStorage.get(STORAGE_KEYS.THEME).then((result) => {
+			applyTheme(result[STORAGE_KEYS.THEME]);
 		});
+
+		const handleStorageChange = (changes: { [key: string]: chrome.storage.StorageChange }) => {
+			if (changes[STORAGE_KEYS.THEME]) {
+				applyTheme(changes[STORAGE_KEYS.THEME].newValue);
+			}
+		};
+		chrome.storage.onChanged.addListener(handleStorageChange);
+		return () => {
+			chrome.storage.onChanged.removeListener(handleStorageChange);
+		};
 	}, []);
 
 	const loadRules = useCallback(async () => {

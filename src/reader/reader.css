@@ -34,6 +34,12 @@ input {
 	/* The type below is sized from the frame, not the window: the frame stops growing at 860px
 	   while the window does not, and a viewport-sized type scale would keep stretching the line. */
 	container-type: inline-size;
+	/*
+	 * The theme swaps these variables on this element, and `body` was resolving them one level
+	 * above it — so every heading and label kept the default palette while the theme was on.
+	 */
+	color: var(--color-text-primary);
+	font-family: var(--font-sans);
 }
 
 .document-reader-header {
@@ -311,4 +317,121 @@ input {
 	color: #fca5a5;
 	font-size: 0.875rem;
 	line-height: 1.4;
+}
+
+/*
+ * CLASSIC THEMES
+ *
+ * The shared stylesheet already re-points the palette variables and skins everything the reader
+ * borrows from it — buttons, selects, the slider, the progress bar. What is left here is the
+ * furniture only this page has: the page behind the frame, the two sticky bars, and the panels.
+ *
+ * The book itself is deliberately absent from all of it. `.document-reader-content` states its own
+ * colours and serif above, and a chassis is a frame around a page, not the page.
+ */
+
+/*
+ * Both elements, not just `body`: the document is shorter than the window on most books, and the
+ * strip below it belongs to `html`, which was left showing the default near-black.
+ */
+html:has(.document-reader[data-theme="winamp"]),
+body:has(.document-reader[data-theme="winamp"]) {
+	background: repeating-linear-gradient(180deg, #2c2e33 0 2px, #25272b 2px 4px);
+	background-attachment: fixed;
+}
+
+/* The shared sheet skins the slider for WMP only; Winamp's is a metal track with a grey grip. */
+.document-reader[data-theme="winamp"] .form-slider {
+	border: 2px solid;
+	border-color: #111 #8e8e8e #8e8e8e #111;
+	border-radius: 0;
+	background: #151719;
+}
+
+.document-reader[data-theme="winamp"] .form-slider::-webkit-slider-thumb {
+	width: 12px;
+	height: 20px;
+	border: 2px solid;
+	border-color: #cfcfcf #303030 #303030 #cfcfcf;
+	border-radius: 0;
+	background: #8e8e8e;
+	box-shadow: none;
+}
+
+.document-reader[data-theme="winamp"] .form-slider::-webkit-slider-thumb:hover {
+	transform: none;
+	background: #a8a8a8;
+}
+
+.document-reader[data-theme="winamp"] .document-reader-header {
+	border-bottom: 2px solid #8d8d8d;
+	/* Opaque: the blur was there to let the page glow through, and the chassis has no glow. */
+	background: #1b1d20;
+	backdrop-filter: none;
+}
+
+.document-reader[data-theme="winamp"] .document-reader-toolbar {
+	border: 2px solid;
+	border-color: #8d8d8d #060606 #060606 #8d8d8d;
+	border-radius: 0;
+	background: #020303;
+	backdrop-filter: none;
+	box-shadow: inset 0 0 18px #061106;
+}
+
+.document-reader[data-theme="winamp"] .document-reader-empty p {
+	color: #3d9840;
+}
+
+.document-reader[data-theme="winamp"] .translation-notice,
+.document-reader[data-theme="winamp"] .document-reader-playback-error {
+	border-radius: 0;
+	background: #020303;
+}
+
+.document-reader[data-theme="winamp"] .translation-notice {
+	border: 2px solid;
+	border-color: #8d8d8d #060606 #060606 #8d8d8d;
+	border-left-width: 4px;
+	border-left-color: #8fdf53;
+}
+
+html:has(.document-reader[data-theme="winamp"]) ::highlight(readit-document-reader-word) {
+	color: #071206;
+	background: #8fdf53;
+}
+
+html:has(.document-reader[data-theme="wmp12"]),
+body:has(.document-reader[data-theme="wmp12"]) {
+	background: linear-gradient(180deg, #0b1116 0%, #05080a 62%);
+	background-attachment: fixed;
+}
+
+.document-reader[data-theme="wmp12"] .document-reader-header {
+	border-bottom: 1px solid #43525b;
+	background: rgba(5, 8, 10, 0.92);
+}
+
+.document-reader[data-theme="wmp12"] .document-reader-toolbar {
+	border: 1px solid #43525b;
+	border-radius: 8px;
+	background: linear-gradient(180deg, rgba(22, 34, 42, 0.95), rgba(5, 8, 10, 0.95));
+	box-shadow: inset 0 1px 0 rgba(134, 211, 248, 0.15);
+}
+
+.document-reader[data-theme="wmp12"] .document-reader-empty p {
+	color: #a8c9db;
+}
+
+.document-reader[data-theme="wmp12"] .translation-notice {
+	border: 1px solid #43525b;
+	border-left-width: 4px;
+	border-left-color: #56c6fb;
+	border-radius: 8px;
+	background: rgba(16, 21, 23, 0.85);
+}
+
+html:has(.document-reader[data-theme="wmp12"]) ::highlight(readit-document-reader-word) {
+	color: #04141f;
+	background: #56c6fb;
 }

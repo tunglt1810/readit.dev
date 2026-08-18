@@ -165,6 +165,11 @@ export default function App() {
 		}
 
 		const handleStorageChange = (changes: { [key: string]: chrome.storage.StorageChange }) => {
+			// The side panel can be open alongside this popup and switch the theme out from under it.
+			const nextTheme = changes[STORAGE_KEYS.THEME]?.newValue;
+			if (nextTheme === 'default' || nextTheme === 'winamp' || nextTheme === 'wmp12') {
+				setActiveTheme(nextTheme);
+			}
 			if (changes.readit_open_sidepanel_windows) {
 				const newValue = changes.readit_open_sidepanel_windows.newValue;
 				if (Array.isArray(newValue)) {
@@ -556,18 +561,6 @@ export default function App() {
 			{/* Footer */}
 			<footer className="app-footer">
 				<div className="footer-links">
-					<a
-						className="support-link pronunciation-link"
-						href="#"
-						onClick={(e) => {
-							e.preventDefault();
-							void chrome.tabs.create({
-								url: chrome.runtime.getURL('src/settings/settings.html'),
-							});
-						}}
-					>
-						{t('pronunciationDictionary')}
-					</a>
 					<a className="support-link feedback-link" href={feedbackUrl} target="_blank" rel="noreferrer">
 						{t('feedback')}
 					</a>
