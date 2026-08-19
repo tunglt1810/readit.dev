@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-08-19
+
+### Fixed
+- the Side Panel follows the active tab and names the current page reliably, including tabs opened before the extension loaded; adds the `tabs` permission, which reads a tab's address and title but not its contents - [@tunglt1810]
+
 ## [1.2.2] - 2026-08-18
 
 ### Added

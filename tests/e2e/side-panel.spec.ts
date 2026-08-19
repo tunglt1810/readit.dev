@@ -290,6 +290,65 @@ test('shows advisory page metadata and resolves reading through START_CURRENT_PA
 	expect(await page.evaluate(() => (window as any).sentMessages.at(-1))).toEqual({ action: 'START_CURRENT_PAGE' });
 });
 
+const secondPageInfo = {
+	available: true as const,
+	title: 'Trang thứ hai',
+	url: 'https://example.org/second',
+	lang: 'en',
+};
+
+const panelWindowId = (page: import('@playwright/test').Page) =>
+	page.evaluate(() => new Promise<number>((resolve) => chrome.windows.getCurrent((window) => resolve(window.id as number))));
+
+test('re-reads the page metadata when another tab becomes active in the panel window', async ({ page, openSidePanel }) => {
+	await installExtensionUiRuntimeMock(page, { session: null }, pageInfo);
+	await openSidePanel(page);
+	await expect(page.locator('.page-info strong')).toHaveText('Bài viết thử nghiệm');
+
+	await page.evaluate(
+		({ nextPageInfo, windowId }) => {
+			(window as any).currentPageInfo = nextPageInfo;
+			(window as any).mockTabActivated({ tabId: 99, windowId });
+		},
+		{ nextPageInfo: secondPageInfo, windowId: await panelWindowId(page) },
+	);
+
+	await expect(page.locator('.page-info strong')).toHaveText('Trang thứ hai');
+	await expect(page.locator('.page-info')).toContainText('example.org · en');
+});
+
+test('keeps the page metadata when a tab becomes active in another window', async ({ page, openSidePanel }) => {
+	await installExtensionUiRuntimeMock(page, { session: null }, pageInfo);
+	await openSidePanel(page);
+	await expect(page.locator('.page-info strong')).toHaveText('Bài viết thử nghiệm');
+
+	await page.evaluate(
+		({ nextPageInfo, windowId }) => {
+			(window as any).currentPageInfo = nextPageInfo;
+			(window as any).mockTabActivated({ tabId: 99, windowId: windowId + 1 });
+		},
+		{ nextPageInfo: secondPageInfo, windowId: await panelWindowId(page) },
+	);
+
+	await expect(page.locator('.page-info strong')).toHaveText('Bài viết thử nghiệm');
+});
+
+test('recovers unavailable page metadata once the active tab finishes loading', async ({ page, openSidePanel }) => {
+	await installExtensionUiRuntimeMock(page, { session: null }, { available: false });
+	await openSidePanel(page);
+	await expect(page.getByText('Không thể đọc trang hiện tại')).toBeVisible();
+
+	await page.evaluate(
+		({ nextPageInfo, windowId }) => {
+			(window as any).currentPageInfo = nextPageInfo;
+			(window as any).mockTabUpdated(99, { status: 'complete' }, { active: true, windowId });
+		},
+		{ nextPageInfo: pageInfo, windowId: await panelWindowId(page) },
+	);
+
+	await expect(page.locator('.page-info strong')).toHaveText('Bài viết thử nghiệm');
+});
+
 test('sends pause, resume, and stop through the shared playback coordinator', async ({ page, openSidePanel }) => {
 	await installExtensionUiRuntimeMock(page, { session: manualSession }, pageInfo);
 	await openSidePanel(page);

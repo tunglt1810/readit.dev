@@ -52,7 +52,7 @@ import {
 	type OffscreenPlayPayload,
 	sendOffscreenCommand,
 } from './offscreen_transport';
-import { requestPageInfoFromTab } from './page_info';
+import { buildActiveTabQuery, pageInfoFromTab, requestPageInfoFromTab } from './page_info';
 import { extractPdfArticle, isSupportedPdfSource } from './pdf_extractor';
 import { loadPdfJsDocument } from './pdfjs_loader';
 import {
@@ -1094,7 +1094,9 @@ async function startCurrentPage(
 	}
 	const tabId = await findTargetTabForNavigation(targetTabId);
 	if (!tabId) {
-		return { success: false, error: ERROR_MESSAGES.activeTab };
+		// Tab selection rejects a restricted page the same way it rejects having no tab at all;
+		// only the URL tells the two apart, and saying which one it is guides the reader.
+		return { success: false, error: (await isActivePageRestricted()) ? ERROR_MESSAGES.restrictedPage : ERROR_MESSAGES.activeTab };
 	}
 	let activeTab: chrome.tabs.Tab | undefined;
 	try {
@@ -1212,8 +1214,17 @@ async function startManualText(payload: unknown): Promise<CommandResponse> {
 	});
 }
 
-async function getCurrentPageInfo(): Promise<PageInfoResponse> {
-	const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+async function isActivePageRestricted(): Promise<boolean> {
+	try {
+		const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+		return isRestrictedUrl(activeTab?.url ?? '');
+	} catch {
+		return false;
+	}
+}
+
+async function getCurrentPageInfo(payload?: unknown): Promise<PageInfoResponse> {
+	const [activeTab] = await chrome.tabs.query(buildActiveTabQuery(payload));
 	if (!activeTab || typeof activeTab.id !== 'number' || isRestrictedUrl(activeTab.url ?? '')) {
 		return { available: false };
 	}
@@ -1224,7 +1235,7 @@ async function getCurrentPageInfo(): Promise<PageInfoResponse> {
 			executeScript: (options) => chrome.scripting.executeScript(options),
 		});
 	} catch (_error) {
-		return { available: false };
+		return pageInfoFromTab(activeTab);
 	}
 }
 
@@ -1703,7 +1714,7 @@ export const handleBackgroundMessage = (
 				return respondFromQueue(getPlaybackState, sendResponse);
 
 			case 'GET_CURRENT_PAGE_INFO':
-				return respondFromQueue(getCurrentPageInfo, sendResponse);
+				return respondFromQueue(() => getCurrentPageInfo(msg.payload), sendResponse);
 
 			case 'START_CURRENT_PAGE':
 				return respondFromQueue(startCurrentPage, sendResponse);

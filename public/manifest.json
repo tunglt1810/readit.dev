@@ -17,7 +17,8 @@
 		"storage",
 		"offscreen",
 		"contextMenus",
-		"sidePanel"
+		"sidePanel",
+		"tabs"
 	],
 	"host_permissions": [
 		"https://huggingface.co/*",

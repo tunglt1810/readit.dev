@@ -2,8 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const CHROME_PERMISSIONS = ['activeTab', 'contextMenus', 'offscreen', 'scripting', 'sidePanel', 'storage'];
-const FIREFOX_PERMISSIONS = ['activeTab', 'contextMenus', 'downloads', 'scripting', 'storage'];
+// `tabs` exposes the active tab's address and title without granting access to page contents,
+// which is what names a page whose content script is missing (see src/background/page_info.ts).
+const CHROME_PERMISSIONS = ['activeTab', 'contextMenus', 'offscreen', 'scripting', 'sidePanel', 'storage', 'tabs'];
+const FIREFOX_PERMISSIONS = ['activeTab', 'contextMenus', 'downloads', 'scripting', 'storage', 'tabs'];
 const CHROME_HOST_PERMISSIONS = ['file://*/*', 'https://huggingface.co/*'];
 const FIREFOX_HOST_PERMISSIONS = ['https://huggingface.co/*'];
 const REQUIRED_MINIMUM_CHROME_VERSION = '127';

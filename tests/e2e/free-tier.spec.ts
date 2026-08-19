@@ -120,7 +120,9 @@ test('Side Panel stays within the Free runtime and storage boundary', async ({ g
 	expect(snapshot).not.toHaveProperty('url');
 	expect(snapshot).not.toHaveProperty('tabId');
 	expect(snapshot.source).toEqual({ kind: 'manual', panelInstanceId: expect.any(String) });
-	expect([...stored.permissions].sort()).toEqual(['activeTab', 'contextMenus', 'offscreen', 'scripting', 'sidePanel', 'storage'].sort());
+	expect([...stored.permissions].sort()).toEqual(
+		['activeTab', 'contextMenus', 'offscreen', 'scripting', 'sidePanel', 'storage', 'tabs'].sort(),
+	);
 	expect([...stored.hostPermissions].sort()).toEqual(['https://huggingface.co/*', 'file://*/*'].sort());
 	expect(stored.sidePanelDefaultPath).toBe('src/sidepanel/sidepanel.html');
 

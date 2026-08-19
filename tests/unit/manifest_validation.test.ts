@@ -5,7 +5,7 @@ import { validateFreeManifest } from '../../scripts/validate-free-manifest.mjs';
 const validManifest = {
 	manifest_version: 3,
 	minimum_chrome_version: '127',
-	permissions: ['activeTab', 'scripting', 'storage', 'offscreen', 'contextMenus', 'sidePanel'],
+	permissions: ['activeTab', 'scripting', 'storage', 'offscreen', 'contextMenus', 'sidePanel', 'tabs'],
 	side_panel: { default_path: 'src/sidepanel/sidepanel.html' },
 	host_permissions: ['file://*/*', 'https://huggingface.co/*'],
 	web_accessible_resources: [
@@ -23,7 +23,7 @@ const validManifest = {
 const validFirefoxManifest = {
 	...validManifest,
 	minimum_chrome_version: undefined,
-	permissions: ['activeTab', 'scripting', 'storage', 'contextMenus', 'downloads'],
+	permissions: ['activeTab', 'scripting', 'storage', 'contextMenus', 'downloads', 'tabs'],
 	side_panel: undefined,
 	sidebar_action: { default_panel: 'src/sidepanel/sidepanel.html' },
 	host_permissions: ['https://huggingface.co/*'],
@@ -63,7 +63,7 @@ test('rejects a missing or remote Side Panel path', () => {
 });
 
 test('rejects unexpected permissions and host access', () => {
-	assert.throws(() => validateFreeManifest({ ...validManifest, permissions: [...validManifest.permissions, 'tabs'] }), /tabs/);
+	assert.throws(() => validateFreeManifest({ ...validManifest, permissions: [...validManifest.permissions, 'history'] }), /history/);
 	assert.throws(() => validateFreeManifest({ ...validManifest, host_permissions: ['<all_urls>'] }), /<all_urls>/);
 });
 

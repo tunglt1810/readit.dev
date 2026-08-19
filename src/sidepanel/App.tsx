@@ -29,6 +29,7 @@ import type {
 import { getDisplayVersion } from '../shared/version.ts';
 import { isWordHighlightEnabled } from '../shared/word_highlight.ts';
 import { advanceManualHighlight, createManualHighlightCursor, type ManualWordRange } from './manual_word_highlight.ts';
+import { shouldRefreshForActivated, shouldRefreshForUpdated } from './page_info_refresh.ts';
 
 const EMPTY_PAGE_INFO: PageInfoResponse = { available: false };
 
@@ -90,6 +91,56 @@ export default function App() {
 		primaryButtonRef.current?.focus();
 	}, [session]);
 
+	// The panel is bound to a window, not a tab, so it outlives every tab switch inside that window
+	// and has to re-read the page itself. Each read is scoped to this window because the background
+	// service worker has no current window of its own to fall back on.
+	useEffect(() => {
+		let panelWindowId: number | null = null;
+		let latestRequest = 0;
+		let disposed = false;
+
+		const refreshPageInfo = () => {
+			const request = ++latestRequest;
+			const apply = (info: PageInfoResponse) => {
+				// A quick tab switch can land an older response last; only the newest one counts.
+				if (!disposed && request === latestRequest) {
+					setPageInfo(info);
+				}
+			};
+			void sendRuntimeRequest<PageInfoResponse>({
+				action: 'GET_CURRENT_PAGE_INFO',
+				payload: { windowId: panelWindowId },
+			}).then(apply, () => apply(EMPTY_PAGE_INFO));
+		};
+
+		const handleActivated = (activeInfo: chrome.tabs.OnActivatedInfo) => {
+			if (shouldRefreshForActivated(panelWindowId, activeInfo)) {
+				refreshPageInfo();
+			}
+		};
+		const handleUpdated = (_tabId: number, changeInfo: chrome.tabs.OnUpdatedInfo, tab: chrome.tabs.Tab) => {
+			if (shouldRefreshForUpdated(panelWindowId, changeInfo, tab)) {
+				refreshPageInfo();
+			}
+		};
+
+		chrome.windows.getCurrent((panelWindow) => {
+			if (disposed) {
+				return;
+			}
+			panelWindowId = typeof panelWindow?.id === 'number' ? panelWindow.id : null;
+			refreshPageInfo();
+		});
+		chrome.tabs.onActivated.addListener(handleActivated);
+		chrome.tabs.onUpdated.addListener(handleUpdated);
+
+		return () => {
+			disposed = true;
+			chrome.tabs.onActivated.removeListener(handleActivated);
+			chrome.tabs.onUpdated.removeListener(handleUpdated);
+		};
+	}, []);
+
 	const clearManualReader = () => {
 		setManualReaderText(null);
 		manualReaderSessionIdRef.current = null;
@@ -145,9 +196,6 @@ export default function App() {
 				setSpeed(response.session.speed);
 			}
 		});
-		void sendRuntimeRequest<PageInfoResponse>({ action: 'GET_CURRENT_PAGE_INFO' }).then(setPageInfo, () =>
-			setPageInfo(EMPTY_PAGE_INFO),
-		);
 		const unsubscribePlayback = subscribePlaybackState(chrome.runtime, (nextSession) => {
 			setSession(nextSession);
 			latestSessionLanguage = nextSession?.lang;

@@ -69,6 +69,33 @@ export async function installExtensionUiRuntimeMock(
 				deferred.callback(response === undefined ? deferred.response : response);
 			};
 			(window as any).sidePanelOpenCalls = [] as chrome.sidePanel.OpenOptions[];
+			(window as any).currentPageInfo = currentPageInfo;
+
+			// The Side Panel re-reads the page on tab events, so tests need to drive them.
+			const tabListeners = { activated: new Set<Function>(), updated: new Set<Function>() };
+			chrome.tabs.onActivated.addListener = (listener) => {
+				tabListeners.activated.add(listener);
+			};
+			chrome.tabs.onActivated.removeListener = (listener) => {
+				tabListeners.activated.delete(listener);
+			};
+			chrome.tabs.onUpdated.addListener = (listener) => {
+				tabListeners.updated.add(listener);
+			};
+			chrome.tabs.onUpdated.removeListener = (listener) => {
+				tabListeners.updated.delete(listener);
+			};
+			(window as any).mockTabActivated = (activeInfo: any) => {
+				for (const listener of tabListeners.activated) {
+					listener(activeInfo);
+				}
+			};
+			(window as any).mockTabUpdated = (tabId: number, changeInfo: any, tab: any) => {
+				for (const listener of tabListeners.updated) {
+					listener(tabId, changeInfo, tab);
+				}
+			};
+
 			(window as any).tabsQueryCalls = 0;
 			chrome.tabs.query = async () => {
 				(window as any).tabsQueryCalls += 1;
@@ -89,7 +116,7 @@ export async function installExtensionUiRuntimeMock(
 						callback?.(response);
 					}
 				} else if (message.action === 'GET_CURRENT_PAGE_INFO') {
-					callback?.(currentPageInfo);
+					callback?.((window as any).currentPageInfo);
 				} else if ((window as any).deferredRuntimeActions?.includes(message.action)) {
 					(window as any).deferredRuntimeCallbacks[message.action] = {
 						callback,
