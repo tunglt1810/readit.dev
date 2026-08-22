@@ -22,7 +22,7 @@ The Free release does not require `api.readit.dev`, Cloudflare Workers, D1,
 license secrets, analytics, or crash-reporting services. The `backend/` folder
 is future-Pro source and must not be included in the extension build or ZIP.
 
-`pnpm validate:manifest:chrome` asserts:
+`bun run validate:manifest:chrome` asserts:
 
 - `minimum_chrome_version` is exactly `127`;
 - `side_panel.default_path` is exactly the local
@@ -31,8 +31,8 @@ is future-Pro source and must not be included in the extension build or ZIP.
 - the existing ONNX web-accessible resources remain exact; and
 - permissions and host permissions remain at the documented Free boundary.
 
-`pnpm validate:manifest:firefox` checks the Firefox-specific sidebar, Gecko ID,
-and permission boundary. `pnpm validate:firefox` runs Mozilla's `web-ext lint`
+`bun run validate:manifest:firefox` checks the Firefox-specific sidebar, Gecko ID,
+and permission boundary. `bun run validate:firefox` runs Mozilla's `web-ext lint`
 against the Firefox bundle.
 
 The Firefox build converts the Chrome `side_panel` declaration to
@@ -88,15 +88,15 @@ creates the release archive.
 Before tagging, run the production checks from a clean build output:
 
 ```bash
-pnpm build
-pnpm validate:manifest:chrome
-pnpm validate:manifest:firefox
-pnpm validate:firefox
-pnpm validate:vi-assets:release
-pnpm test:unit
-pnpm evaluate:vi
-CI=true pnpm test:e2e
-pnpm benchmark:vi
+bun run build
+bun run validate:manifest:chrome
+bun run validate:manifest:firefox
+bun run validate:firefox
+bun run validate:vi-assets:release
+bun test:unit
+bun run evaluate:vi
+CI=true bun run test:e2e
+bun run benchmark:vi
 ```
 
 The Chrome benchmark writes timing-only evidence to
@@ -104,14 +104,14 @@ The Chrome benchmark writes timing-only evidence to
 version, operating system/device, 2,000-token and 10,000-token p95 values,
 memory result, warm time-to-first-audio ratio, and production thread decision.
 Do not tag unless there is also a current signed listening report at
-`_docs/evaluations/vietnamese-pronunciation-listening.md` with at least 80%
+`docs/evaluations/vietnamese-pronunciation-listening.md` with at least 80%
 improved-path preference and zero semantic regressions in must-not-change
 samples.
 
 The release build must contain every checksummed file listed by
 `assets/vietnamese-normalizer/model-manifest.json`, the Soe Vinorm MIT notice,
 the verified ONNX Runtime Asyncify loader/WASM pair, and the single hashed
-bundled WebGPU frontend. `pnpm validate:release-zip <archive>` repeats these
+bundled WebGPU frontend. `bun run validate:release-zip <archive>` repeats these
 assertions against the ZIP.
 
 If Vietnamese preparation must be rolled back, remove its call from the

@@ -9,7 +9,7 @@
 		"dev": "wrangler dev",
 		"deploy": "wrangler deploy",
 		"typecheck": "tsc --noEmit",
-		"smoke": "node --experimental-strip-types scripts/activation-fallback-smoke.mjs"
+		"smoke": "bun scripts/activation-fallback-smoke.mjs"
 	},
 	"dependencies": {
 		"hono": "4.12.22"

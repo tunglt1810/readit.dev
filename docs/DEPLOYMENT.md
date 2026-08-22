@@ -20,7 +20,7 @@ The extension uses **React 19 + TypeScript 6** and is bundled with **Rsbuild**.
 Run this command from the repository root:
 
 ```bash
-pnpm build
+bun run build
 ```
 
 The command creates `dist/chrome/` at the repository root. It contains the compiled extension resources: `manifest.json`, popup HTML/JS/CSS, the background service worker, the offscreen document, the WASM engine, and static assets.
@@ -56,10 +56,10 @@ The backend uses the **Hono** framework on **Cloudflare Workers** with **Cloudfl
 
 ### Step 2.1: Log in to the Cloudflare CLI
 
-Install Node.js and pnpm, create a Cloudflare account, and then run:
+Install Bun, create a Cloudflare account, and then run:
 
 ```bash
-npx wrangler login
+bunx wrangler login
 ```
 
 The command opens a browser for authentication.
@@ -69,7 +69,7 @@ The command opens a browser for authentication.
 Create a database named `readit-db`:
 
 ```bash
-npx wrangler d1 create readit-db
+bunx wrangler d1 create readit-db
 ```
 
 Cloudflare prints configuration similar to:
@@ -90,7 +90,7 @@ Open [backend/wrangler.toml](../backend/wrangler.toml) and append the `[[d1_data
 Import the schema into the remote D1 database:
 
 ```bash
-npx wrangler d1 execute readit-db --remote --file=./backend/schema.sql
+bunx wrangler d1 execute readit-db --remote --file=./backend/schema.sql
 ```
 
 This creates the `subscriptions` and `activations` tables in production.
@@ -100,17 +100,17 @@ This creates the `subscriptions` and `activations` tables in production.
 Create a secure Cloudflare secret:
 
 ```bash
-npx wrangler secret put LEMONSQUEEZY_WEBHOOK_SECRET
+bunx wrangler secret put LEMONSQUEEZY_WEBHOOK_SECRET
 ```
 
 Enter a long, random secret when prompted.
 
 ### Step 2.6: Deploy the backend
 
-Run this command from the `backend/` directory:
+Run this command from the repository root:
 
 ```bash
-cd backend && npx wrangler deploy
+bun run --filter readit-backend deploy
 ```
 
 Cloudflare prints the Worker URL, for example:
@@ -141,7 +141,7 @@ Lemon Squeezy processes purchases and sends real-time subscription updates to th
 Use Lemon Squeezy's **Test webhook** or **Send test event** feature to send a sample payload. Follow the Worker logs:
 
 ```bash
-npx wrangler tail
+bunx wrangler tail
 ```
 
 Confirm that the Worker receives the request, validates the HMAC-SHA256 signature, and returns `200 OK`.

@@ -37,9 +37,6 @@ scratch/
 playwright-report/
 test-results/
 tests/e2e/.user-data-*
-
-/.pnpm-store/**/*
-
 # Local dev build counter
 /.build-number
 

@@ -2,30 +2,39 @@
 
 ## Project Structure & Module Organization
 
-This pnpm workspace contains a Chrome Manifest V3 extension and a Cloudflare
+This Bun workspace contains a Chrome Manifest V3 extension and a Cloudflare
 Workers backend. Extension code lives in `src/`: `content/` extracts articles,
 `popup/` contains the React UI, `background/` coordinates extension state,
 `offscreen/` runs Supertonic TTS, and `shared/` holds common types/constants.
 Static extension files and voice presets are in `public/`. End-to-end tests
 are in `tests/e2e/`; backend code, D1 schema, and Wrangler configuration are
-in `backend/`. Product and deployment guidance is under `_docs/`.
+in `backend/`. Product and deployment guidance is under `docs/`.
+
+## Runtime & Package Manager
+
+This project uses **Bun 1.4+** exclusively. Do NOT use `pnpm`, `npm`, `npx`, or `node`.
+- Package management: `bun install`, `bun add <pkg>`, `bun remove <pkg>`
+- Script execution: `bun run <script>`, `bun scripts/<file>`
+- Binary runner: `bunx <tool>` (e.g., `bunx playwright`, `bunx biome`, `bunx wrangler`, `bunx web-ext`)
+- Unit tests: `bun test` / `bun test:unit`
+- E2E tests: `bun run test:e2e` / `bunx playwright test`
+- Workspace filters: `bun run --filter <package> <script>`
 
 ## Build, Test, and Development Commands
 
-Run `pnpm install` from the repository root before development.
+Run `bun install` from the repository root before development.
 
-- `pnpm dev` starts the extension development build and writes output to
+- `bun run dev` starts the extension development build and writes output to
   `dist/chrome/`; load that directory with Chrome's “Load unpacked” flow.
-- `pnpm build` runs strict TypeScript checking and creates the production
+- `bun run build` runs strict TypeScript checking and creates the production
   extension bundle.
-- `pnpm test:e2e` runs the Playwright suite against bundled Chromium. Tests
-  run sequentially; use `CI=true pnpm test:e2e` to enable CI-only retries and
+- `bun run test:e2e` runs the Playwright suite against bundled Chromium. Tests
+  run sequentially; use `CI=true bun run test:e2e` to enable CI-only retries and
   `test.only` protection.
-- `pnpm test:unit` runs lightweight Node tests for concurrency-sensitive
-  helpers.
-- `pnpm --filter readit-backend dev` starts the local Worker.
-- `pnpm --filter readit-backend deploy` deploys the backend; configure D1 and
-  secrets as described in `_docs/DEPLOYMENT.md`.
+- `bun run test:unit` (or `bun test tests/unit`) runs unit tests for helpers.
+- `bun run --filter readit-backend dev` starts the local Worker.
+- `bun run --filter readit-backend deploy` deploys the backend; configure D1 and
+  secrets as described in `docs/DEPLOYMENT.md`.
 
 ## Coding Style & Naming Conventions
 

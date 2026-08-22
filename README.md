@@ -112,10 +112,10 @@ Readable Surface. Use **Content Source** for extraction origin; use Playback Ses
 
 ## Quick start
 
-This monorepo uses `pnpm v11`.
+This monorepo uses `Bun 1.4+`.
 
 ```bash
-pnpm install
+bun install
 ```
 
 ## Local development
@@ -123,7 +123,7 @@ pnpm install
 ### Extension
 
 ```bash
-pnpm dev
+bun run dev
 ```
 
 After the build completes:
@@ -135,17 +135,17 @@ After the build completes:
 ### Backend
 
 ```bash
-pnpm --filter readit-backend dev
+bun run --filter readit-backend dev
 ```
 
 This starts the local Cloudflare Worker with the local D1 database configuration.
 
 ## Build and deployment commands
 
-- **Build the extension**: `pnpm build`
-- **Run unit tests**: `pnpm test:unit`
-- **Run end-to-end tests**: `pnpm test:e2e`
-- **Deploy the backend**: `pnpm --filter readit-backend deploy`
+- **Build the extension**: `bun run build`
+- **Run unit tests**: `bun test:unit` (or `bun test tests/unit`)
+- **Run end-to-end tests**: `bun run test:e2e`
+- **Deploy the backend**: `bun run --filter readit-backend deploy`
 
 ## Documentation
 

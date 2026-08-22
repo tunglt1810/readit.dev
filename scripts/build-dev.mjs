@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 // Script for local dev builds: auto-increments .build-number and passes it to rsbuild.
 
 import { execSync } from 'node:child_process';

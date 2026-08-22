@@ -36,7 +36,7 @@ jobs:
           version="${RELEASE_TAG#v}"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           export RELEASE_VERSION="$version"
-          node --input-type=module -e '
+          bun -e '
             import fs from "node:fs";
             const path = "public/manifest.json";
             const manifest = JSON.parse(fs.readFileSync(path, "utf8"));
@@ -44,32 +44,26 @@ jobs:
             fs.writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
           '
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          version: 11.11.0
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: pnpm
+          bun-version: 1.4.0
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
 
       - name: Install Playwright Chromium
-        run: pnpm exec playwright install --with-deps chromium
+        run: bunx playwright install --with-deps chromium
 
       - name: Build Chrome extension
-        run: pnpm build:chrome
+        run: bun run build:chrome
 
       - name: Validate Chrome extension manifest
         run: |
-          pnpm validate:manifest:chrome
+          bun run validate:manifest:chrome
 
       - name: Validate Vietnamese normalizer assets and ONNX Runtime packaging
-        run: pnpm validate:vi-assets:release
+        run: bun run validate:vi-assets:release
 
       - name: Validate third-party notices
         run: |
@@ -79,10 +73,10 @@ jobs:
           grep -Fq 'https://huggingface.co/Supertone/supertonic-3/blob/main/LICENSE' dist/chrome/THIRD_PARTY_NOTICES.txt
 
       - name: Run unit tests
-        run: pnpm test:unit
+        run: bun run test:unit
 
       - name: Evaluate Vietnamese normalization corpus
-        run: pnpm evaluate:vi
+        run: bun run evaluate:vi
 
       - name: Restore E2E model cache seed
         uses: actions/cache@v6
@@ -91,7 +85,7 @@ jobs:
           key: e2e-model-seed-${{ hashFiles('src/shared/constants.ts') }}
 
       - name: Run extension E2E tests
-        run: xvfb-run --auto-servernum pnpm test:e2e
+        run: xvfb-run --auto-servernum bun run test:e2e
 
       - name: Package extensions
         id: package
@@ -101,7 +95,7 @@ jobs:
           set -euo pipefail
           chrome_archive="readit.dev-chrome-${RELEASE_VERSION}.zip"
           (cd dist/chrome && zip -qr "../../$chrome_archive" . -x '*.DS_Store')
-          pnpm validate:release-zip "$chrome_archive"
+          bun run validate:release-zip "$chrome_archive"
           echo "chrome_archive=$chrome_archive" >> "$GITHUB_OUTPUT"
 
       - name: Upload Chrome artifact for publishing
@@ -135,27 +129,21 @@ jobs:
       - name: Checkout tagged commit
         uses: actions/checkout@v6
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          version: 11.11.0
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: pnpm
+          bun-version: 1.4.0
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
 
       - name: Build Firefox extension
-        run: pnpm build:firefox
+        run: bun run build:firefox
 
       - name: Validate Firefox extension
         run: |
-          pnpm validate:manifest:firefox
-          pnpm validate:firefox
+          bun run validate:manifest:firefox
+          bun run validate:firefox
 
       - name: Package Firefox extension
         id: package
@@ -334,19 +322,13 @@ jobs:
       - name: Checkout tagged commit
         uses: actions/checkout@v6
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          version: 11.11.0
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: pnpm
+          bun-version: 1.4.0
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
 
       - name: Download extension dist artifact
         uses: actions/download-artifact@v4
@@ -365,7 +347,7 @@ jobs:
           fi
           test -s dist/firefox/manifest.json
           echo "Submitting dist/firefox to Mozilla Add-ons Store..."
-          pnpm exec web-ext sign \
+          bunx web-ext sign \
             --source-dir dist/firefox \
             --artifacts-dir .tmp/web-ext-artifacts \
             --channel listed \

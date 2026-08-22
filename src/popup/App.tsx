@@ -35,6 +35,12 @@ export default function App() {
 	const [wordHighlightEnabled, setWordHighlightEnabled] = useState(true);
 	const [openSidePanelWindows, setOpenSidePanelWindows] = useState<number[]>([]);
 
+	const hasUserChangedVoiceRef = useRef(false);
+	const hasUserChangedSpeedRef = useRef(false);
+	const hasUserChangedThemeRef = useRef(false);
+	const hasUserChangedSelectionButtonRef = useRef(false);
+	const hasUserChangedWordHighlightRef = useRef(false);
+
 	// Model Loading States
 	const [modelLoading, setModelLoading] = useState(false);
 	const [loadingProgress, setLoadingProgress] = useState({ loaded: 0, total: 0, modelName: '' });
@@ -67,10 +73,10 @@ export default function App() {
 				STORAGE_KEYS.WORD_HIGHLIGHT_ENABLED,
 			],
 			(result: { [key: string]: unknown }) => {
-				if (result[STORAGE_KEYS.ACTIVE_VOICE]) {
+				if (!hasUserChangedVoiceRef.current && result[STORAGE_KEYS.ACTIVE_VOICE]) {
 					setActiveVoice(result[STORAGE_KEYS.ACTIVE_VOICE] as string);
 				}
-				if (latestSessionSpeed === undefined) {
+				if (!hasUserChangedSpeedRef.current && latestSessionSpeed === undefined) {
 					setSpeed(
 						resolveStoredPlaybackSpeed(
 							latestSessionLanguage,
@@ -79,11 +85,15 @@ export default function App() {
 						),
 					);
 				}
-				if (result[STORAGE_KEYS.THEME]) {
+				if (!hasUserChangedThemeRef.current && result[STORAGE_KEYS.THEME]) {
 					setActiveTheme(result[STORAGE_KEYS.THEME] as ThemeName);
 				}
-				setSelectionButtonEnabled(isSelectionButtonEnabled(result[STORAGE_KEYS.SELECTION_BUTTON_ENABLED]));
-				setWordHighlightEnabled(isWordHighlightEnabled(result[STORAGE_KEYS.WORD_HIGHLIGHT_ENABLED]));
+				if (!hasUserChangedSelectionButtonRef.current) {
+					setSelectionButtonEnabled(isSelectionButtonEnabled(result[STORAGE_KEYS.SELECTION_BUTTON_ENABLED]));
+				}
+				if (!hasUserChangedWordHighlightRef.current) {
+					setWordHighlightEnabled(isWordHighlightEnabled(result[STORAGE_KEYS.WORD_HIGHLIGHT_ENABLED]));
+				}
 			},
 		);
 
@@ -302,12 +312,14 @@ export default function App() {
 
 	// Handler: Change Voice
 	const handleVoiceChange = (val: string) => {
+		hasUserChangedVoiceRef.current = true;
 		setActiveVoice(val);
 		chrome.storage.local.set({ [STORAGE_KEYS.ACTIVE_VOICE]: val });
 	};
 
 	// Handler: Change Speed
 	const handleSpeedChange = (val: number) => {
+		hasUserChangedSpeedRef.current = true;
 		setSpeed(val);
 		chrome.storage.local.set({
 			[STORAGE_KEYS.SPEED]: val,
@@ -318,16 +330,19 @@ export default function App() {
 
 	// Handler: Change Theme
 	const handleThemeChange = (newTheme: ThemeName) => {
+		hasUserChangedThemeRef.current = true;
 		setActiveTheme(newTheme);
 		chrome.storage.local.set({ [STORAGE_KEYS.THEME]: newTheme });
 	};
 
 	const handleSelectionButtonEnabledChange = (enabled: boolean) => {
+		hasUserChangedSelectionButtonRef.current = true;
 		setSelectionButtonEnabled(enabled);
 		void chrome.storage.local.set({ [STORAGE_KEYS.SELECTION_BUTTON_ENABLED]: enabled });
 	};
 
 	const handleWordHighlightEnabledChange = (enabled: boolean) => {
+		hasUserChangedWordHighlightRef.current = true;
 		setWordHighlightEnabled(enabled);
 		void chrome.storage.local.set({ [STORAGE_KEYS.WORD_HIGHLIGHT_ENABLED]: enabled });
 	};

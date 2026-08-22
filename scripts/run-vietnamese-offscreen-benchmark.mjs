@@ -11,7 +11,7 @@ const profileDir = join(reportDir, 'profile');
 mkdirSync(reportDir, { recursive: true });
 rmSync(profileDir, { recursive: true, force: true });
 
-const build = spawnSync('pnpm', ['exec', 'rsbuild', 'build'], {
+const build = spawnSync('bun', ['run', 'rsbuild', 'build'], {
 	cwd: root,
 	env: { ...process.env, READIT_VI_BENCHMARK: '1' },
 	stdio: 'inherit',
