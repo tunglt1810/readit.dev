@@ -23,9 +23,7 @@ export class ExportPreparationDiagnostics {
 	}
 
 	read(jobId?: string): readonly ExportPreparationDiagnosticRecord[] {
-		return this.records
-			.filter((record) => jobId === undefined || record.jobId === jobId)
-			.map((record) => Object.freeze({ ...record }));
+		return this.records.filter((record) => jobId === undefined || record.jobId === jobId).map((record) => Object.freeze({ ...record }));
 	}
 
 	clear(jobId?: string): void {

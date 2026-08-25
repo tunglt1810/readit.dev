@@ -103,7 +103,9 @@ function normalizeLayoutText(items: (PdfTextItem & { transform: number[]; height
 		const line = lines[index];
 		const nextLine = lines[index + 1];
 		text += joinLine(line.items);
-		if (!nextLine) continue;
+		if (!nextLine) {
+			continue;
+		}
 		const verticalGap = Math.abs(line.y - nextLine.y);
 		const headingBoundary = line.height >= nextLine.height * 1.25 && verticalGap >= nextLine.height * 1.25;
 		const paragraphGap = verticalGap >= Math.max(line.height, nextLine.height) * 1.75;
@@ -124,16 +126,22 @@ function normalizePageText(items: PdfTextItem[]): string {
 	let text = '';
 	for (const item of textItems) {
 		text += item.str;
-		if (item.hasEOL) text += '\n';
+		if (item.hasEOL) {
+			text += '\n';
+		}
 	}
 	return normalizeText(text);
 }
 
 function fallbackTitle(source: PdfSource): string {
-	if (source.title.trim()) return source.title.trim();
+	if (source.title.trim()) {
+		return source.title.trim();
+	}
 	try {
 		const filename = new URL(source.url).pathname.split('/').filter(Boolean).pop();
-		if (filename) return decodeURIComponent(filename);
+		if (filename) {
+			return decodeURIComponent(filename);
+		}
 	} catch {
 		// The source URL was validated before extraction.
 	}
@@ -166,14 +174,18 @@ export async function extractPdfArticleFromBytes(
 		for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber++) {
 			const page = await document.getPage(pageNumber);
 			const text = normalizePageText((await page.getTextContent()).items);
-			if (!text) continue;
+			if (!text) {
+				continue;
+			}
 			// Pages are joined with a blank line, which every page after the first must pay for.
 			pageStarts.push(offset);
 			offset += text.length + 2;
 			pages.push(text);
 		}
 		const content = pages.join('\n\n');
-		if (!content) return extractionFailure(PDF_ERROR_CODES.textUnavailable);
+		if (!content) {
+			return extractionFailure(PDF_ERROR_CODES.textUnavailable);
+		}
 		return {
 			success: true,
 			article: {
@@ -192,12 +204,16 @@ export async function extractPdfArticleFromBytes(
 				: PDF_ERROR_CODES.extractionFailed,
 		);
 	} finally {
-		if (document) await document.destroy();
+		if (document) {
+			await document.destroy();
+		}
 	}
 }
 
 export async function extractPdfArticle(source: PdfSource, dependencies: PdfExtractorDependencies): Promise<PdfArticleResponse | null> {
-	if (!isSupportedPdfSource(source.url)) return null;
+	if (!isSupportedPdfSource(source.url)) {
+		return null;
+	}
 
 	if (new URL(source.url).protocol === 'file:' && !(await dependencies.isFileSchemeAccessAllowed())) {
 		return extractionFailure(PDF_ERROR_CODES.fileAccessRequired);
@@ -233,8 +249,12 @@ export async function extractPdfArticle(source: PdfSource, dependencies: PdfExtr
 		}
 	}
 
-	if (!bytes || bytes.length === 0) return extractionFailure(PDF_ERROR_CODES.extractionFailed);
-	if (headers && !isPdfResponse(headers, bytes)) return null;
+	if (!bytes || bytes.length === 0) {
+		return extractionFailure(PDF_ERROR_CODES.extractionFailed);
+	}
+	if (headers && !isPdfResponse(headers, bytes)) {
+		return null;
+	}
 
 	return extractPdfArticleFromBytes(bytes, source.title, dependencies, source.url);
 }

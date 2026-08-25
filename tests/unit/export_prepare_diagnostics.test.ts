@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-
 import { ExportPreparationDiagnostics } from '../../src/offscreen/export_prepare_diagnostics.ts';
 
 test('records an immutable successful export preparation snapshot marker', () => {

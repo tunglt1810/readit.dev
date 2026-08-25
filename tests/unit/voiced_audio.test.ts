@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-
 import {
 	ACOUSTIC_TAIL_PADDING_MS,
 	type AudioBufferFactory,

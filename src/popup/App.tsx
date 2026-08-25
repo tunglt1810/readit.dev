@@ -60,6 +60,7 @@ export default function App() {
 
 	// Fetch initial states on mount
 	useEffect(() => {
+		let isMounted = true;
 		let latestSessionSpeed: number | undefined;
 		let latestSessionLanguage: string | undefined;
 		// Get stored voice, speed and theme
@@ -97,7 +98,12 @@ export default function App() {
 			},
 		);
 
-		void requestPlaybackState().then((response) => {
+		void (async () => {
+			// requestPlaybackState resolves to an empty state instead of rejecting.
+			const response = await requestPlaybackState();
+			if (!isMounted) {
+				return;
+			}
 			setSession(response.session);
 			latestSessionLanguage = response.session?.lang;
 			if (response.session && typeof response.session.speed === 'number' && Number.isFinite(response.session.speed)) {
@@ -109,7 +115,7 @@ export default function App() {
 				setModelError('');
 				setCommandError('');
 			}
-		});
+		})();
 		const unsubscribePlayback = subscribePlaybackState(chrome.runtime, (nextSession) => {
 			setSession(nextSession);
 			latestSessionLanguage = nextSession?.lang;
@@ -123,10 +129,20 @@ export default function App() {
 			}
 		});
 
-		void chrome.tabs.query({ active: true, currentWindow: true }).then(
-			([tab]) => setSidePanelWindowId(tab?.windowId),
-			() => setSidePanelWindowId(undefined),
-		);
+		void (async () => {
+			try {
+				const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+				if (!isMounted) {
+					return;
+				}
+				setSidePanelWindowId(tab?.windowId);
+			} catch {
+				if (!isMounted) {
+					return;
+				}
+				setSidePanelWindowId(undefined);
+			}
+		})();
 
 		// Listen to messages from background/offscreen
 		const messageListener = (message: unknown) => {
@@ -156,6 +172,7 @@ export default function App() {
 
 		chrome.runtime.onMessage.addListener(messageListener);
 		return () => {
+			isMounted = false;
 			unsubscribePlayback();
 			chrome.runtime.onMessage.removeListener(messageListener);
 		};
@@ -204,7 +221,9 @@ export default function App() {
 	// Handler: Start/Stop Reading Page
 	const handleStartCurrentPage = () => {
 		setCommandError('');
-		void sendPlaybackCommand({ action: 'START_CURRENT_PAGE' }).then((response) => {
+		void (async () => {
+			// sendPlaybackCommand reports transport failures in the response instead of rejecting.
+			const response = await sendPlaybackCommand({ action: 'START_CURRENT_PAGE' });
 			if (response?.success === false) {
 				setCommandError(
 					response.transportError
@@ -214,7 +233,7 @@ export default function App() {
 				return;
 			}
 			setCommandError('');
-		});
+		})();
 	};
 
 	const handleReadPage = () => {
@@ -254,11 +273,24 @@ export default function App() {
 	};
 
 	useEffect(() => {
-		void isTranslationAvailable().then(async (available) => {
-			if (available) {
-				setTranslationTarget(await readTranslationTarget());
+		let isMounted = true;
+		void (async () => {
+			try {
+				const available = await isTranslationAvailable();
+				if (!isMounted || !available) {
+					return;
+				}
+				const target = await readTranslationTarget();
+				if (isMounted) {
+					setTranslationTarget(target);
+				}
+			} catch {
+				// Storage is unreadable; the default target stays in place.
 			}
-		});
+		})();
+		return () => {
+			isMounted = false;
+		};
 	}, []);
 
 	const handleTranslationTargetChange = (target: TranslationTarget) => {
@@ -270,7 +302,8 @@ export default function App() {
 		setModelError('');
 		setCommandError('');
 		setTranslationNotice('');
-		void sendPlaybackCommand({ action: 'START_CURRENT_PAGE_TRANSLATED' }).then((response) => {
+		void (async () => {
+			const response = await sendPlaybackCommand({ action: 'START_CURRENT_PAGE_TRANSLATED' });
 			if (!response?.success) {
 				setCommandError(getLocalizedPlaybackError(response?.error) ?? t('startReadingFailed'));
 				return;
@@ -280,7 +313,7 @@ export default function App() {
 			if (response.translated === false) {
 				setTranslationNotice(t('translationSkipped'));
 			}
-		});
+		})();
 	};
 
 	const handleOpenBook = () => {

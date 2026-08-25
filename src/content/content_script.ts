@@ -61,13 +61,17 @@ if (claimContentScriptInitialization(globalThis as unknown as Record<string, unk
 					url: document.location.href,
 					lang: getDocumentLanguage(),
 				});
-				return true;
+				return;
 			}
 			if (msg.action === 'EXTRACT_ARTICLE') {
-				void extractArticle().then(
-					(response) => sendResponse(response),
-					() => sendResponse({ success: false, error: 'Could not find a readable article on this page.' }),
-				);
+				void (async () => {
+					try {
+						const response = await extractArticle();
+						sendResponse(response);
+					} catch {
+						sendResponse({ success: false, error: 'Could not find a readable article on this page.' });
+					}
+				})();
 				return true; // Keep message channel open for async response
 			}
 			return undefined;

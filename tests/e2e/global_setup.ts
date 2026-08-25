@@ -1,5 +1,5 @@
-import { execSync } from 'child_process';
 import { chromium, type Page } from '@playwright/test';
+import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 

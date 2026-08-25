@@ -1,7 +1,8 @@
-import { useEffect, useState, useCallback } from 'react';
-import { browserStorage } from '../shared/storage.ts';
+import { useCallback, useEffect, useState } from 'react';
+
 import { STORAGE_KEYS } from '../shared/constants.ts';
 import { t } from '../shared/i18n.ts';
+import { browserStorage } from '../shared/storage.ts';
 import type { PronunciationRule } from '../shared/types.ts';
 
 const MAX_RULES = 200;
@@ -10,9 +11,15 @@ type LangKey = PronunciationRule['lang'];
 const LANG_ORDER: LangKey[] = [undefined, 'en', 'vi', 'zh'];
 
 function langLabel(lang: LangKey): string {
-	if (lang === 'en') return t('ruleLanguageEn');
-	if (lang === 'vi') return t('ruleLanguageVi');
-	if (lang === 'zh') return t('ruleLanguageZh');
+	if (lang === 'en') {
+		return t('ruleLanguageEn');
+	}
+	if (lang === 'vi') {
+		return t('ruleLanguageVi');
+	}
+	if (lang === 'zh') {
+		return t('ruleLanguageZh');
+	}
 	return t('ruleLanguageAll');
 }
 
@@ -26,7 +33,9 @@ function groupRules(rules: PronunciationRule[], filter: string): RuleGroup[] {
 	const groups: RuleGroup[] = [];
 	for (const lang of LANG_ORDER) {
 		const key = lang ?? 'all';
-		if (filter !== 'all' && filter !== key) continue;
+		if (filter !== 'all' && filter !== key) {
+			continue;
+		}
 		const matching = rules.filter((r) => (r.lang ?? 'all') === key);
 		if (matching.length > 0) {
 			groups.push({ lang, label: langLabel(lang), rules: matching });
@@ -51,7 +60,9 @@ function RuleEditRow({
 	const [lang, setLang] = useState<string>(rule.lang ?? 'all');
 
 	const handleSave = () => {
-		if (!match.trim()) return;
+		if (!match.trim()) {
+			return;
+		}
 		onSave({
 			...rule,
 			match: match.trim(),
@@ -66,22 +77,11 @@ function RuleEditRow({
 		<div className="rule-edit">
 			<label className="rule-edit-field">
 				<span>{t('ruleMatch')}</span>
-				<input
-					type="text"
-					aria-label={t('ruleMatch')}
-					value={match}
-					onChange={(e) => setMatch(e.target.value)}
-					autoFocus
-				/>
+				<input type="text" aria-label={t('ruleMatch')} value={match} onChange={(e) => setMatch(e.target.value)} autoFocus />
 			</label>
 			<label className="rule-edit-field">
 				<span>{t('ruleSpeaksAs')}</span>
-				<input
-					type="text"
-					aria-label={t('ruleSpeaksAs')}
-					value={replacement}
-					onChange={(e) => setReplacement(e.target.value)}
-				/>
+				<input type="text" aria-label={t('ruleSpeaksAs')} value={replacement} onChange={(e) => setReplacement(e.target.value)} />
 			</label>
 			<div className="rule-edit-options">
 				<label className="rule-checkbox">
@@ -159,6 +159,7 @@ export function SettingsApp() {
 	// Load and apply theme from storage (same as popup), then keep following it: the theme can be
 	// switched from the popup or the side panel while this page sits open in its own tab.
 	useEffect(() => {
+		let isMounted = true;
 		const applyTheme = (theme: unknown) => {
 			if (typeof theme === 'string' && theme !== 'default') {
 				document.documentElement.setAttribute('data-theme', theme);
@@ -167,9 +168,16 @@ export function SettingsApp() {
 			}
 		};
 
-		browserStorage.get(STORAGE_KEYS.THEME).then((result) => {
-			applyTheme(result[STORAGE_KEYS.THEME]);
-		});
+		void (async () => {
+			try {
+				const result = await browserStorage.get(STORAGE_KEYS.THEME);
+				if (isMounted) {
+					applyTheme(result[STORAGE_KEYS.THEME]);
+				}
+			} catch {
+				// Storage is unreadable; the page keeps the default theme.
+			}
+		})();
 
 		const handleStorageChange = (changes: { [key: string]: chrome.storage.StorageChange }) => {
 			if (changes[STORAGE_KEYS.THEME]) {
@@ -178,6 +186,7 @@ export function SettingsApp() {
 		};
 		chrome.storage.onChanged.addListener(handleStorageChange);
 		return () => {
+			isMounted = false;
 			chrome.storage.onChanged.removeListener(handleStorageChange);
 		};
 	}, []);
@@ -208,7 +217,9 @@ export function SettingsApp() {
 	}, [loaded]);
 
 	const handleAdd = (prefillMatch = '') => {
-		if (rules.length >= MAX_RULES) return;
+		if (rules.length >= MAX_RULES) {
+			return;
+		}
 		const newRule: PronunciationRule = {
 			id: crypto.randomUUID(),
 			match: prefillMatch,
@@ -245,7 +256,9 @@ export function SettingsApp() {
 	const handleDelete = (id: string) => {
 		const newRules = rules.filter((r) => r.id !== id);
 		void saveRules(newRules);
-		if (editingId === id) setEditingId(null);
+		if (editingId === id) {
+			setEditingId(null);
+		}
 	};
 
 	const groups = groupRules(
@@ -281,21 +294,14 @@ export function SettingsApp() {
 
 				{atLimit && <div className="limit-warning">{t('ruleLimitWarning')}</div>}
 
-				{groups.length === 0 && rules.length === 0 && (
-					<div className="empty-state">{t('emptyDictionary')}</div>
-				)}
+				{groups.length === 0 && rules.length === 0 && <div className="empty-state">{t('emptyDictionary')}</div>}
 
 				{groups.map((group) => (
 					<section key={group.lang ?? 'all'} className="rule-group">
 						<h3 className="group-header">{group.label}</h3>
 						{group.rules.map((rule) =>
 							editingId === rule.id ? (
-								<RuleEditRow
-									key={rule.id}
-									rule={rule}
-									onSave={handleSave}
-									onCancel={() => handleCancel(rule.id)}
-								/>
+								<RuleEditRow key={rule.id} rule={rule} onSave={handleSave} onCancel={() => handleCancel(rule.id)} />
 							) : (
 								<RuleRow
 									key={rule.id}

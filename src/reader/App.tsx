@@ -118,6 +118,7 @@ export default function App() {
 	}, []);
 
 	useEffect(() => {
+		let isMounted = true;
 		let latestSessionSpeed: number | undefined;
 		let latestSessionLanguage: string | undefined;
 		chrome.storage.local.get([STORAGE_KEYS.ACTIVE_VOICE, STORAGE_KEYS.SPEED, STORAGE_KEYS.HAS_CUSTOM_SPEED_OVERRIDE], (result) => {
@@ -148,14 +149,19 @@ export default function App() {
 		};
 		port.onMessage.addListener(handlePortMessage);
 
-		void requestPlaybackState().then((response) => {
+		void (async () => {
+			// requestPlaybackState resolves to an empty state instead of rejecting.
+			const response = await requestPlaybackState();
+			if (!isMounted) {
+				return;
+			}
 			setSession(response.session);
 			latestSessionLanguage = response.session?.lang;
 			if (response.session && typeof response.session.speed === 'number' && Number.isFinite(response.session.speed)) {
 				latestSessionSpeed = response.session.speed;
 				setSpeed(response.session.speed);
 			}
-		});
+		})();
 		const unsubscribe = subscribePlaybackState(chrome.runtime, (nextSession) => {
 			setSession(nextSession);
 			latestSessionLanguage = nextSession?.lang;
@@ -165,6 +171,7 @@ export default function App() {
 			}
 		});
 		return () => {
+			isMounted = false;
 			unsubscribe();
 			port.onMessage.removeListener(handlePortMessage);
 			port.disconnect();
@@ -242,12 +249,26 @@ export default function App() {
 	}, [currentWordIndex, wordRanges]);
 
 	useEffect(() => {
-		void loadBookProgress().then(async (progress) => {
-			setSavedProgress(progress && (await getBookHandle()) ? progress : null);
-		});
+		let isMounted = true;
+		void (async () => {
+			try {
+				const progress = await loadBookProgress();
+				// Progress without its file handle is unresumable, so only then is the handle worth reading.
+				const handle = progress ? await getBookHandle() : null;
+				if (isMounted) {
+					setSavedProgress(handle ? progress : null);
+				}
+			} catch {
+				// IndexedDB is unavailable; the picker just offers no resume entry.
+			}
+		})();
+		return () => {
+			isMounted = false;
+		};
 	}, []);
 
 	useEffect(() => {
+		let isMounted = true;
 		const handleCompleted = (message: unknown) => {
 			const bookSession = bookSessionRef.current;
 			// A session this book never started — one left playing from before the tab reloaded —
@@ -255,20 +276,34 @@ export default function App() {
 			if (!isDocumentReaderCompletedMessage(message) || !bookSession?.isPlaying(message.sessionId)) {
 				return;
 			}
-			void bookSession.advance().then((advanced) => {
-				if (advanced) {
-					setPositionState(bookSession.state());
-					return;
+			void (async () => {
+				try {
+					const advanced = await bookSession.advance();
+					if (!isMounted) {
+						return;
+					}
+					if (advanced) {
+						setPositionState(bookSession.state());
+						return;
+					}
+					// End of book: hand the tab back to the picker so another book can be loaded.
+					bookSessionRef.current = null;
+					setPositionState(null);
+					setSnapshot(null);
+					const progress = await loadBookProgress();
+					if (isMounted) {
+						setSavedProgress(progress);
+					}
+				} catch {
+					// A failed chapter hand-off leaves the reader on the chapter it already shows.
 				}
-				// End of book: hand the tab back to the picker so another book can be loaded.
-				bookSessionRef.current = null;
-				setPositionState(null);
-				setSnapshot(null);
-				void loadBookProgress().then(setSavedProgress);
-			});
+			})();
 		};
 		chrome.runtime.onMessage.addListener(handleCompleted);
-		return () => chrome.runtime.onMessage.removeListener(handleCompleted);
+		return () => {
+			isMounted = false;
+			chrome.runtime.onMessage.removeListener(handleCompleted);
+		};
 	}, []);
 
 	useEffect(() => {
@@ -466,11 +501,16 @@ export default function App() {
 		if (!bookSession) {
 			return;
 		}
-		void (direction === 'previous' ? bookSession.previous() : bookSession.advance()).then((moved) => {
-			if (moved) {
-				setPositionState(bookSession.state());
+		void (async () => {
+			try {
+				const moved = await (direction === 'previous' ? bookSession.previous() : bookSession.advance());
+				if (moved) {
+					setPositionState(bookSession.state());
+				}
+			} catch {
+				// The chapter that is already playing stays put; see the note above.
 			}
-		});
+		})();
 	};
 
 	const handleVoiceChange = (voice: string) => {

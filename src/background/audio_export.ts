@@ -1,5 +1,6 @@
 import { isAudioExportEstimate, isAudioExportJobSnapshot } from '../shared/audio_export.ts';
-import type { CommandResponse, PlaybackSessionSnapshot, AudioExportJobSnapshot } from '../shared/types.ts';
+import type { AudioExportJobSnapshot, CommandResponse, PlaybackSessionSnapshot } from '../shared/types.ts';
+import type { AudioExportPreparationDiagnostics } from './audio_export_prepare_diagnostics.ts';
 import {
 	type AudioExportProgressUpdate,
 	applyAudioExportProgress,
@@ -8,7 +9,6 @@ import {
 	transitionAudioExportJob,
 } from './audio_export_state.ts';
 import { createAudioExportOffscreenCommand, type OffscreenCommand, type OffscreenCommandResponse } from './offscreen_transport.ts';
-import type { AudioExportPreparationDiagnostics } from './audio_export_prepare_diagnostics.ts';
 
 export const AUDIO_EXPORT_PREPARATION_TIMEOUT_MS = 10 * 60 * 1_000;
 

@@ -32,7 +32,6 @@ test('skips fetch when all URLs are already cached', async () => {
 			fetched.push(url);
 		},
 		onProgress: () => {},
-		onComplete: () => {},
 	});
 	assert.deepEqual(fetched, []);
 });
@@ -47,7 +46,6 @@ test('fetches only missing URLs', async () => {
 			fetched.push(url);
 		},
 		onProgress: () => {},
-		onComplete: () => {},
 	});
 	assert.deepEqual(fetched, ['https://example.com/b.onnx']);
 });

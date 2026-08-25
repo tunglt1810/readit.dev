@@ -12,10 +12,6 @@ const REQUIRED_MINIMUM_CHROME_VERSION = '127';
 const REQUIRED_SIDE_PANEL_PATH = 'src/sidepanel/sidepanel.html';
 const REQUIRED_WEB_ACCESSIBLE_RESOURCES = [
 	{
-		resources: ['ort-wasm-simd-threaded.asyncify.mjs', 'ort-wasm-simd-threaded.asyncify.wasm'],
-		matches: ['<all_urls>'],
-	},
-	{
 		resources: ['assets/icon32.png'],
 		matches: ['http://*/*', 'https://*/*'],
 	},

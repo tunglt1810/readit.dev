@@ -41,18 +41,19 @@ export async function requestAudioExportState(runtime: AudioExportRuntimeLike = 
 	return response;
 }
 
-export function sendAudioExportCommand<T extends CommandResponse = CommandResponse>(
+export async function sendAudioExportCommand<T extends CommandResponse = CommandResponse>(
 	message: unknown,
 	runtime: AudioExportRuntimeLike = chrome.runtime,
 ): Promise<T> {
-	return sendRuntimeRequest<unknown>(message, runtime)
-		.then((response) => {
-			if (!isCommandResponse(response)) {
-				throw new Error('Extension runtime request returned a malformed audio export command response.');
-			}
-			return response as T;
-		})
-		.catch((error: unknown) => transportFailure(error) as T);
+	try {
+		const response = await sendRuntimeRequest<unknown>(message, runtime);
+		if (!isCommandResponse(response)) {
+			throw new Error('Extension runtime request returned a malformed audio export command response.');
+		}
+		return response as T;
+	} catch (error: unknown) {
+		return transportFailure(error) as T;
+	}
 }
 
 export function prepareAudioExport(

@@ -268,10 +268,7 @@ test('rejects manual snapshots with invalid owners or extra source fields', () =
 	});
 
 	assert.equal(isPlaybackSessionSnapshot({ ...manual, source: { kind: 'manual', panelInstanceId: '' } }), false);
-	assert.equal(
-		isPlaybackSessionSnapshot({ ...manual, source: { ...manualSource, text: 'forbidden' } }),
-		false,
-	);
+	assert.equal(isPlaybackSessionSnapshot({ ...manual, source: { ...manualSource, text: 'forbidden' } }), false);
 });
 
 test('does not apply stale progress after the active session has been cleared', () => {

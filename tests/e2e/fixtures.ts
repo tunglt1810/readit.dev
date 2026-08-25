@@ -382,10 +382,7 @@ export async function installTranslatorStub(page: Page, translations: Record<str
  * Installs the stub in the extension's service worker, which is where the translation actually
  * runs. `addInitScript` cannot reach a worker, so it is evaluated directly inside it.
  */
-export async function installWorkerTranslatorStub(
-	context: BrowserContext,
-	translations: Record<string, string> = {},
-): Promise<void> {
+export async function installWorkerTranslatorStub(context: BrowserContext, translations: Record<string, string> = {}): Promise<void> {
 	let worker = context.serviceWorkers().find((candidate) => candidate.url().startsWith('chrome-extension://'));
 	if (!worker) {
 		worker = await context.waitForEvent('serviceworker', {

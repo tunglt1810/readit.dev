@@ -1,4 +1,5 @@
 import { test } from '@playwright/test';
+
 import { killOrphanChromeProcesses } from './global_setup';
 
 test('cleanup orphan chrome processes between projects', async () => {

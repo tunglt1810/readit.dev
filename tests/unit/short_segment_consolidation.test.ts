@@ -1,11 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-
 import { synthesizeSpeechUnitSamples } from '../../src/offscreen/audio.ts';
 import { planLatinSpeechUnits } from '../../src/offscreen/latin/speech_units.ts';
-import { normalizeSourceText } from '../../src/offscreen/text_normalization.ts';
 import { preparePlaybackUnits } from '../../src/offscreen/playback_preparation.ts';
 import type { SpeechUnit } from '../../src/offscreen/speech_unit.ts';
+import { normalizeSourceText } from '../../src/offscreen/text_normalization.ts';
 
 /** Validates: Requirements 1.1, 1.2, 1.3, 1.5, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6 */
 
@@ -65,9 +64,7 @@ async function runScenario({ language, source }: Scenario): Promise<SynthesisRes
 		try {
 			const samples = await synthesizeSpeechUnitSamples(unit, language, 1.5, async (text) => {
 				engineCalls.push(text);
-				return nonWhitespaceCodePointCount(unit.text) < MIN_RELIABLE_SYNTHESIS_CHARACTERS
-					? new Float32Array(32)
-					: VOICED_SAMPLES;
+				return nonWhitespaceCodePointCount(unit.text) < MIN_RELIABLE_SYNTHESIS_CHARACTERS ? new Float32Array(32) : VOICED_SAMPLES;
 			});
 			rawWaveforms.push({ index, samples });
 			started.push(index);
@@ -122,7 +119,9 @@ function assertExpectedBehavior(scenario: Scenario, planned: readonly SpeechUnit
 		}
 	}
 
-	const expectedStarts = result.prepared.map((_, index) => index).filter((index) => !result.failures.some((failure) => failure.index === index));
+	const expectedStarts = result.prepared
+		.map((_, index) => index)
+		.filter((index) => !result.failures.some((failure) => failure.index === index));
 	if (JSON.stringify(result.started) !== JSON.stringify(expectedStarts)) {
 		violations.push(`started indexes ${JSON.stringify(result.started)} are not ordered exactly once`);
 	}

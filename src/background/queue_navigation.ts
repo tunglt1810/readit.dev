@@ -1,5 +1,5 @@
-import { normalizeQueueUrl } from './playlist_queue.ts';
 import type { PendingQueueNavigation } from '../shared/types.ts';
+import { normalizeQueueUrl } from './playlist_queue.ts';
 
 export interface NavigationTab {
 	id?: number;
@@ -64,11 +64,7 @@ export function isPendingQueueNavigation(value: unknown): value is PendingQueueN
 		return false;
 	}
 	const pending = value as Record<string, unknown>;
-	if (
-		typeof pending.itemId !== 'string' ||
-		!Number.isInteger(pending.tabId) ||
-		typeof pending.expectedUrl !== 'string'
-	) {
+	if (typeof pending.itemId !== 'string' || !Number.isInteger(pending.tabId) || typeof pending.expectedUrl !== 'string') {
 		return false;
 	}
 	try {

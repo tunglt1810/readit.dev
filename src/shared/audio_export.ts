@@ -79,7 +79,9 @@ export function unwrapAudioExportOffscreenCommand(value: unknown): InternalAudio
 	};
 }
 
-export function isInternalAudioExportOffscreenCommand(value: unknown): value is InternalAudioExportOffscreenCommand | AudioExportOffscreenEnvelope {
+export function isInternalAudioExportOffscreenCommand(
+	value: unknown,
+): value is InternalAudioExportOffscreenCommand | AudioExportOffscreenEnvelope {
 	return unwrapAudioExportOffscreenCommand(value) !== null;
 }
 

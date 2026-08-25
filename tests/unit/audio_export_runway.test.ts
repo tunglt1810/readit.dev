@@ -31,7 +31,12 @@ test('requires runway to strictly exceed the latest-five synthesis maximum plus 
 		false,
 	);
 	assert.equal(
-		canStartBackgroundSynthesis({ ...playingRunway, currentRemainingSeconds: 1, nextBufferSeconds: 0.751, recentSynthesisMilliseconds }),
+		canStartBackgroundSynthesis({
+			...playingRunway,
+			currentRemainingSeconds: 1,
+			nextBufferSeconds: 0.751,
+			recentSynthesisMilliseconds,
+		}),
 		true,
 	);
 });

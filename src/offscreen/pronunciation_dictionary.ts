@@ -8,16 +8,12 @@ import { synthesisTextLimitForLanguage } from './supertonic_helper.ts';
  *
  * Must be called after unit planning and before consolidation.
  */
-export function applyPronunciationDictionary(
-	units: SpeechUnit[],
-	rules: readonly PronunciationRule[],
-	lang: string,
-): void {
-	const activeRules = rules
-		.filter((r) => r.enabled && (!r.lang || r.lang === lang))
-		.toSorted((a, b) => b.match.length - a.match.length);
+export function applyPronunciationDictionary(units: SpeechUnit[], rules: readonly PronunciationRule[], lang: string): void {
+	const activeRules = rules.filter((r) => r.enabled && (!r.lang || r.lang === lang)).toSorted((a, b) => b.match.length - a.match.length);
 
-	if (activeRules.length === 0) return;
+	if (activeRules.length === 0) {
+		return;
+	}
 
 	const limit = synthesisTextLimitForLanguage(lang);
 
@@ -33,7 +29,9 @@ export function applyPronunciationDictionary(
 			const replaced = source.replace(pattern, (matched: string, offset: number) =>
 				!rule.wholeWord || isWholeWordMatch(source, offset, matched.length) ? rule.replacement : matched,
 			);
-			if (replaced === source) continue;
+			if (replaced === source) {
+				continue;
+			}
 			source = replaced;
 			changed = true;
 		}

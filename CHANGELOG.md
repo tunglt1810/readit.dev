@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.4] - 2026-08-26
+
+### Fixed
+- route playback metrics from offscreen to service worker where storage is reliable - [@tunglt1810]
+- remove ONNX WASM from web_accessible_resources to prevent extension fingerprinting - [@tunglt1810]
+- remove redundant return true in synchronous message handler - [@tunglt1810]
+
+### Changed
+- refactor asynchronous promise chains to async/await across extension modules - [@tunglt1810]
+- move unused logo asset out of public directory - [@tunglt1810]
+
 ## [1.2.3] - 2026-08-19
 
 ### Fixed

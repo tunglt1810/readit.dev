@@ -24,17 +24,21 @@ const record: BookProgressRecord = {
 
 function installStorageStub(): { values: Record<string, unknown> } {
 	const values: Record<string, unknown> = {};
-	(globalThis as { chrome?: unknown }).chrome = {
-		storage: {
-			local: {
-				get: async (keys: string[]) => Object.fromEntries(keys.filter((key) => key in values).map((key) => [key, values[key]])),
-				set: async (items: Record<string, unknown>) => Object.assign(values, items),
-				remove: async (key: string) => {
-					delete values[key];
+	Object.defineProperty(globalThis, 'chrome', {
+		configurable: true,
+		writable: true,
+		value: {
+			storage: {
+				local: {
+					get: async (keys: string[]) => Object.fromEntries(keys.filter((key) => key in values).map((key) => [key, values[key]])),
+					set: async (items: Record<string, unknown>) => Object.assign(values, items),
+					remove: async (key: string) => {
+						delete values[key];
+					},
 				},
 			},
 		},
-	};
+	});
 	return { values };
 }
 

@@ -4,6 +4,7 @@ import { PDF_ERROR_CODES } from '../../src/shared/constants.ts';
 
 Object.defineProperty(globalThis, 'chrome', {
 	configurable: true,
+	writable: true,
 	value: {
 		i18n: {
 			getUILanguage: () => 'en-US',

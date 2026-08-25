@@ -92,18 +92,17 @@ export function AudioExportButton({ session }: { session: PlaybackSessionSnapsho
 				setJob(nextJob);
 			}
 		});
-		void requestAudioExportState().then(
-			(response) => {
-				if (!cancelled && !receivedLiveUpdate) {
-					setJob(response.job);
-				}
-			},
-			() => {
-				if (!cancelled && !receivedLiveUpdate) {
-					setJob(null);
-				}
-			},
-		);
+		void (async () => {
+			let initialJob: AudioExportJobSnapshot | null = null;
+			try {
+				initialJob = (await requestAudioExportState()).job;
+			} catch {
+				// No reachable service worker; the button falls back to "no export in flight".
+			}
+			if (!cancelled && !receivedLiveUpdate) {
+				setJob(initialJob);
+			}
+		})();
 		return () => {
 			cancelled = true;
 			unsubscribe();
@@ -225,7 +224,17 @@ export function AudioExportButton({ session }: { session: PlaybackSessionSnapsho
 			>
 				{jobState === 'preparing' || jobState === 'cancelling' || starting ? (
 					<svg className="audio-export-progress-spinner" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
-						<circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2.5" fill="none" strokeDasharray="42" strokeDashoffset="14" strokeLinecap="round" />
+						<circle
+							cx="12"
+							cy="12"
+							r="9"
+							stroke="currentColor"
+							strokeWidth="2.5"
+							fill="none"
+							strokeDasharray="42"
+							strokeDashoffset="14"
+							strokeLinecap="round"
+						/>
 					</svg>
 				) : jobState === 'exporting' || jobState === 'waiting-for-playback' ? (
 					<svg className="audio-export-progress-ring" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">

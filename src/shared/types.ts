@@ -102,12 +102,7 @@ export type AudioExportJobState =
 	| 'failed'
 	| 'interrupted';
 
-export type AudioExportErrorCode =
-	| 'permission-denied'
-	| 'write-failed'
-	| 'encoding-failed'
-	| 'snapshot-unavailable'
-	| 'interrupted';
+export type AudioExportErrorCode = 'permission-denied' | 'write-failed' | 'encoding-failed' | 'snapshot-unavailable' | 'interrupted';
 
 export interface AudioExportEstimate {
 	durationSeconds: number;

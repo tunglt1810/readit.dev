@@ -1,10 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {
-	isDocumentReaderCompletedMessage,
-	isDocumentReaderSnapshot,
-	mapDocumentReaderWords,
-} from '../../src/shared/document_reader.ts';
+import { isDocumentReaderCompletedMessage, isDocumentReaderSnapshot, mapDocumentReaderWords } from '../../src/shared/document_reader.ts';
 
 test('maps repeated words monotonically', () => {
 	assert.deepEqual(

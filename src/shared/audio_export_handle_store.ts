@@ -83,9 +83,13 @@ function runTransaction<Result>(
 		transaction.oncomplete = () => resolve(result);
 
 		try {
-			operation(transaction.objectStore(STORE_NAME), (value) => {
-				result = value;
-			}, rejectTransaction);
+			operation(
+				transaction.objectStore(STORE_NAME),
+				(value) => {
+					result = value;
+				},
+				rejectTransaction,
+			);
 		} catch (error) {
 			try {
 				transaction.abort();
@@ -97,7 +101,10 @@ function runTransaction<Result>(
 	});
 }
 
-async function withDatabase<Result>(factory: IDBFactory | undefined, operation: (database: IDBDatabase) => Promise<Result>): Promise<Result> {
+async function withDatabase<Result>(
+	factory: IDBFactory | undefined,
+	operation: (database: IDBDatabase) => Promise<Result>,
+): Promise<Result> {
 	const database = await openDatabase(factory);
 	try {
 		return await operation(database);

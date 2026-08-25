@@ -143,10 +143,10 @@ test('preserves the exact rejected offscreen prepare reason only in diagnostics'
 
 test('rejects preparation for a playback session that is not active', async () => {
 	const harness = createHarness();
-	assert.deepEqual(
-		await harness.coordinator.prepare({ ...request, playbackSessionId: 'other-session' }),
-		{ success: false, error: 'snapshot-unavailable' },
-	);
+	assert.deepEqual(await harness.coordinator.prepare({ ...request, playbackSessionId: 'other-session' }), {
+		success: false,
+		error: 'snapshot-unavailable',
+	});
 	assert.equal(harness.stored, undefined);
 	assert.deepEqual(harness.offscreenCommands, []);
 });
@@ -318,7 +318,10 @@ test('persists interrupted hydration cleanup when the old offscreen receiver is 
 	await harness.coordinator.hydrate();
 	assert.equal(harness.coordinator.snapshot()?.state, 'interrupted');
 	assert.deepEqual(harness.handleDeletes, ['job-1']);
-	assert.deepEqual(harness.offscreenCommands.map((command) => command.action), ['DISCARD_AUDIO_EXPORT']);
+	assert.deepEqual(
+		harness.offscreenCommands.map((command) => command.action),
+		['DISCARD_AUDIO_EXPORT'],
+	);
 });
 
 test('publishes offscreen progress and cleans transient handles on terminal progress', async () => {

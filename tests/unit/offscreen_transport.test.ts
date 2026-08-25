@@ -36,10 +36,10 @@ test('accepts checkpoint metadata without accepting manual content', async () =>
 		voiceStyleId: 'M1',
 		speed: 1.05,
 	};
-	const response = await sendOffscreenCommand(
-		{ action: 'CHECKPOINT_MANUAL', payload: checkpoint },
-		async () => ({ success: true, checkpoint }),
-	);
+	const response = await sendOffscreenCommand({ action: 'CHECKPOINT_MANUAL', payload: checkpoint }, async () => ({
+		success: true,
+		checkpoint,
+	}));
 	assert.equal(response.success, true);
 	assert.equal(isManualCheckpointMetadata(response.checkpoint), true);
 	assert.equal(isManualCheckpointMetadata({ ...checkpoint, text: 'forbidden' }), false);
@@ -63,17 +63,17 @@ test('accepts only strict document reader snapshots', async () => {
 	};
 
 	assert.deepEqual(
-		await sendOffscreenCommand(
-			{ action: 'GET_DOCUMENT_READER_SNAPSHOT', payload: { sessionId: snapshot.sessionId } },
-			async () => ({ success: true, snapshot }),
-		),
+		await sendOffscreenCommand({ action: 'GET_DOCUMENT_READER_SNAPSHOT', payload: { sessionId: snapshot.sessionId } }, async () => ({
+			success: true,
+			snapshot,
+		})),
 		{ success: true, snapshot },
 	);
 	assert.deepEqual(
-		await sendOffscreenCommand(
-			{ action: 'GET_DOCUMENT_READER_SNAPSHOT', payload: { sessionId: snapshot.sessionId } },
-			async () => ({ success: true, snapshot: { ...snapshot, currentWordIndex: 1.5 } }),
-		),
+		await sendOffscreenCommand({ action: 'GET_DOCUMENT_READER_SNAPSHOT', payload: { sessionId: snapshot.sessionId } }, async () => ({
+			success: true,
+			snapshot: { ...snapshot, currentWordIndex: 1.5 },
+		})),
 		{ success: false },
 	);
 });
@@ -90,10 +90,10 @@ test('sends a failed command once instead of delaying every playback control wit
 });
 
 test('accepts numeric-only audio export estimates', async () => {
-	assert.deepEqual(
-		await sendOffscreenCommand({ action: 'PLAY' }, async () => ({ success: true, audioExportEstimate })),
-		{ success: true, audioExportEstimate },
-	);
+	assert.deepEqual(await sendOffscreenCommand({ action: 'PLAY' }, async () => ({ success: true, audioExportEstimate })), {
+		success: true,
+		audioExportEstimate,
+	});
 });
 
 test('rejects malformed audio export estimates', async () => {
@@ -122,7 +122,6 @@ test('only sends audio export commands to offscreen through the internal channel
 	const command = createAudioExportOffscreenCommand('START_AUDIO_EXPORT', { jobId: 'job-1' });
 	assert.deepEqual(await sendOffscreenCommand(command, async () => ({ success: true })), { success: true });
 });
-
 
 test('serializes private prepare payloads inside the offscreen envelope without stripping outputFilename', async () => {
 	const command = createAudioExportOffscreenCommand('PREPARE_AUDIO_EXPORT', {

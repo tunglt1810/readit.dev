@@ -3,7 +3,7 @@ export interface WarmCacheDeps {
 	isCached: (url: string) => Promise<boolean>;
 	fetchAndCache: (url: string, progressCallback?: (loaded: number, total: number) => void) => Promise<void>;
 	onProgress: (url: string, loaded: number, total: number) => void;
-	onComplete: () => void;
+	onComplete?: () => void;
 }
 
 export async function warmCache(deps: WarmCacheDeps): Promise<void> {
@@ -15,5 +15,5 @@ export async function warmCache(deps: WarmCacheDeps): Promise<void> {
 			deps.onProgress(url, loaded, total);
 		});
 	}
-	deps.onComplete();
+	deps.onComplete?.();
 }

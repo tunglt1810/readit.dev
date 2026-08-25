@@ -1,6 +1,7 @@
+import { IDBFactory } from 'fake-indexeddb';
+
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { IDBFactory } from 'fake-indexeddb';
 import {
 	clearAudioExportHandles,
 	deleteAudioExportHandle,

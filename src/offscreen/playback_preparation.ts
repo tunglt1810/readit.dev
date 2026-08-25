@@ -1,3 +1,4 @@
+import type { PronunciationRule } from '../shared/types.ts';
 import { isPredominantlyLatinText, planLatinSpeechUnits } from './latin/speech_units.ts';
 import { applyPronunciationDictionary } from './pronunciation_dictionary.ts';
 import { SegmentationCapacityError } from './segmentation.ts';
@@ -6,7 +7,6 @@ import type { SpeechUnit } from './speech_unit.ts';
 import { assertWithinSynthesisCapacity, chunkText, synthesisTextLimitForLanguage } from './supertonic_helper.ts';
 import { normalizeSourceText } from './text_normalization.ts';
 import type { NormalizationResult } from './vietnamese/types.ts';
-import type { PronunciationRule } from '../shared/types.ts';
 import { attachNormalizedWordMap, attachPlainWordMap } from './word_map.ts';
 
 export interface VietnameseTextNormalizer {

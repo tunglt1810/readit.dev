@@ -181,12 +181,14 @@ test.describe('Kịch bản 3: Điều khiển TTS (TTS Controls)', () => {
 		await expect(exportButton).toHaveAttribute('title', 'Xuất MP3');
 		await exportButton.focus();
 		await page.keyboard.press('Enter');
-		await expect.poll(() => page.evaluate(() => (window as any).pickerOptions)).toEqual({
-			id: 'readit-mp3-export',
-			startIn: 'music',
-			suggestedName: 'An article.mp3',
-			types: [{ description: 'MP3 audio', accept: { 'audio/mpeg': ['.mp3'] } }],
-		});
+		await expect
+			.poll(() => page.evaluate(() => (window as any).pickerOptions))
+			.toEqual({
+				id: 'readit-mp3-export',
+				startIn: 'music',
+				suggestedName: 'An article.mp3',
+				types: [{ description: 'MP3 audio', accept: { 'audio/mpeg': ['.mp3'] } }],
+			});
 		expect(await page.evaluate(() => (window as any).actionsAtPicker)).toContain('PREPARE_AUDIO_EXPORT');
 		await expect(page.locator('.audio-export-status[role="status"]')).toBeVisible();
 	});
@@ -202,9 +204,12 @@ test.describe('Kịch bản 3: Điều khiển TTS (TTS Controls)', () => {
 		await page.getByRole('button', { name: 'Giữ xuất MP3' }).click();
 
 		for (const state of ['waiting-for-playback', 'cancelling', 'completed', 'failed', 'interrupted']) {
-			await page.evaluate(({ job, state }) => {
-				(window as any).mockReceiveMessage({ action: 'AUDIO_EXPORT_STATE_UPDATE', job: { ...job, state } });
-			}, { job: exportJob, state });
+			await page.evaluate(
+				({ job, state }) => {
+					(window as any).mockReceiveMessage({ action: 'AUDIO_EXPORT_STATE_UPDATE', job: { ...job, state } });
+				},
+				{ job: exportJob, state },
+			);
 			await expect(page.locator('.audio-export-button')).toHaveAttribute('data-state', state);
 		}
 	});
@@ -217,9 +222,9 @@ test.describe('Kịch bản 3: Điều khiển TTS (TTS Controls)', () => {
 		const exportButton = page.getByRole('button', { name: 'Xuất MP3' });
 		await exportButton.focus();
 		await page.keyboard.press('Space');
-		await expect.poll(() => page.evaluate(() => (window as any).sentMessages.map((message: any) => message.action))).toContain(
-			'PREPARE_AUDIO_EXPORT',
-		);
+		await expect
+			.poll(() => page.evaluate(() => (window as any).sentMessages.map((message: any) => message.action)))
+			.toContain('PREPARE_AUDIO_EXPORT');
 	});
 
 	test('requires a long-export confirmation and silently cleans up picker cancellation', async ({ page }) => {
@@ -233,9 +238,9 @@ test.describe('Kịch bản 3: Điều khiển TTS (TTS Controls)', () => {
 		await page.getByRole('button', { name: 'Xuất MP3' }).click();
 		await expect(page.getByRole('alertdialog', { name: 'Xuất MP3 dài' })).toBeVisible();
 		await page.getByRole('button', { name: 'Tiếp tục' }).click();
-		await expect.poll(() => page.evaluate(() => (window as any).sentMessages.map((message: any) => message.action))).toContain(
-			'PREPARE_AUDIO_EXPORT',
-		);
+		await expect
+			.poll(() => page.evaluate(() => (window as any).sentMessages.map((message: any) => message.action)))
+			.toContain('PREPARE_AUDIO_EXPORT');
 		await expect(page.getByRole('alert')).toHaveCount(0);
 	});
 
@@ -247,18 +252,20 @@ test.describe('Kịch bản 3: Điều khiển TTS (TTS Controls)', () => {
 		}, exportSession);
 
 		await page.getByRole('button', { name: 'Xuất MP3' }).click();
-		await expect.poll(() => page.evaluate(() => (window as any).sentMessages.map((message: any) => message.action))).toContain(
-			'PREPARE_AUDIO_EXPORT',
-		);
+		await expect
+			.poll(() => page.evaluate(() => (window as any).sentMessages.map((message: any) => message.action)))
+			.toContain('PREPARE_AUDIO_EXPORT');
 		await page.waitForTimeout(250);
-		expect(await page.evaluate(() => (window as any).sentMessages.map((message: any) => message.action))).not.toContain('DISCARD_AUDIO_EXPORT');
+		expect(await page.evaluate(() => (window as any).sentMessages.map((message: any) => message.action))).not.toContain(
+			'DISCARD_AUDIO_EXPORT',
+		);
 
 		await page.evaluate(() => {
 			(window as any).resolveDeferredRuntimeResponse('PREPARE_AUDIO_EXPORT', { success: true });
 		});
-		await expect.poll(() => page.evaluate(() => (window as any).sentMessages.map((message: any) => message.action))).toContain(
-			'DISCARD_AUDIO_EXPORT',
-		);
+		await expect
+			.poll(() => page.evaluate(() => (window as any).sentMessages.map((message: any) => message.action)))
+			.toContain('DISCARD_AUDIO_EXPORT');
 		await expect(page.getByRole('alert')).toHaveCount(0);
 	});
 

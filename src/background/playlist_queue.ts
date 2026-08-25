@@ -73,7 +73,9 @@ export function markPlaying(queue: PlaylistQueue, id: string): PlaylistQueue {
 	return {
 		...queue,
 		items: queue.items.map((item) => {
-			if (item.id === id) return { ...item, status: 'playing' as const };
+			if (item.id === id) {
+				return { ...item, status: 'playing' as const };
+			}
 			return item.status === 'playing' ? { ...item, status: 'pending' as const } : item;
 		}),
 		activeIndex: index >= 0 ? index : queue.activeIndex,
@@ -132,7 +134,9 @@ export async function saveQueue(queue: PlaylistQueue): Promise<void> {
 const VALID_STATUSES = new Set(['pending', 'playing', 'done', 'error']);
 
 function isValidQueueItem(item: unknown): item is QueueItem {
-	if (!item || typeof item !== 'object') return false;
+	if (!item || typeof item !== 'object') {
+		return false;
+	}
 	const i = item as Record<string, unknown>;
 	return (
 		typeof i.id === 'string' &&

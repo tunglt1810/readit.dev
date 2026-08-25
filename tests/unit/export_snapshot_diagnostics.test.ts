@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-
-import { ExportSnapshotDiagnostics } from '../../src/offscreen/export_snapshot_diagnostics.ts';
 import type { PreparedAudioExport } from '../../src/offscreen/audio_export_engine.ts';
+import { ExportSnapshotDiagnostics } from '../../src/offscreen/export_snapshot_diagnostics.ts';
 import type { Style } from '../../src/offscreen/supertonic_helper.ts';
 
 function preparedExport(): PreparedAudioExport {
@@ -56,5 +55,8 @@ test('can clear an individual prepared snapshot without exposing others', () => 
 	diagnostics.record({ ...preparedExport(), jobId: 'job-2', playbackSessionId: 'session-2' });
 
 	diagnostics.clear('job-1');
-	assert.deepEqual(diagnostics.read().map((record) => record.jobId), ['job-2']);
+	assert.deepEqual(
+		diagnostics.read().map((record) => record.jobId),
+		['job-2'],
+	);
 });

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { applyPronunciationDictionary } from '../../src/offscreen/pronunciation_dictionary.ts';
-import type { PronunciationRule } from '../../src/shared/types.ts';
 import type { SpeechUnit } from '../../src/offscreen/speech_unit.ts';
+import type { PronunciationRule } from '../../src/shared/types.ts';
 
 function makeUnit(text: string, synthesisText?: string): SpeechUnit {
 	return { text, synthesisText, pauseAfterMs: 0 };
@@ -90,10 +90,7 @@ test('rule without lang applies to all languages', () => {
 
 test('longest match wins when multiple rules match same position', () => {
 	const units = [makeUnit('USA is a country')];
-	const rules = [
-		makeRule('US', 'united states'),
-		makeRule('USA', 'united states of america'),
-	];
+	const rules = [makeRule('US', 'united states'), makeRule('USA', 'united states of america')];
 	applyPronunciationDictionary(units, rules, 'en');
 	assert.equal(units[0].synthesisText, 'united states of america is a country');
 });
@@ -180,10 +177,7 @@ test('a rule still applies when the lengthened unit stays within capacity', () =
 
 test('multiple rules match different positions in same unit', () => {
 	const units = [makeUnit('HTML and CSS')];
-	const rules = [
-		makeRule('HTML', 'aitch tee em el'),
-		makeRule('CSS', 'see ess ess'),
-	];
+	const rules = [makeRule('HTML', 'aitch tee em el'), makeRule('CSS', 'see ess ess')];
 	applyPronunciationDictionary(units, rules, 'en');
 	assert.equal(units[0].synthesisText, 'aitch tee em el and see ess ess');
 });

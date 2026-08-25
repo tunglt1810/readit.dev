@@ -81,19 +81,19 @@ const exportJob = {
 };
 
 test('renders one shared MP3 export control for hydrated page and manual sessions', async ({ page, openSidePanel }) => {
-	await installExtensionUiRuntimeMock(
-		page,
-		{ session: { ...documentSession, audioExportEstimate: exportJob.estimate } },
-		pageInfo,
-		{ job: exportJob },
-	);
+	await installExtensionUiRuntimeMock(page, { session: { ...documentSession, audioExportEstimate: exportJob.estimate } }, pageInfo, {
+		job: exportJob,
+	});
 	await openSidePanel(page);
 	await expect(page.locator('.audio-export-button')).toHaveCount(1);
 	await expect(page.getByRole('button', { name: 'Hủy xuất MP3' })).toHaveAttribute('data-state', 'waiting-for-playback');
 
-	await page.evaluate((session) => {
-		(window as any).mockReceiveMessage({ action: 'PLAYBACK_STATE_UPDATE', session });
-	}, { ...manualSession, audioExportEstimate: exportJob.estimate });
+	await page.evaluate(
+		(session) => {
+			(window as any).mockReceiveMessage({ action: 'PLAYBACK_STATE_UPDATE', session });
+		},
+		{ ...manualSession, audioExportEstimate: exportJob.estimate },
+	);
 	await expect(page.locator('.audio-export-button')).toHaveCount(1);
 });
 
@@ -253,7 +253,10 @@ test('pagehide stops owned audio and reload restores an empty draft', async ({ p
 	await expect(page.getByRole('textbox', { name: 'Văn bản đang đọc' })).toHaveCount(0);
 });
 
-test('keeps the reader locked with explicit editor resume and discard controls while web audio is active', async ({ page, openSidePanel }) => {
+test('keeps the reader locked with explicit editor resume and discard controls while web audio is active', async ({
+	page,
+	openSidePanel,
+}) => {
 	await installExtensionUiRuntimeMock(page, { session: null }, pageInfo);
 	await openSidePanel(page);
 	const textbox = page.getByRole('textbox', { name: 'Dán hoặc nhập nội dung cần đọc' });
@@ -517,7 +520,9 @@ test('localizes Google Docs current-page export failures', async ({ page, openSi
 	});
 
 	await page.getByRole('button', { name: 'Đọc trang hiện tại' }).click();
-	await expect(page.getByText('Không thể đọc Google Docs này. Hãy kiểm tra quyền xem hoặc tải xuống, hoặc đọc văn bản đã chọn/dán.')).toBeVisible();
+	await expect(
+		page.getByText('Không thể đọc Google Docs này. Hãy kiểm tra quyền xem hoặc tải xuống, hoặc đọc văn bản đã chọn/dán.'),
+	).toBeVisible();
 });
 
 test('verifies keyboard navigation and hover states for page card and bottom player controls', async ({ page, openSidePanel }) => {
@@ -557,7 +562,10 @@ test('verifies keyboard navigation and hover states for page card and bottom pla
 });
 
 for (const theme of ['default', 'winamp', 'wmp12'] as ThemeName[]) {
-	test(`renders SVG playback icons and supports keyboard navigation for player controls in ${theme} theme`, async ({ page, openSidePanel }) => {
+	test(`renders SVG playback icons and supports keyboard navigation for player controls in ${theme} theme`, async ({
+		page,
+		openSidePanel,
+	}) => {
 		await installExtensionUiRuntimeMock(page, { session: manualSession }, pageInfo);
 		await openSidePanel(page);
 		await page.evaluate(async (selectedTheme) => {
@@ -676,7 +684,10 @@ test.describe('Side Panel Localization - Vietnamese (vi-VN)', () => {
 	});
 });
 
-test('verifies UI layout fixes: compact status display pill, standard read-page primary button, and consistent theme background', async ({ page, openSidePanel }) => {
+test('verifies UI layout fixes: compact status display pill, standard read-page primary button, and consistent theme background', async ({
+	page,
+	openSidePanel,
+}) => {
 	await installExtensionUiRuntimeMock(page, { session: null }, pageInfo);
 	await openSidePanel(page);
 
@@ -725,7 +736,10 @@ for (const [theme, expectedColor] of [
 	});
 }
 
-test('shows session meta and playback controls in current-page-card during an active tab session, and page info when stopped', async ({ page, openSidePanel }) => {
+test('shows session meta and playback controls in current-page-card during an active tab session, and page info when stopped', async ({
+	page,
+	openSidePanel,
+}) => {
 	// 1. Tab session active: session-meta and playback-controls in current-page-card should be visible, page-info hidden
 	const tabSession: PlaybackSessionSnapshot = {
 		...manualSession,
@@ -764,7 +778,12 @@ test('popup toggle button syncs active state and self-heals by opening side pane
 	expect(await page.evaluate(() => (window as any).sidePanelOpenCalls)).toEqual([{ windowId: 7 }]);
 });
 
-test('registers sidepanel window ID when sidepanel mounts and syncs active status to popup toggle button', async ({ context, openPopup, openSidePanel, page }) => {
+test('registers sidepanel window ID when sidepanel mounts and syncs active status to popup toggle button', async ({
+	context,
+	openPopup,
+	openSidePanel,
+	page,
+}) => {
 	await installExtensionUiRuntimeMock(page, { session: null }, pageInfo);
 	await openSidePanel(page);
 
@@ -786,7 +805,10 @@ test('registers sidepanel window ID when sidepanel mounts and syncs active statu
 	}
 });
 
-test('multi-window isolation: popup shows active sidepanel button in window A (open) and inactive in window B (closed)', async ({ context, openPopup }) => {
+test('multi-window isolation: popup shows active sidepanel button in window A (open) and inactive in window B (closed)', async ({
+	context,
+	openPopup,
+}) => {
 	// Window A (windowId: 7) where Side Panel IS open
 	const popupWinA = await context.newPage();
 	await installExtensionUiRuntimeMock(popupWinA, { session: null, currentTabId: 7 });
@@ -817,6 +839,3 @@ test('multi-window isolation: popup shows active sidepanel button in window A (o
 	await popupWinA.close();
 	await popupWinB.close();
 });
-
-
-

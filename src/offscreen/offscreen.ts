@@ -1,41 +1,42 @@
-import {
-	isAudioExportEstimate,
-	isAudioExportOffscreenAction,
-	unwrapAudioExportOffscreenCommand,
-} from '../shared/audio_export.ts';
+import { isAudioExportEstimate, isAudioExportOffscreenAction, unwrapAudioExportOffscreenCommand } from '../shared/audio_export.ts';
 import { deleteAudioExportHandle, takeAudioExportHandle } from '../shared/audio_export_handle_store.ts';
 import { MODEL_FILES, VOICE_STYLES } from '../shared/constants';
 import type { DocumentReaderSnapshot } from '../shared/document_reader.ts';
 import { isPanelInstanceId } from '../shared/manual_playback';
+import type { MediaSessionMetadata } from '../shared/media_session_metadata.ts';
 import { buildReadableSurfaceInitMessage, buildReadableSurfaceWords } from '../shared/readable_surface.ts';
-import type { AudioExportEstimate, PlaybackContent, PlaybackContentScope, PlaybackProgress, PlaybackStatus, PronunciationRule, ReadableSurfaceKind } from '../shared/types';
+import { createSingleFlight } from '../shared/single_flight';
+import type {
+	AudioExportEstimate,
+	PlaybackContent,
+	PlaybackContentScope,
+	PlaybackProgress,
+	PlaybackStatus,
+	PronunciationRule,
+	ReadableSurfaceKind,
+} from '../shared/types';
 import { createSpeechAudioBuffer, synthesizeSpeechUnitSamples } from './audio';
-import { EngineBoundaryDiagnostics } from './engine_boundary_diagnostics.ts';
-import { VoicedAudioError } from './voiced_audio.ts';
-import { ExportSnapshotDiagnostics } from './export_snapshot_diagnostics.ts';
-import { ExportPreparationDiagnostics } from './export_prepare_diagnostics.ts';
 import { createAudioExportEncoder } from './audio_export_encoder.ts';
 import { AudioExportEngine } from './audio_export_engine.ts';
 import { estimateSpeechUnits } from './audio_export_estimate';
 import { canStartBackgroundSynthesis, type PlaybackRunway } from './audio_export_runway';
+import { emitAudioHostMessage, requestAudioHostMessage } from './audio_host_messages.ts';
+import { EngineBoundaryDiagnostics } from './engine_boundary_diagnostics.ts';
+import { ExportPreparationDiagnostics } from './export_prepare_diagnostics.ts';
+import { ExportSnapshotDiagnostics } from './export_snapshot_diagnostics.ts';
 import { captureManualCheckpoint, isCheckpointOwner, type ManualCheckpoint, resumeOffsetSeconds } from './manual_checkpoint';
-import type { MediaSessionMetadata } from '../shared/media_session_metadata.ts';
 import { createMediaSessionController } from './media_session';
 import { createPauseKeepalive } from './pause_keepalive';
-import { METRICS_STORAGE_KEY, PlaybackMetricsRecorder, summarizePlaybackMetrics } from './playback_metrics';
+import { PlaybackMetricsRecorder, summarizePlaybackMetrics } from './playback_metrics';
 import { isVietnameseLanguage, preparePlaybackUnits, VietnameseTextNormalizer } from './playback_preparation';
-import { createSingleFlight } from '../shared/single_flight';
 import type { SpeechUnit } from './speech_unit';
-import { SynthesisArbiter } from './synthesis_arbiter';
 import { loadTextToSpeech, loadVoiceStyle, Style, TextToSpeech } from './supertonic_helper';
+import { SynthesisArbiter } from './synthesis_arbiter';
 import { IndexedSynthesisCoordinator, type SynthesisKey } from './synthesis_coordinator';
 import { loadVietnameseNormalizerAssets } from './vietnamese/assets';
 import { normalizeVietnameseText } from './vietnamese/normalizer';
+import { VoicedAudioError } from './voiced_audio.ts';
 import { computeReadableSurfaceWordTimings, findWordAtTime, type WordTimingWindow } from './word_timing';
-import {
-	emitAudioHostMessage,
-	requestAudioHostMessage,
-} from './audio_host_messages.ts';
 
 // Global Engine State
 let ttsEngine: TextToSpeech | null = null;
@@ -160,11 +161,9 @@ function flushPlaybackMetrics() {
 	}
 	const summary = summarizePlaybackMetrics(playbackMetrics.snapshot());
 	console.info('[readit] playback metrics', JSON.stringify(summary));
-	try {
-		void chrome.storage.local.set({ [METRICS_STORAGE_KEY]: summary });
-	} catch (_error) {
-		// Diagnostics only — a storage failure must never affect playback.
-	}
+	// Route through the service worker: chrome.storage is not reliably available
+	// inside the Chrome offscreen document (see offscreen_transport.ts).
+	emitAudioHostMessage({ action: 'RECORD_PLAYBACK_METRICS', payload: summary });
 }
 
 // Readable from the offscreen document's own devtools console while playback is running.
@@ -203,48 +202,56 @@ function flushPlaybackMetrics() {
 });
 
 // Test-only CDP view: there is deliberately no extension message or product UI for these records.
-(globalThis as unknown as {
-	__readitEngineBoundaryDiagnostics?: {
-		read(probeId?: string | null): unknown;
-		clear(probeId?: string | null): void;
-	};
-}).__readitEngineBoundaryDiagnostics = {
+(
+	globalThis as unknown as {
+		__readitEngineBoundaryDiagnostics?: {
+			read(probeId?: string | null): unknown;
+			clear(probeId?: string | null): void;
+		};
+	}
+).__readitEngineBoundaryDiagnostics = {
 	read: (probeId) => engineBoundaryDiagnostics.read(probeId),
 	clear: (probeId) => engineBoundaryDiagnostics.clear(probeId),
 };
 
 // Test-only CDP view of immutable export snapshot metadata. It intentionally
 // cannot expose prepared units, synthesis text, style data, or output handles.
-(globalThis as unknown as {
-	__readitExportSnapshotDiagnostics?: {
-		read(jobId?: string): unknown;
-		clear(jobId?: string): void;
-	};
-}).__readitExportSnapshotDiagnostics = {
+(
+	globalThis as unknown as {
+		__readitExportSnapshotDiagnostics?: {
+			read(jobId?: string): unknown;
+			clear(jobId?: string): void;
+		};
+	}
+).__readitExportSnapshotDiagnostics = {
 	read: (jobId) => exportSnapshotDiagnostics.read(jobId),
 	clear: (jobId) => exportSnapshotDiagnostics.clear(jobId),
 };
 
 // Test-only CDP record of the inner offscreen preparation outcome. It has no
 // extension-message or product UI route, and does not alter the public result.
-(globalThis as unknown as {
-	__readitExportPreparationDiagnostics?: {
-		read(jobId?: string): unknown;
-		clear(jobId?: string): void;
-	};
-}).__readitExportPreparationDiagnostics = {
+(
+	globalThis as unknown as {
+		__readitExportPreparationDiagnostics?: {
+			read(jobId?: string): unknown;
+			clear(jobId?: string): void;
+		};
+	}
+).__readitExportPreparationDiagnostics = {
 	read: (jobId) => exportPreparationDiagnostics.read(jobId),
 	clear: (jobId) => exportPreparationDiagnostics.clear(jobId),
 };
 
 // Test-only CDP control for one intentional unvoiced export negative control.
 // It has no extension-message or product UI route and is consumed after one export engine call.
-(globalThis as unknown as {
-	__readitExportProbeControls?: {
-		forceNextUnvoicedRawFailure(): void;
-		readLastFailure(): { name: string; reason: string | null } | null;
-	};
-}).__readitExportProbeControls = {
+(
+	globalThis as unknown as {
+		__readitExportProbeControls?: {
+			forceNextUnvoicedRawFailure(): void;
+			readLastFailure(): { name: string; reason: string | null } | null;
+		};
+	}
+).__readitExportProbeControls = {
 	forceNextUnvoicedRawFailure: () => {
 		forceNextExportRawFailure = true;
 		lastExportProbeFailure = null;
@@ -437,10 +444,9 @@ const synthesisArbiter = new SynthesisArbiter<SynthesisInput, AudioBuffer>(({ un
 	synthesizeUnit(unit, lang, style, speed, owner, probeId),
 );
 
-const synthesisCoordinator = new IndexedSynthesisCoordinator<SynthesisInput, AudioBuffer>(
-	(input) => synthesisArbiter.foreground(input),
-	{ onResolved: () => notifyExportRunway() },
-);
+const synthesisCoordinator = new IndexedSynthesisCoordinator<SynthesisInput, AudioBuffer>((input) => synthesisArbiter.foreground(input), {
+	onResolved: () => notifyExportRunway(),
+});
 
 function synthesisKey(session: number, unitIndex: number): SynthesisKey {
 	return { session, unitIndex, speedVersion };
@@ -732,14 +738,7 @@ function reportMediaSessionPosition(offsetInUnitSec: number): void {
 /**
  * Play a synthesized AudioBuffer
  */
-function playAudioBuffer(
-	buffer: AudioBuffer,
-	lang: string,
-	style: Style,
-	session: number,
-	unitIndex: number,
-	offsetSec = 0,
-) {
+function playAudioBuffer(buffer: AudioBuffer, lang: string, style: Style, session: number, unitIndex: number, offsetSec = 0) {
 	// Split from one combined guard so a refusal names its cause: each of these silently drops
 	// a whole unit, which is heard as missing text.
 	if (!audioCtx) {
@@ -940,10 +939,7 @@ async function resumePendingManualPlayback(checkpoint: RuntimeManualCheckpoint, 
 	}
 	currentPlaybackStyle = style;
 	if (!audioCtx) {
-		audioCtx = new (
-			window.AudioContext ||
-			(window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
-		)();
+		audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
 	}
 	if (audioCtx.state === 'suspended') {
 		await audioCtx.resume();
@@ -1019,10 +1015,7 @@ async function resumeManualCheckpoint(payload: unknown): Promise<{ success: bool
 		return { success: false };
 	}
 	if (!audioCtx) {
-		audioCtx = new (
-			window.AudioContext ||
-			(window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
-		)();
+		audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
 	}
 	if (audioCtx.state === 'suspended') {
 		await audioCtx.resume();
@@ -1048,14 +1041,7 @@ async function resumeManualCheckpoint(payload: unknown): Promise<{ success: bool
 	}
 
 	if (checkpoint.buffer && checkpoint.style && checkpoint.sourceOffsetSec < checkpoint.buffer.duration) {
-		playAudioBuffer(
-			checkpoint.buffer,
-			checkpoint.lang,
-			checkpoint.style,
-			session,
-			checkpoint.unitIndex,
-			checkpoint.sourceOffsetSec,
-		);
+		playAudioBuffer(checkpoint.buffer, checkpoint.lang, checkpoint.style, session, checkpoint.unitIndex, checkpoint.sourceOffsetSec);
 	} else if (checkpoint.style && checkpoint.speechUnits.length > 0) {
 		if (checkpoint.buffer) {
 			currentUnitIndex++;
@@ -1092,23 +1078,44 @@ function exportPreparationRejectionReason(
 	jobId: string | null,
 	playbackSessionId: string | null,
 ): string | null {
-	if (!input) return 'missing-payload';
-	if (jobId === null) return 'missing-job-id';
-	if (playbackSessionId === null) return 'missing-playback-session-id';
-	if (playbackSessionId !== currentExtensionSessionId) return 'playback-session-mismatch';
-	if (typeof input.outputFilename !== 'string' || input.outputFilename.length === 0) return 'missing-output-filename';
-	if (!isAudioExportEstimate(input.estimate)) return 'invalid-estimate';
-	if (!currentPlaybackLanguage) return 'missing-playback-language';
-	if (!currentPlaybackStyle) return 'missing-playback-style';
-	if (!currentVoiceStyleId) return 'missing-voice-style-id';
-	if (speechUnits.length === 0) return 'no-speech-units';
+	if (!input) {
+		return 'missing-payload';
+	}
+	if (jobId === null) {
+		return 'missing-job-id';
+	}
+	if (playbackSessionId === null) {
+		return 'missing-playback-session-id';
+	}
+	if (playbackSessionId !== currentExtensionSessionId) {
+		return 'playback-session-mismatch';
+	}
+	if (typeof input.outputFilename !== 'string' || input.outputFilename.length === 0) {
+		return 'missing-output-filename';
+	}
+	if (!isAudioExportEstimate(input.estimate)) {
+		return 'invalid-estimate';
+	}
+	if (!currentPlaybackLanguage) {
+		return 'missing-playback-language';
+	}
+	if (!currentPlaybackStyle) {
+		return 'missing-playback-style';
+	}
+	if (!currentVoiceStyleId) {
+		return 'missing-voice-style-id';
+	}
+	if (speechUnits.length === 0) {
+		return 'no-speech-units';
+	}
 	return null;
 }
 
 function prepareAudioExport(payload: unknown): { success: boolean; error?: string } {
 	const input = payload as { jobId?: unknown; playbackSessionId?: unknown; outputFilename?: unknown; estimate?: unknown } | undefined;
 	const jobId = typeof input?.jobId === 'string' && input.jobId.length > 0 ? input.jobId : null;
-	const playbackSessionId = typeof input?.playbackSessionId === 'string' && input.playbackSessionId.length > 0 ? input.playbackSessionId : null;
+	const playbackSessionId =
+		typeof input?.playbackSessionId === 'string' && input.playbackSessionId.length > 0 ? input.playbackSessionId : null;
 	const payloadKeys = input && typeof input === 'object' ? Object.keys(input).sort() : [];
 	const rejectionReason = exportPreparationRejectionReason(input, jobId, playbackSessionId);
 	if (rejectionReason !== null) {
@@ -1167,346 +1174,363 @@ export const handleOffscreenMessage = (
 	_sender: chrome.runtime.MessageSender,
 	sendResponse: (response?: unknown) => void,
 ) => {
-		if (!message || typeof message !== 'object') {
-			return undefined;
-		}
-		const internalAudioExportCommand = unwrapAudioExportOffscreenCommand(message);
-		const msg = (internalAudioExportCommand ?? message) as { action: string; payload?: unknown };
-		const { action, payload } = msg;
-		if (isAudioExportOffscreenAction(action) && internalAudioExportCommand === null) {
-			return undefined;
-		}
+	if (!message || typeof message !== 'object') {
+		return undefined;
+	}
+	const internalAudioExportCommand = unwrapAudioExportOffscreenCommand(message);
+	const msg = (internalAudioExportCommand ?? message) as { action: string; payload?: unknown };
+	const { action, payload } = msg;
+	if (isAudioExportOffscreenAction(action) && internalAudioExportCommand === null) {
+		return undefined;
+	}
 
-		switch (action) {
-			case 'FETCH_FILE_BYTES': {
-				const fileUrl = (payload as { url?: unknown } | undefined)?.url;
-				if (typeof fileUrl !== 'string') {
-					sendResponse({ success: false, error: 'Missing file URL' });
-					break;
-				}
-				let targetUrl = fileUrl;
-				try {
-					targetUrl = encodeURI(decodeURI(fileUrl));
-				} catch {
-					// fallback to original fileUrl
-				}
-				fetch(targetUrl)
-					.then((res) => res.blob())
-					.then((blob) => {
-						const reader = new FileReader();
-						reader.onloadend = () => {
-							const dataUrl = reader.result as string;
-							const base64 = dataUrl ? dataUrl.split(',')[1] ?? '' : '';
-							sendResponse({ success: true, base64 });
-						};
-						reader.onerror = () => {
-							sendResponse({ success: false, error: 'Failed to read file blob' });
-						};
-						reader.readAsDataURL(blob);
-					})
-					.catch((err) => {
-						sendResponse({ success: false, error: (err as Error).message });
-					});
-				return true;
-			}
-
-			case 'PREPARE_AUDIO_EXPORT':
-				sendResponse(prepareAudioExport(payload));
+	switch (action) {
+		case 'FETCH_FILE_BYTES': {
+			const fileUrl = (payload as { url?: unknown } | undefined)?.url;
+			if (typeof fileUrl !== 'string') {
+				sendResponse({ success: false, error: 'Missing file URL' });
 				break;
-
-			case 'START_AUDIO_EXPORT': {
-				const jobId = exportJobId(payload);
-				if (!jobId) {
-					sendResponse({ success: false, error: 'Missing audio export job ID' });
-					break;
-				}
+			}
+			let targetUrl = fileUrl;
+			try {
+				targetUrl = encodeURI(decodeURI(fileUrl));
+			} catch {
+				// fallback to original fileUrl
+			}
+			void (async () => {
 				try {
-					void audioExportEngine.start(jobId).catch(() => undefined);
+					const res = await fetch(targetUrl);
+					const blob = await res.blob();
+					const reader = new FileReader();
+					reader.onloadend = () => {
+						const dataUrl = reader.result as string;
+						const base64 = dataUrl ? (dataUrl.split(',')[1] ?? '') : '';
+						sendResponse({ success: true, base64 });
+					};
+					reader.onerror = () => {
+						sendResponse({ success: false, error: 'Failed to read file blob' });
+					};
+					reader.readAsDataURL(blob);
+				} catch (err) {
+					sendResponse({ success: false, error: (err as Error).message });
+				}
+			})();
+			return true;
+		}
+
+		case 'PREPARE_AUDIO_EXPORT':
+			sendResponse(prepareAudioExport(payload));
+			break;
+
+		case 'START_AUDIO_EXPORT': {
+			const jobId = exportJobId(payload);
+			if (!jobId) {
+				sendResponse({ success: false, error: 'Missing audio export job ID' });
+				break;
+			}
+			try {
+				void audioExportEngine.start(jobId).catch(() => undefined);
+				sendResponse({ success: true });
+			} catch (error) {
+				sendResponse({ success: false, error: (error as Error).message });
+			}
+			break;
+		}
+
+		case 'CANCEL_AUDIO_EXPORT': {
+			const jobId = exportJobId(payload);
+			if (!jobId) {
+				sendResponse({ success: false, error: 'Missing audio export job ID' });
+				break;
+			}
+			void (async () => {
+				try {
+					await audioExportEngine.cancel(jobId);
 					sendResponse({ success: true });
 				} catch (error) {
 					sendResponse({ success: false, error: (error as Error).message });
 				}
+			})();
+			return true;
+		}
+
+		case 'DISCARD_AUDIO_EXPORT': {
+			const jobId = exportJobId(payload);
+			if (!jobId) {
+				sendResponse({ success: false, error: 'Missing audio export job ID' });
+				break;
+			}
+			void (async () => {
+				try {
+					await audioExportEngine.discard(jobId);
+					sendResponse({ success: true });
+				} catch (error) {
+					sendResponse({ success: false, error: (error as Error).message });
+				}
+			})();
+			return true;
+		}
+
+		case 'INIT_MODELS':
+			initModels().catch(() => {
+				// The failure is reported through MODEL_LOAD_FAILED.
+			});
+			sendResponse({ status: 'starting' });
+			break;
+
+		case 'PLAY': {
+			const sessionId = (payload as { sessionId?: unknown } | undefined)?.sessionId;
+			if (typeof sessionId !== 'string' || sessionId.length === 0) {
+				sendResponse({ success: false, error: 'Missing playback session ID' });
 				break;
 			}
 
-			case 'CANCEL_AUDIO_EXPORT': {
-				const jobId = exportJobId(payload);
-				if (!jobId) {
-					sendResponse({ success: false, error: 'Missing audio export job ID' });
+			const isResume = isPaused && audioCtx && playbackStatus === 'paused';
+			if (!isResume) {
+				const data = payload as {
+					article: { content: string; lang: string };
+					voiceStyleId: string;
+					speed: number;
+					panelInstanceId?: unknown;
+					contentScope?: unknown;
+					readableSurface?: unknown;
+					documentTitle?: unknown;
+					mediaSession?: MediaSessionMetadata;
+					hasNextQueueItem?: boolean;
+					pronunciationRules?: PronunciationRule[];
+				};
+				const { article, voiceStyleId, speed } = data;
+				if (!isReadableSurfaceKind(data.readableSurface)) {
+					sendResponse({ success: false, error: 'Invalid readable surface' });
 					break;
 				}
-				void audioExportEngine.cancel(jobId).then(
-					() => sendResponse({ success: true }),
-					(error: Error) => sendResponse({ success: false, error: error.message }),
+				if (data.panelInstanceId !== undefined && !isPanelInstanceId(data.panelInstanceId)) {
+					sendResponse({ success: false, error: 'Invalid Side Panel owner ID' });
+					break;
+				}
+				if (data.readableSurface === 'document-reader' && typeof data.documentTitle !== 'string') {
+					sendResponse({ success: false, error: 'Missing document reader title' });
+					break;
+				}
+				const session = ++playbackSession;
+				stopAudio();
+				// After stopAudio(), which clears the previous session's tile.
+				mediaSession?.setMetadata(data.mediaSession);
+				mediaSession?.setNextTrack(
+					data.hasNextQueueItem ? () => void chrome.runtime.sendMessage({ action: 'SKIP_TO_NEXT_QUEUE_ITEM' }) : null,
 				);
-				return true;
-			}
-
-			case 'DISCARD_AUDIO_EXPORT': {
-				const jobId = exportJobId(payload);
-				if (!jobId) {
-					sendResponse({ success: false, error: 'Missing audio export job ID' });
-					break;
-				}
-				void audioExportEngine.discard(jobId).then(
-					() => sendResponse({ success: true }),
-					(error: Error) => sendResponse({ success: false, error: error.message }),
-				);
-				return true;
-			}
-
-			case 'INIT_MODELS':
-				initModels().catch(() => {
-					// The failure is reported through MODEL_LOAD_FAILED.
-				});
-				sendResponse({ status: 'starting' });
-				break;
-
-			case 'PLAY': {
-				const sessionId = (payload as { sessionId?: unknown } | undefined)?.sessionId;
-				if (typeof sessionId !== 'string' || sessionId.length === 0) {
-					sendResponse({ success: false, error: 'Missing playback session ID' });
-					break;
-				}
-
-				const isResume = isPaused && audioCtx && playbackStatus === 'paused';
-				if (!isResume) {
-					const data = payload as {
-						article: { content: string; lang: string };
-						voiceStyleId: string;
-						speed: number;
-						panelInstanceId?: unknown;
-						contentScope?: unknown;
-						readableSurface?: unknown;
-						documentTitle?: unknown;
-						mediaSession?: MediaSessionMetadata;
-						hasNextQueueItem?: boolean;
-						pronunciationRules?: PronunciationRule[];
+				currentExtensionSessionId = sessionId;
+				currentManualPanelInstanceId = data.panelInstanceId ?? null;
+				currentReadableSurface = data.readableSurface;
+				currentReadableSurfaceContentScope =
+					data.readableSurface === 'manual-reader' ? 'manual' : data.contentScope === 'selection' ? 'selection' : 'article';
+				currentDocumentReader =
+					data.readableSurface === 'document-reader'
+						? {
+								sessionId,
+								title: data.documentTitle as string,
+								content: article.content,
+								words: [],
+							}
+						: null;
+				currentPlaybackLanguage = article.lang;
+				currentVoiceStyleId = voiceStyleId;
+				currentWordIndex = -1;
+				if (currentManualPanelInstanceId) {
+					manualCheckpoint = null;
+					pendingManualPlayback = {
+						sessionId,
+						panelInstanceId: currentManualPanelInstanceId,
+						article,
+						voiceStyleId,
+						speed,
 					};
-					const { article, voiceStyleId, speed } = data;
-					if (!isReadableSurfaceKind(data.readableSurface)) {
-						sendResponse({ success: false, error: 'Invalid readable surface' });
-						break;
-					}
-					if (data.panelInstanceId !== undefined && !isPanelInstanceId(data.panelInstanceId)) {
-						sendResponse({ success: false, error: 'Invalid Side Panel owner ID' });
-						break;
-					}
-					if (data.readableSurface === 'document-reader' && typeof data.documentTitle !== 'string') {
-						sendResponse({ success: false, error: 'Missing document reader title' });
-						break;
-					}
-					const session = ++playbackSession;
-					stopAudio();
-					// After stopAudio(), which clears the previous session's tile.
-					mediaSession?.setMetadata(data.mediaSession);
-					mediaSession?.setNextTrack(
-						data.hasNextQueueItem ? () => void chrome.runtime.sendMessage({ action: 'SKIP_TO_NEXT_QUEUE_ITEM' }) : null,
-					);
-					currentExtensionSessionId = sessionId;
-					currentManualPanelInstanceId = data.panelInstanceId ?? null;
-					currentReadableSurface = data.readableSurface;
-					currentReadableSurfaceContentScope =
-						data.readableSurface === 'manual-reader' ? 'manual' : data.contentScope === 'selection' ? 'selection' : 'article';
-					currentDocumentReader =
-						data.readableSurface === 'document-reader'
-							? {
-									sessionId,
-									title: data.documentTitle as string,
-									content: article.content,
-									words: [],
-								}
-							: null;
-					currentPlaybackLanguage = article.lang;
-					currentVoiceStyleId = voiceStyleId;
-					currentWordIndex = -1;
-					if (currentManualPanelInstanceId) {
-						manualCheckpoint = null;
-						pendingManualPlayback = {
-							sessionId,
-							panelInstanceId: currentManualPanelInstanceId,
-							article,
-							voiceStyleId,
-							speed,
-						};
-					}
-					currentSpeed = speed;
-					playbackMetrics.markPlayRequested(performance.now());
-					reportProgress('loading');
-
-					(async () => {
-						try {
-							let normalizer: VietnameseTextNormalizer | null = null;
-							if (isVietnameseLanguage(article.lang)) {
-								const assets = await loadVietnameseNormalizerAssets();
-								normalizer = {
-									normalize: (text) => normalizeVietnameseText(text, { assets, now: () => performance.now() }),
-								};
-							}
-							const preparedUnits = await preparePlaybackUnits(article.content, article.lang, normalizer, data.pronunciationRules ?? []);
-
-							if (session !== playbackSession) {
-								sendResponse({ success: false, error: 'Playback superseded' });
-								return;
-							}
-
-							speechUnits = preparedUnits;
-							const audioExportEstimate = estimateSpeechUnits(speechUnits, article.lang, speed);
-							currentUnitIndex = 0;
-							isPaused = false;
-							playbackMetrics.recordTotalUnits(speechUnits.length);
-
-							if (speechUnits.length === 0) {
-								sendResponse({ success: false, error: 'No readable text content found.' });
-								return;
-							}
-
-							await initializeReadableSurface(session);
-
-							if (session !== playbackSession) {
-								sendResponse({ success: false, error: 'Playback superseded' });
-								return;
-							}
-
-							if (!ttsEngine) {
-								await initModels();
-							}
-							const style = await getVoiceStyle(voiceStyleId);
-							if (session !== playbackSession) {
-								sendResponse({ success: false, error: 'Playback superseded' });
-								return;
-							}
-
-							if (!audioCtx) {
-								audioCtx = new (
-									window.AudioContext ||
-									(window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
-								)();
-							}
-							if (audioCtx.state === 'suspended') {
-								await audioCtx.resume();
-							}
-
-							if (session !== playbackSession) {
-								sendResponse({ success: false, error: 'Playback superseded' });
-								return;
-							}
-							currentPlaybackStyle = style;
-							pendingManualPlayback = null;
-
-							sendResponse({ success: true, audioExportEstimate });
-
-							// Trigger first chunk playback
-							void playNextUnit(article.lang, style, session);
-						} catch (err) {
-							const error = err as Error;
-							if (session === playbackSession) {
-								reportProgress('error', { error: error.message });
-							}
-							sendResponse({ success: false, error: error.message });
-						}
-					})();
-					return true; // async sendResponse
 				}
+				currentSpeed = speed;
+				playbackMetrics.markPlayRequested(performance.now());
+				reportProgress('loading');
 
 				(async () => {
 					try {
-						await resumePlayback();
-						sendResponse({ success: true });
+						let normalizer: VietnameseTextNormalizer | null = null;
+						if (isVietnameseLanguage(article.lang)) {
+							const assets = await loadVietnameseNormalizerAssets();
+							normalizer = {
+								normalize: (text) => normalizeVietnameseText(text, { assets, now: () => performance.now() }),
+							};
+						}
+						const preparedUnits = await preparePlaybackUnits(
+							article.content,
+							article.lang,
+							normalizer,
+							data.pronunciationRules ?? [],
+						);
+
+						if (session !== playbackSession) {
+							sendResponse({ success: false, error: 'Playback superseded' });
+							return;
+						}
+
+						speechUnits = preparedUnits;
+						const audioExportEstimate = estimateSpeechUnits(speechUnits, article.lang, speed);
+						currentUnitIndex = 0;
+						isPaused = false;
+						playbackMetrics.recordTotalUnits(speechUnits.length);
+
+						if (speechUnits.length === 0) {
+							sendResponse({ success: false, error: 'No readable text content found.' });
+							return;
+						}
+
+						await initializeReadableSurface(session);
+
+						if (session !== playbackSession) {
+							sendResponse({ success: false, error: 'Playback superseded' });
+							return;
+						}
+
+						if (!ttsEngine) {
+							await initModels();
+						}
+						const style = await getVoiceStyle(voiceStyleId);
+						if (session !== playbackSession) {
+							sendResponse({ success: false, error: 'Playback superseded' });
+							return;
+						}
+
+						if (!audioCtx) {
+							audioCtx = new (
+								window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+							)();
+						}
+						if (audioCtx.state === 'suspended') {
+							await audioCtx.resume();
+						}
+
+						if (session !== playbackSession) {
+							sendResponse({ success: false, error: 'Playback superseded' });
+							return;
+						}
+						currentPlaybackStyle = style;
+						pendingManualPlayback = null;
+
+						sendResponse({ success: true, audioExportEstimate });
+
+						// Trigger first chunk playback
+						void playNextUnit(article.lang, style, session);
 					} catch (err) {
 						const error = err as Error;
+						if (session === playbackSession) {
+							reportProgress('error', { error: error.message });
+						}
 						sendResponse({ success: false, error: error.message });
 					}
 				})();
 				return true; // async sendResponse
 			}
 
-			case 'PAUSE':
-				(async () => {
-					try {
-						if (!(await pausePlayback())) {
-							sendResponse({ success: false, error: 'Audio is not running' });
-							return;
-						}
-						sendResponse({ success: true });
-					} catch (error) {
-						sendResponse({ success: false, error: (error as Error).message });
-					}
-				})();
-				return true;
-
-			case 'STOP':
-				stopPlayback();
-				sendResponse({ success: true });
-				break;
-
-			case 'CHECKPOINT_MANUAL':
-				sendResponse(checkpointManual(payload));
-				break;
-
-			case 'RESUME_MANUAL_CHECKPOINT':
-				void resumeManualCheckpoint(payload).then(
-					(response) => sendResponse(response),
-					() => sendResponse({ success: false }),
-				);
-				return true;
-
-			case 'DISCARD_MANUAL_CHECKPOINT':
-				sendResponse({ success: discardManualCheckpoint(payload) });
-				break;
-
-			case 'GET_MANUAL_CHECKPOINT_METADATA':
-				sendResponse(manualCheckpoint ? { success: true, checkpoint: checkpointMetadata(manualCheckpoint) } : { success: false });
-				break;
-
-			case 'GET_DOCUMENT_READER_SNAPSHOT': {
-				const sessionId = (payload as { sessionId?: unknown } | undefined)?.sessionId;
-				if (
-					typeof sessionId !== 'string' ||
-					currentReadableSurface !== 'document-reader' ||
-					currentDocumentReader?.sessionId !== sessionId
-				) {
-					sendResponse({ success: false });
-					break;
+			(async () => {
+				try {
+					await resumePlayback();
+					sendResponse({ success: true });
+				} catch (err) {
+					const error = err as Error;
+					sendResponse({ success: false, error: error.message });
 				}
-				surfaceReady = true;
-				sendResponse({
-					success: true,
-					snapshot: { ...currentDocumentReader, currentWordIndex },
-				});
-				break;
-			}
-
-			case 'DETACH_DOCUMENT_READER': {
-				const sessionId = (payload as { sessionId?: unknown } | undefined)?.sessionId;
-				if (sessionId === currentDocumentReader?.sessionId) {
-					surfaceReady = false;
-				}
-				sendResponse({ success: true });
-				break;
-			}
-
-			case 'CHANGE_SPEED': {
-				const speed = (payload as { speed?: unknown })?.speed;
-				if (typeof speed !== 'number' || !Number.isFinite(speed)) {
-					sendResponse({ success: false, error: 'Invalid speed' });
-					break;
-				}
-				currentSpeed = speed;
-				speedVersion++;
-				synthesisCoordinator.clear();
-				if (playbackStatus === 'playing' && currentPlaybackLanguage && currentPlaybackStyle) {
-					synthesisCoordinator.retain(retainedSynthesisKeys(playbackSession));
-					prefetchNextUnit(currentPlaybackLanguage, currentPlaybackStyle, playbackSession);
-				}
-				reportProgress(playbackStatus);
-				sendResponse({ success: true, audioExportEstimate: estimateSpeechUnits(speechUnits, currentPlaybackLanguage ?? '', speed) });
-				break;
-			}
-
-			default:
-				return undefined;
+			})();
+			return true; // async sendResponse
 		}
+
+		case 'PAUSE':
+			(async () => {
+				try {
+					if (!(await pausePlayback())) {
+						sendResponse({ success: false, error: 'Audio is not running' });
+						return;
+					}
+					sendResponse({ success: true });
+				} catch (error) {
+					sendResponse({ success: false, error: (error as Error).message });
+				}
+			})();
+			return true;
+
+		case 'STOP':
+			stopPlayback();
+			sendResponse({ success: true });
+			break;
+
+		case 'CHECKPOINT_MANUAL':
+			sendResponse(checkpointManual(payload));
+			break;
+
+		case 'RESUME_MANUAL_CHECKPOINT':
+			void (async () => {
+				try {
+					const response = await resumeManualCheckpoint(payload);
+					sendResponse(response);
+				} catch {
+					sendResponse({ success: false });
+				}
+			})();
+			return true;
+
+		case 'DISCARD_MANUAL_CHECKPOINT':
+			sendResponse({ success: discardManualCheckpoint(payload) });
+			break;
+
+		case 'GET_MANUAL_CHECKPOINT_METADATA':
+			sendResponse(manualCheckpoint ? { success: true, checkpoint: checkpointMetadata(manualCheckpoint) } : { success: false });
+			break;
+
+		case 'GET_DOCUMENT_READER_SNAPSHOT': {
+			const sessionId = (payload as { sessionId?: unknown } | undefined)?.sessionId;
+			if (
+				typeof sessionId !== 'string' ||
+				currentReadableSurface !== 'document-reader' ||
+				currentDocumentReader?.sessionId !== sessionId
+			) {
+				sendResponse({ success: false });
+				break;
+			}
+			surfaceReady = true;
+			sendResponse({
+				success: true,
+				snapshot: { ...currentDocumentReader, currentWordIndex },
+			});
+			break;
+		}
+
+		case 'DETACH_DOCUMENT_READER': {
+			const sessionId = (payload as { sessionId?: unknown } | undefined)?.sessionId;
+			if (sessionId === currentDocumentReader?.sessionId) {
+				surfaceReady = false;
+			}
+			sendResponse({ success: true });
+			break;
+		}
+
+		case 'CHANGE_SPEED': {
+			const speed = (payload as { speed?: unknown })?.speed;
+			if (typeof speed !== 'number' || !Number.isFinite(speed)) {
+				sendResponse({ success: false, error: 'Invalid speed' });
+				break;
+			}
+			currentSpeed = speed;
+			speedVersion++;
+			synthesisCoordinator.clear();
+			if (playbackStatus === 'playing' && currentPlaybackLanguage && currentPlaybackStyle) {
+				synthesisCoordinator.retain(retainedSynthesisKeys(playbackSession));
+				prefetchNextUnit(currentPlaybackLanguage, currentPlaybackStyle, playbackSession);
+			}
+			reportProgress(playbackStatus);
+			sendResponse({ success: true, audioExportEstimate: estimateSpeechUnits(speechUnits, currentPlaybackLanguage ?? '', speed) });
+			break;
+		}
+
+		default:
+			return undefined;
+	}
 };
 
 export function registerOffscreenMessageHandler(): void {

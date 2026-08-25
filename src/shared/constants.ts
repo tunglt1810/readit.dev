@@ -68,6 +68,7 @@ export const STORAGE_KEYS = {
 	PRONUNCIATION_DICTIONARY: 'readit_pronunciation_dictionary',
 	TRANSLATION_TARGET: 'readit_translation_target',
 	EPUB_PROGRESS: 'readit_epub_progress',
+	PLAYBACK_METRICS: 'readit_playback_metrics',
 };
 
 export const PRIVACY_POLICY_URL = 'https://tunglt1810.github.io/readit.dev/privacy-policy/';

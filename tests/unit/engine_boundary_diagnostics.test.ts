@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-
-import { ENGINE_BOUNDARY_DIAGNOSTIC_STAGE, EngineBoundaryDiagnostics, safeTextIdentifier } from '../../src/offscreen/engine_boundary_diagnostics.ts';
 import { synthesizeSpeechUnitSamples } from '../../src/offscreen/audio.ts';
+import {
+	ENGINE_BOUNDARY_DIAGNOSTIC_STAGE,
+	EngineBoundaryDiagnostics,
+	safeTextIdentifier,
+} from '../../src/offscreen/engine_boundary_diagnostics.ts';
 import { VoicedAudioError } from '../../src/offscreen/voiced_audio.ts';
 
 test('records immutable foreground raw metrics with safe canonical and synthesis identifiers', () => {
@@ -66,23 +69,26 @@ test('records an unvoiced raw waveform before the shared verifier rejects it', a
 		(error: unknown) => error instanceof VoicedAudioError && error.reason === 'materially-silent',
 	);
 
-	assert.deepEqual(diagnostics.read('probe-2').map((record) => ({
-		stage: record.stage,
-		owner: record.owner,
-		unitIndex: record.unitIndex,
-		requestedSpeed: record.requestedSpeed,
-		rawSampleCount: record.rawSampleCount,
-		finite: record.finite,
-		voiced: record.voiced,
-	})), [
-		{
-			stage: ENGINE_BOUNDARY_DIAGNOSTIC_STAGE,
-			owner: 'export',
-			unitIndex: 7,
-			requestedSpeed: 1.5,
-			rawSampleCount: 32,
-			finite: true,
-			voiced: false,
-		},
-	]);
+	assert.deepEqual(
+		diagnostics.read('probe-2').map((record) => ({
+			stage: record.stage,
+			owner: record.owner,
+			unitIndex: record.unitIndex,
+			requestedSpeed: record.requestedSpeed,
+			rawSampleCount: record.rawSampleCount,
+			finite: record.finite,
+			voiced: record.voiced,
+		})),
+		[
+			{
+				stage: ENGINE_BOUNDARY_DIAGNOSTIC_STAGE,
+				owner: 'export',
+				unitIndex: 7,
+				requestedSpeed: 1.5,
+				rawSampleCount: 32,
+				finite: true,
+				voiced: false,
+			},
+		],
+	);
 });

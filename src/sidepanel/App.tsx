@@ -107,10 +107,18 @@ export default function App() {
 					setPageInfo(info);
 				}
 			};
-			void sendRuntimeRequest<PageInfoResponse>({
-				action: 'GET_CURRENT_PAGE_INFO',
-				payload: { windowId: panelWindowId },
-			}).then(apply, () => apply(EMPTY_PAGE_INFO));
+			void (async () => {
+				let info = EMPTY_PAGE_INFO;
+				try {
+					info = await sendRuntimeRequest<PageInfoResponse>({
+						action: 'GET_CURRENT_PAGE_INFO',
+						payload: { windowId: panelWindowId },
+					});
+				} catch {
+					// No reachable service worker; the panel falls back to the empty header.
+				}
+				apply(info);
+			})();
 		};
 
 		const handleActivated = (activeInfo: chrome.tabs.OnActivatedInfo) => {
@@ -150,6 +158,7 @@ export default function App() {
 	};
 
 	useEffect(() => {
+		let isMounted = true;
 		let latestSessionSpeed: number | undefined;
 		let latestSessionLanguage: string | undefined;
 		chrome.storage.local.get(
@@ -188,14 +197,19 @@ export default function App() {
 			}
 		});
 
-		void requestPlaybackState().then((response) => {
+		void (async () => {
+			// requestPlaybackState resolves to an empty state instead of rejecting.
+			const response = await requestPlaybackState();
+			if (!isMounted) {
+				return;
+			}
 			setSession(response.session);
 			latestSessionLanguage = response.session?.lang;
 			if (response.session && typeof response.session.speed === 'number' && Number.isFinite(response.session.speed)) {
 				latestSessionSpeed = response.session.speed;
 				setSpeed(response.session.speed);
 			}
-		});
+		})();
 		const unsubscribePlayback = subscribePlaybackState(chrome.runtime, (nextSession) => {
 			setSession(nextSession);
 			latestSessionLanguage = nextSession?.lang;
@@ -295,6 +309,7 @@ export default function App() {
 		};
 		chrome.storage.onChanged.addListener(handleStorageChange);
 		return () => {
+			isMounted = false;
 			unsubscribePlayback();
 			chrome.runtime.onMessage.removeListener(handleQueueMessage);
 			chrome.runtime.onMessage.removeListener(handleManualPlaybackMessage);
@@ -410,11 +425,24 @@ export default function App() {
 	};
 
 	useEffect(() => {
-		void isTranslationAvailable().then(async (available) => {
-			if (available) {
-				setTranslationTarget(await readTranslationTarget());
+		let isMounted = true;
+		void (async () => {
+			try {
+				const available = await isTranslationAvailable();
+				if (!isMounted || !available) {
+					return;
+				}
+				const target = await readTranslationTarget();
+				if (isMounted) {
+					setTranslationTarget(target);
+				}
+			} catch {
+				// Storage is unreadable; the default target stays in place.
 			}
-		});
+		})();
+		return () => {
+			isMounted = false;
+		};
 	}, []);
 
 	const handleTranslationTargetChange = (target: TranslationTarget) => {
@@ -840,7 +868,9 @@ export default function App() {
 							value={urlInput}
 							onChange={(e) => setUrlInput(e.target.value)}
 							onKeyDown={(e) => {
-								if (e.key === 'Enter') void handleAddUrl();
+								if (e.key === 'Enter') {
+									void handleAddUrl();
+								}
 							}}
 							aria-label={t('queueUrlAriaLabel')}
 						/>

@@ -63,4 +63,3 @@ test('runQueuedEvent consumes a rejection instead of leaving it unhandled', asyn
 		process.off('unhandledRejection', onUnhandled);
 	}
 });
-

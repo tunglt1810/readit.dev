@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { estimateSpeechUnits, estimateSpeechUnitDurations } from '../../src/offscreen/audio_export_estimate.ts';
+import { estimateSpeechUnitDurations, estimateSpeechUnits } from '../../src/offscreen/audio_export_estimate.ts';
 
 test('estimates whitespace languages at 160 words per minute', () => {
 	assert.deepEqual(estimateSpeechUnits([{ text: 'one two three four', pauseAfterMs: null, wordMap: [] }], 'en', 1), {
@@ -38,7 +38,10 @@ test('adds each unit pause and returns durations that sum to the total', () => {
 	const durations = estimateSpeechUnitDurations(units, 'en', 1);
 	const estimate = estimateSpeechUnits(units, 'en', 1);
 	assert.deepEqual(durations, [0.85, 0.95]);
-	assert.equal(durations.reduce((total, duration) => total + duration, 0), estimate.durationSeconds);
+	assert.equal(
+		durations.reduce((total, duration) => total + duration, 0),
+		estimate.durationSeconds,
+	);
 });
 
 test('returns a finite empty estimate and does not cap long content', () => {

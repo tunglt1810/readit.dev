@@ -434,10 +434,15 @@ export function installWordHighlight(): void {
 		}
 	});
 
-	void chrome.storage.local.get(STORAGE_KEYS.WORD_HIGHLIGHT_ENABLED).then((stored) => {
-		enabled = isWordHighlightEnabled(stored[STORAGE_KEYS.WORD_HIGHLIGHT_ENABLED]);
-		if (enabled && visualUpdatesAllowed && currentWordIndex >= 0) {
-			applyHighlightForIndex(currentWordIndex);
+	void (async () => {
+		try {
+			const stored = await chrome.storage.local.get(STORAGE_KEYS.WORD_HIGHLIGHT_ENABLED);
+			enabled = isWordHighlightEnabled(stored[STORAGE_KEYS.WORD_HIGHLIGHT_ENABLED]);
+			if (enabled && visualUpdatesAllowed && currentWordIndex >= 0) {
+				applyHighlightForIndex(currentWordIndex);
+			}
+		} catch {
+			// Storage is unreadable; highlighting stays at its default.
 		}
-	});
+	})();
 }

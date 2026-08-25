@@ -41,7 +41,12 @@ test('keeps FIFO order within each lane', async () => {
 		return value;
 	});
 
-	await Promise.all([arbiter.foreground('foreground-1'), arbiter.foreground('foreground-2'), arbiter.background('background-1'), arbiter.background('background-2')]);
+	await Promise.all([
+		arbiter.foreground('foreground-1'),
+		arbiter.foreground('foreground-2'),
+		arbiter.background('background-1'),
+		arbiter.background('background-2'),
+	]);
 	assert.deepEqual(order, ['foreground-1', 'foreground-2', 'background-1', 'background-2']);
 });
 

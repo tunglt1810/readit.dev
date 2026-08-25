@@ -10,10 +10,6 @@ const validManifest = {
 	host_permissions: ['file://*/*', 'https://huggingface.co/*'],
 	web_accessible_resources: [
 		{
-			resources: ['ort-wasm-simd-threaded.asyncify.wasm', 'ort-wasm-simd-threaded.asyncify.mjs'],
-			matches: ['<all_urls>'],
-		},
-		{
 			resources: ['assets/icon32.png'],
 			matches: ['http://*/*', 'https://*/*'],
 		},
@@ -76,7 +72,7 @@ test('rejects missing or broadly exposed selection button artwork', () => {
 		() =>
 			validateFreeManifest({
 				...validManifest,
-				web_accessible_resources: validManifest.web_accessible_resources.slice(0, 1),
+				web_accessible_resources: [],
 			}),
 		/assets\/icon32\.png/,
 	);
@@ -84,10 +80,7 @@ test('rejects missing or broadly exposed selection button artwork', () => {
 		() =>
 			validateFreeManifest({
 				...validManifest,
-				web_accessible_resources: [
-					validManifest.web_accessible_resources[0],
-					{ resources: ['assets/icon32.png'], matches: ['<all_urls>'] },
-				],
+				web_accessible_resources: [{ resources: ['assets/icon32.png'], matches: ['<all_urls>'] }],
 			}),
 		/http:\/\/\*\/\*/,
 	);

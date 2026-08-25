@@ -5,7 +5,6 @@
 
 export const HIGHLIGHT_INTERVAL_MS = 50;
 export const GAP_THRESHOLD_MS = 50;
-export const METRICS_STORAGE_KEY = 'readit_playback_metrics';
 
 export interface GapSample {
 	unitIndex: number;

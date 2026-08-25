@@ -6,17 +6,21 @@ test('setupContextMenus clears existing menus before creating sub-menus', async 
 	const calls: { action: string; args?: unknown[] }[] = [];
 
 	// Mock chrome.contextMenus API
-	(globalThis as unknown as { chrome: unknown }).chrome = {
-		contextMenus: {
-			removeAll: (callback?: () => void) => {
-				calls.push({ action: 'removeAll' });
-				if (callback) callback();
-			},
-			create: (properties: Record<string, unknown>) => {
-				calls.push({ action: 'create', args: [properties] });
+	Object.defineProperty(globalThis, 'chrome', {
+		configurable: true,
+		writable: true,
+		value: {
+			contextMenus: {
+				removeAll: (callback?: () => void) => {
+					calls.push({ action: 'removeAll' });
+					if (callback) callback();
+				},
+				create: (properties: Record<string, unknown>) => {
+					calls.push({ action: 'create', args: [properties] });
+				},
 			},
 		},
-	};
+	});
 
 	await setupContextMenus();
 

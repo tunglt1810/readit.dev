@@ -17,8 +17,7 @@ body {
 	min-height: 100vh;
 	background:
 		radial-gradient(ellipse 90% 55% at 75% -5%, rgba(0, 135, 113, 0.28) 0%, transparent 65%),
-		radial-gradient(ellipse 60% 40% at 10% 100%, rgba(4, 97, 163, 0.10) 0%, transparent 60%),
-		var(--bg-app);
+		radial-gradient(ellipse 60% 40% at 10% 100%, rgba(4, 97, 163, 0.1) 0%, transparent 60%), var(--bg-app);
 	color: var(--color-text-primary);
 	font-family: var(--font-sans);
 	position: relative;
@@ -26,11 +25,10 @@ body {
 
 /* Decorative sphere — fixed so it doesn't scroll away */
 body::before {
-	content: '';
+	content: "";
 	position: fixed;
 	inset: 0;
-	background:
-		radial-gradient(circle at 85% 0%, rgba(0, 135, 113, 0.18) 0%, rgba(4, 97, 163, 0.06) 40%, transparent 70%);
+	background: radial-gradient(circle at 85% 0%, rgba(0, 135, 113, 0.18) 0%, rgba(4, 97, 163, 0.06) 40%, transparent 70%);
 	z-index: 0;
 	pointer-events: none;
 }
@@ -51,7 +49,6 @@ body::before {
 	max-width: 660px;
 	padding: 0 var(--space-5);
 }
-
 
 /* Header */
 .settings-header {
@@ -240,7 +237,9 @@ body::before {
 	padding: 2px 4px;
 	font-size: 0.9rem;
 	border-radius: 3px;
-	transition: color 0.15s, background 0.15s;
+	transition:
+		color 0.15s,
+		background 0.15s;
 	flex-shrink: 0;
 }
 

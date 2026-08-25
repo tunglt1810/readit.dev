@@ -75,8 +75,10 @@ test('uses the literal controller speed as the only duration divisor for Vietnam
 
 test('appends period to parenthesized and quoted text ending without sentence punctuation and includes tail space in tag', () => {
 	const processor = new UnicodeProcessor({});
-	assert.equal(processor.preprocessText('Huyền Lê (Theo AFP, CNN)', 'vi'), 'Huyền Lê (Theo AFP, CNN)'.normalize('NFKD').replace(/.*/, (s) => `<vi>${s}. </vi>`));
+	assert.equal(
+		processor.preprocessText('Huyền Lê (Theo AFP, CNN)', 'vi'),
+		'Huyền Lê (Theo AFP, CNN)'.normalize('NFKD').replace(/.*/, (s) => `<vi>${s}. </vi>`),
+	);
 	assert.equal(processor.preprocessText('Data & Analytics Enablement', 'en'), '<en>Data and Analytics Enablement. </en>');
 	assert.equal(processor.preprocessText('Data & Analytics Enablement', 'vi'), '<vi>Data và Analytics Enablement. </vi>');
 });
-

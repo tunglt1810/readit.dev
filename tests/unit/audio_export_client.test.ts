@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+	type AudioExportRuntimeLike,
 	discardAudioExport,
 	requestAudioExportState,
 	sendAudioExportCommand,
 	subscribeAudioExportState,
-	type AudioExportRuntimeLike,
 } from '../../src/shared/audio_export_client.ts';
 
 function createRuntime(responses: unknown[], runtimeErrors: Array<string | undefined> = []) {
@@ -60,7 +60,10 @@ test('rejects missing, malformed, and lastError export responses', async () => {
 
 test('preserves audio export command failures and turns missing responses into transport failures', async () => {
 	assert.deepEqual(
-		await sendAudioExportCommand({ action: 'START_AUDIO_EXPORT', payload: { jobId: 'job-1' } }, createRuntime([{ success: false, error: 'encoding-failed' }]).runtime),
+		await sendAudioExportCommand(
+			{ action: 'START_AUDIO_EXPORT', payload: { jobId: 'job-1' } },
+			createRuntime([{ success: false, error: 'encoding-failed' }]).runtime,
+		),
 		{ success: false, error: 'encoding-failed' },
 	);
 	assert.deepEqual(await discardAudioExport('job-1', createRuntime([null]).runtime), {
@@ -72,7 +75,10 @@ test('preserves audio export command failures and turns missing responses into t
 
 test('turns malformed non-null audio export command responses into transport failures', async () => {
 	for (const response of [{}, { success: 'true' }, { success: true, error: 1 }, { success: true, unexpected: true }]) {
-		const result = await sendAudioExportCommand({ action: 'START_AUDIO_EXPORT', payload: { jobId: 'job-1' } }, createRuntime([response]).runtime);
+		const result = await sendAudioExportCommand(
+			{ action: 'START_AUDIO_EXPORT', payload: { jobId: 'job-1' } },
+			createRuntime([response]).runtime,
+		);
 		assert.equal(result.success, false);
 		assert.equal(result.transportError, true);
 		assert.match(result.error ?? '', /malformed audio export command response/);

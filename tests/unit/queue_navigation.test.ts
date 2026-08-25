@@ -34,10 +34,13 @@ test('selectNavigationTab keeps an active tab when its URL is hidden by browser 
 
 test('selectNavigationTab honors a preferred tab when its URL is hidden by browser permissions', () => {
 	assert.equal(
-		selectNavigationTab([
-			{ id: 21, url: undefined, active: false },
-			{ id: 22, url: 'https://example.com/active', active: true },
-		], 21),
+		selectNavigationTab(
+			[
+				{ id: 21, url: undefined, active: false },
+				{ id: 22, url: 'https://example.com/active', active: true },
+			],
+			21,
+		),
 		21,
 	);
 });
