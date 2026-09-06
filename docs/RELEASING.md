@@ -49,6 +49,10 @@ Firefox installation before treating a release as fully Firefox-verified.
 
 ## Free Side Panel release checklist
 
+- [ ] Confirm the live endpoint still answers before publishing:
+  `bunx playwright test --project chromium-live`. A failure here usually means
+  Microsoft raised the `Sec-MS-GEC-Version` floor; see
+  [ADR 0003](./adr/0003-edge-tts-provider.md).
 - [ ] Verify `dist/chrome/src/sidepanel/sidepanel.html` exists in the built extension
   and release archive, and confirm the Chrome Web Store privacy disclosure
   states that user-pasted text stays local and is not persisted.
@@ -121,7 +125,15 @@ speed behavior, and background/popup message contracts unchanged.
 
 Before submitting a Free release, verify the [Free MVP Design Specification](./specs/2026-07-12-free-mvp-design.md),
 the [Privacy Policy](./privacy-policy.md), and the Chrome Web Store privacy
-disclosures describe the same local-processing and no-telemetry behavior.
+disclosures describe the same behavior.
+
+Since online voices became the default, that behavior is no longer
+local-only. Before publishing this version, update the Chrome Web Store data
+disclosure to declare that **website content is transmitted to a third-party
+speech service** for synthesis when online voices are selected, and that the
+reader can switch to on-device voices to stop it. The no-telemetry and
+no-selling declarations are unchanged. See
+[ADR 0003](./adr/0003-edge-tts-provider.md).
 
 Create a GitHub Environment named `chrome-web-store` and add these environment
 secrets:

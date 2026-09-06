@@ -97,3 +97,27 @@ export async function preparePlaybackUnits(
 		return attachPlainWordMap(consolidate(errorFallback, lang));
 	}
 }
+
+/**
+ * Re-plan everything after `fromIndex` for the Supertonic path.
+ *
+ * The edge path plans without the normalizer, so its units carry raw "20/05" rather than the
+ * spoken expansion. Handing those to Supertonic mid-article would read the rest of the page wrong,
+ * which is exactly what the Vietnamese normalization work exists to prevent. The unit still
+ * playing is left alone — it is already a decoded buffer.
+ */
+export async function replanRemainingUnits(
+	units: readonly SpeechUnit[],
+	fromIndex: number,
+	lang: string,
+	normalizer: VietnameseTextNormalizer | null,
+	pronunciationRules: readonly PronunciationRule[] = [],
+): Promise<SpeechUnit[]> {
+	const remaining = units.slice(fromIndex + 1);
+	if (remaining.length === 0) {
+		return [];
+	}
+	// Each surviving unit becomes its own paragraph: the original paragraph boundaries are gone by
+	// now, and a unit is never smaller than a sentence, so this cannot merge across one.
+	return await preparePlaybackUnits(remaining.map((unit) => unit.text).join('\n\n'), lang, normalizer, pronunciationRules);
+}

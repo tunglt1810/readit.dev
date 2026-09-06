@@ -1,6 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const AUDIO_LIFECYCLE_TEST = /resumes the same session after Chrome audio idle cutoff/;
+// Talks to Microsoft's real endpoint, so it would flake in CI on their availability rather than on
+// this extension. Run it by hand to confirm the endpoint still answers.
+const LIVE_ENDPOINT_TEST = /reaches the live edge-tts endpoint/;
 
 /**
  * Playwright configuration for Chrome Extension E2E testing
@@ -47,7 +50,17 @@ export default defineConfig({
 	projects: [
 		{
 			name: 'chromium',
-			grepInvert: AUDIO_LIFECYCLE_TEST,
+			grepInvert: [AUDIO_LIFECYCLE_TEST, LIVE_ENDPOINT_TEST],
+			use: {
+				...devices['Desktop Chrome'],
+			},
+		},
+		{
+			// Not a dependency of anything: run it explicitly with
+			//   bunx playwright test --project chromium-live
+			name: 'chromium-live',
+			testMatch: /edge-tts-live\.spec\.ts/,
+			grep: LIVE_ENDPOINT_TEST,
 			use: {
 				...devices['Desktop Chrome'],
 			},

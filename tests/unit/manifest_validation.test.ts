@@ -5,9 +5,18 @@ import { validateFreeManifest } from '../../scripts/validate-free-manifest.mjs';
 const validManifest = {
 	manifest_version: 3,
 	minimum_chrome_version: '127',
-	permissions: ['activeTab', 'scripting', 'storage', 'offscreen', 'contextMenus', 'sidePanel', 'tabs'],
+	permissions: [
+		'activeTab',
+		'scripting',
+		'storage',
+		'offscreen',
+		'contextMenus',
+		'sidePanel',
+		'tabs',
+		'declarativeNetRequestWithHostAccess',
+	],
 	side_panel: { default_path: 'src/sidepanel/sidepanel.html' },
-	host_permissions: ['file://*/*', 'https://huggingface.co/*'],
+	host_permissions: ['file://*/*', 'https://huggingface.co/*', 'https://speech.platform.bing.com/*', 'wss://speech.platform.bing.com/*'],
 	web_accessible_resources: [
 		{
 			resources: ['assets/icon32.png'],

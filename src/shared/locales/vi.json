@@ -53,7 +53,7 @@
 	"readingThisTab": "Đang đọc ở tab này",
 	"pastedText": "Văn bản đã dán",
 	"manualSession": "Phiên đọc văn bản",
-	"privacyDisclosure": "Nội dung được xử lý trên thiết bị, không gửi lên server.",
+	"privacyDisclosure": "Giọng trực tuyến gửi nội dung đang đọc tới Microsoft. Chuyển sang giọng trên máy để giữ mọi thứ cục bộ.",
 	"learnMore": "Tìm hiểu thêm",
 	"buyMeCoffee": "Ủng hộ tôi một ly cà phê",
 	"feedback": "Phản hồi",
@@ -159,18 +159,6 @@
 	"queueErrorNavigationFailed": "Không thể điều hướng đến trang.",
 	"mediaSessionSelectedText": "Đoạn văn bản đã chọn",
 	"mediaSessionManualText": "Văn bản tự nhập",
-	"voiceStyles": {
-		"M1": "Nam 1 (Trầm)",
-		"M2": "Nam 2 (Ấm)",
-		"M3": "Nam 3 (Hùng)",
-		"M4": "Nam 4 (Trẻ)",
-		"M5": "Nam 5 (Dịu)",
-		"F1": "Nữ 1 (Nhẹ)",
-		"F2": "Nữ 2 (Trong)",
-		"F3": "Nữ 3 (Cao)",
-		"F4": "Nữ 4 (Mềm)",
-		"F5": "Nữ 5 (Vang)"
-	},
 	"translationFailed": "Không dịch được trang này.",
 	"translationTargetLabel": "Dịch sang",
 	"translationSkipped": "Không có gì để dịch — đang đọc bản gốc.",
@@ -182,5 +170,22 @@
 	"translationNoticeBody": "Dịch trên máy bằng Chrome Translator. Dịch máy có thể sai nghĩa.",
 	"translationViewOriginal": "Xem bản gốc",
 	"translationHideOriginal": "Ẩn bản gốc",
-	"translationOriginalHeading": "Văn bản gốc"
+	"translationOriginalHeading": "Văn bản gốc",
+	"ttsProvider": "Nguồn giọng",
+	"ttsProviderEdge": "☁️ Giọng trực tuyến (Microsoft)",
+	"ttsProviderSupertonic": "💻 Giọng trên máy",
+	"ttsProviderEdgeNote": "Giọng trực tuyến gửi nội dung đang đọc tới Microsoft.",
+	"ttsProviderFallbackNotice": "Không dùng được giọng trực tuyến — đã chuyển sang giọng trên máy.",
+	"voiceStyles": {
+		"M1": "Nam 1 (Trầm)",
+		"M2": "Nam 2 (Ấm)",
+		"M3": "Nam 3 (Hùng)",
+		"M4": "Nam 4 (Trẻ)",
+		"M5": "Nam 5 (Dịu)",
+		"F1": "Nữ 1 (Nhẹ)",
+		"F2": "Nữ 2 (Trong)",
+		"F3": "Nữ 3 (Cao)",
+		"F4": "Nữ 4 (Mềm)",
+		"F5": "Nữ 5 (Vang)"
+	}
 }

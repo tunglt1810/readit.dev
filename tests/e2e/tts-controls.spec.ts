@@ -70,7 +70,7 @@ test.describe('Kịch bản 3: Điều khiển TTS (TTS Controls)', () => {
 		expect(speedActions).toContain('CHANGE_SPEED');
 
 		// 2. Tương tác với dropdown chọn giọng đọc (voice styles)
-		const voiceSelect = page.locator('.form-select');
+		const voiceSelect = page.getByLabel('Giọng đọc', { exact: true });
 		await expect(voiceSelect).toBeVisible();
 
 		// Thay đổi giọng đọc sang F1 (Nữ 1 - Nhẹ)
@@ -464,7 +464,8 @@ test.describe('Popup Layout & Localization - English (en-US)', () => {
 
 		// Settings Card labels
 		await expect(page.getByRole('button', { name: 'Theme' })).toBeVisible();
-		await expect(page.getByRole('combobox', { name: 'Voice' })).toBeVisible();
+		await expect(page.getByRole('combobox', { name: 'Voice engine' })).toBeVisible();
+		await expect(page.getByRole('combobox', { name: 'Voice', exact: true })).toBeVisible();
 		await expect(page.getByRole('slider', { name: 'Speed' })).toBeVisible();
 		await expect(page.getByRole('checkbox', { name: 'Selection button' })).toBeVisible();
 		await expect(page.getByRole('checkbox', { name: 'Word highlight' })).toBeVisible();
@@ -512,7 +513,8 @@ test.describe('Popup Layout & Localization - Vietnamese (vi-VN)', () => {
 
 		// Settings Card labels
 		await expect(page.getByRole('button', { name: 'Giao diện' })).toBeVisible();
-		await expect(page.getByRole('combobox', { name: 'Giọng đọc' })).toBeVisible();
+		await expect(page.getByRole('combobox', { name: 'Nguồn giọng' })).toBeVisible();
+		await expect(page.getByRole('combobox', { name: 'Giọng đọc', exact: true })).toBeVisible();
 		await expect(page.getByRole('slider', { name: 'Tốc độ' })).toBeVisible();
 		await expect(page.getByRole('checkbox', { name: 'Nút chọn nhanh' })).toBeVisible();
 		await expect(page.getByRole('checkbox', { name: 'Tô sáng từ' })).toBeVisible();

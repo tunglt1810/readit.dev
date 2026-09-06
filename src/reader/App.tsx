@@ -121,16 +121,28 @@ export default function App() {
 		let isMounted = true;
 		let latestSessionSpeed: number | undefined;
 		let latestSessionLanguage: string | undefined;
-		chrome.storage.local.get([STORAGE_KEYS.ACTIVE_VOICE, STORAGE_KEYS.SPEED, STORAGE_KEYS.HAS_CUSTOM_SPEED_OVERRIDE], (result) => {
-			const storedVoice = result[STORAGE_KEYS.ACTIVE_VOICE];
-			const storedSpeed = result[STORAGE_KEYS.SPEED];
-			if (typeof storedVoice === 'string') {
-				setActiveVoice(storedVoice);
-			}
-			if (latestSessionSpeed === undefined) {
-				setSpeed(resolveStoredPlaybackSpeed(latestSessionLanguage, storedSpeed, result[STORAGE_KEYS.HAS_CUSTOM_SPEED_OVERRIDE]));
-			}
-		});
+		chrome.storage.local.get(
+			[STORAGE_KEYS.ACTIVE_VOICE, STORAGE_KEYS.SPEED, STORAGE_KEYS.HAS_CUSTOM_SPEED_OVERRIDE, STORAGE_KEYS.TTS_PROVIDER],
+			(result) => {
+				const storedVoice = result[STORAGE_KEYS.ACTIVE_VOICE];
+				const storedSpeed = result[STORAGE_KEYS.SPEED];
+				// The speed default is calibrated per engine, so it is read in the same pass.
+				const storedProvider = result[STORAGE_KEYS.TTS_PROVIDER] === 'supertonic' ? 'supertonic' : 'edge';
+				if (typeof storedVoice === 'string') {
+					setActiveVoice(storedVoice);
+				}
+				if (latestSessionSpeed === undefined) {
+					setSpeed(
+						resolveStoredPlaybackSpeed(
+							latestSessionLanguage,
+							storedSpeed,
+							result[STORAGE_KEYS.HAS_CUSTOM_SPEED_OVERRIDE],
+							storedProvider,
+						),
+					);
+				}
+			},
+		);
 
 		const port = chrome.runtime.connect({ name: DOCUMENT_READER_PORT_NAME });
 		portRef.current = port;

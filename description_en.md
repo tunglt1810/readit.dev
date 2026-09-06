@@ -1,4 +1,4 @@
-readit.dev is a free Chrome extension that reads web pages, documents, and books aloud with natural on-device Text-to-Speech (TTS). Powered 100% locally by the Supertonic AI engine (WebGPU/WASM), it delivers instant playback and total privacy.
+readit.dev is a free Chrome extension that reads web pages, documents, and books aloud with natural Text-to-Speech (TTS). It ships with online neural voices in 74 languages and an on-device engine that keeps working when you are offline — you choose which one speaks.
 
 ✨ Key Features:
 
@@ -7,7 +7,8 @@ readit.dev is a free Chrome extension that reads web pages, documents, and books
 • Word Online & Google Docs, no sign-in: Open a document on OneDrive, SharePoint, or Google Docs and press Play. The extension reads it through the session your browser tab already has — no extra account connection and no extra permission.
 • Translate & Read: Hear a foreign-language page in Vietnamese, English, or Chinese. Chrome's built-in translator runs on your device, and the translation opens in the Document Reader with word highlighting and the original text one click away. (Shown only on Chrome versions that include built-in translation.)
 • Word-level Highlighting: Real-time synchronized highlighting with smart centering and smooth auto-scrolling.
-• 100% On-device & Private: Runs completely in your browser via WebGPU/WASM. Your text is never sent to any server.
+• Two voice engines, your choice: Online neural voices in 74 languages by default, or on-device voices that run entirely in your browser via WebGPU/WASM and send nothing anywhere. Switch in Settings at any time.
+• Keeps reading offline: If the online voices become unavailable mid-article, the on-device engine takes over automatically and the reading continues.
 • MP3 Audio Export: Export any reading session directly to an MP3 file for offline listening on any device.
 • Custom Pronunciation Dictionary: Define custom pronunciation rules for acronyms, technical terms, or foreign words.
 • Playlist Queue: Line up multiple articles or documents for uninterrupted continuous playback.

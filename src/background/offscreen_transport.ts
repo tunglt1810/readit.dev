@@ -7,6 +7,7 @@ import {
 	OFFSCREEN_AUDIO_EXPORT_TARGET,
 } from '../shared/audio_export.ts';
 import { type DocumentReaderSnapshot, isDocumentReaderSnapshot } from '../shared/document_reader.ts';
+import type { TtsProviderId } from '../shared/edge_voice_preferences.ts';
 import { isPanelInstanceId } from '../shared/manual_playback.ts';
 import type { MediaSessionMetadata } from '../shared/media_session_metadata.ts';
 import type {
@@ -38,6 +39,9 @@ export type OffscreenPlayPayload = {
 	// Read from storage in the background before dispatch: `chrome.storage` is not
 	// reliably available inside the Chrome offscreen document (see storage.ts).
 	pronunciationRules: PronunciationRule[];
+	ttsProvider: TtsProviderId;
+	/** The voice for this content's language, or null when edge-tts cannot speak it. */
+	edgeVoiceId: string | null;
 };
 
 export type ManualCheckpointMetadata = {

@@ -53,7 +53,7 @@
 	"readingThisTab": "Reading in this tab",
 	"pastedText": "Pasted text",
 	"manualSession": "Manual text session",
-	"privacyDisclosure": "Content is processed on your device and is not sent to a server.",
+	"privacyDisclosure": "Online voices send the text being read to Microsoft. Switch to on-device voices to keep it local.",
 	"learnMore": "Learn more",
 	"buyMeCoffee": "Buy me a coffee",
 	"feedback": "Feedback",
@@ -159,18 +159,6 @@
 	"queueErrorNavigationFailed": "Unable to navigate to page.",
 	"mediaSessionSelectedText": "Selected text",
 	"mediaSessionManualText": "Manual text",
-	"voiceStyles": {
-		"M1": "Male 1 (Deep)",
-		"M2": "Male 2 (Warm)",
-		"M3": "Male 3 (Strong)",
-		"M4": "Male 4 (Young)",
-		"M5": "Male 5 (Gentle)",
-		"F1": "Female 1 (Light)",
-		"F2": "Female 2 (Clear)",
-		"F3": "Female 3 (High)",
-		"F4": "Female 4 (Soft)",
-		"F5": "Female 5 (Resonant)"
-	},
 	"translationFailed": "Could not translate this page.",
 	"translationTargetLabel": "Translate into",
 	"translationSkipped": "Nothing to translate here — reading the original.",
@@ -182,5 +170,22 @@
 	"translationNoticeBody": "Translated on your device by Chrome Translator. Machine translation can get the meaning wrong.",
 	"translationViewOriginal": "View original",
 	"translationHideOriginal": "Hide original",
-	"translationOriginalHeading": "Original text"
+	"translationOriginalHeading": "Original text",
+	"ttsProvider": "Voice engine",
+	"ttsProviderEdge": "☁️ Online voices (Microsoft)",
+	"ttsProviderSupertonic": "💻 On-device voices",
+	"ttsProviderEdgeNote": "Online voices send the text being read to Microsoft.",
+	"ttsProviderFallbackNotice": "Online voices are unavailable — switched to on-device voices.",
+	"voiceStyles": {
+		"M1": "Male 1 (Deep)",
+		"M2": "Male 2 (Warm)",
+		"M3": "Male 3 (Strong)",
+		"M4": "Male 4 (Young)",
+		"M5": "Male 5 (Gentle)",
+		"F1": "Female 1 (Light)",
+		"F2": "Female 2 (Clear)",
+		"F3": "Female 3 (High)",
+		"F4": "Female 4 (Soft)",
+		"F5": "Female 5 (Resonant)"
+	}
 }

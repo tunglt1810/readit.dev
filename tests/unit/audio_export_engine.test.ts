@@ -3,7 +3,6 @@ import test from 'node:test';
 import type { AudioExportEncoder } from '../../src/offscreen/audio_export_encoder.ts';
 import { AudioExportEngine } from '../../src/offscreen/audio_export_engine.ts';
 import type { SpeechUnit } from '../../src/offscreen/speech_unit.ts';
-import type { Style } from '../../src/offscreen/supertonic_helper.ts';
 import type { AudioExportEstimate } from '../../src/shared/types.ts';
 
 interface Deferred<T> {
@@ -39,7 +38,6 @@ function prepared(jobId = 'job-1', playbackSessionId = 'session-old', units: Spe
 		units,
 		language: 'en',
 		voiceStyleId: 'voice-1',
-		style: {} as Style,
 		speed: 1,
 		estimate: { durationSeconds: 10, estimatedBytes: 120_000 } satisfies AudioExportEstimate,
 	};
@@ -63,7 +61,7 @@ class Runway {
 function createHarness(
 	options: {
 		runwayOpen?: boolean;
-		synthesize?: (input: { unit: SpeechUnit }) => Promise<AudioBuffer>;
+		synthesize?: (input: { unit: SpeechUnit }) => Promise<{ buffer: AudioBuffer; wordTimings: null }>;
 		encoder?: Partial<AudioExportEncoder>;
 		handle?: FileSystemFileHandle | null;
 		download?: (blob: Blob, filename: string) => Promise<void>;
@@ -118,7 +116,7 @@ function createHarness(
 		synthesize: async (input) => {
 			synthesizedTexts.push(input.unit.text);
 			now += 1_000;
-			return options.synthesize?.(input) ?? ({ duration: 1 } as AudioBuffer);
+			return options.synthesize?.(input) ?? { buffer: { duration: 1 } as AudioBuffer, wordTimings: null };
 		},
 		canStartBackgroundSynthesis: () => runway.open,
 		waitForRunway: () => runway.wait(),
@@ -215,7 +213,7 @@ test('releases each synthesized buffer before the next unit', async () => {
 		synthesize: async () => {
 			liveBuffers++;
 			maximumLiveBuffers = Math.max(maximumLiveBuffers, liveBuffers);
-			return { duration: 1 } as AudioBuffer;
+			return { buffer: { duration: 1 } as AudioBuffer, wordTimings: null };
 		},
 		encoder: {
 			async add() {
@@ -275,13 +273,13 @@ test('cancels before synthesis and removes the handle and snapshot', async () =>
 });
 
 test('cancels after inference settles', async () => {
-	const synthesis = deferred<AudioBuffer>();
+	const synthesis = deferred<{ buffer: AudioBuffer; wordTimings: null }>();
 	const { engine, deleted } = createHarness({ synthesize: async () => synthesis.promise });
 	engine.prepare(prepared());
 	const start = engine.start('job-1');
 	await Promise.resolve();
 	await engine.cancel('job-1');
-	synthesis.resolve({ duration: 1 } as AudioBuffer);
+	synthesis.resolve({ buffer: { duration: 1 } as AudioBuffer, wordTimings: null });
 	await assert.rejects(start, /cancelled/i);
 	assert.deepEqual(deleted, ['job-1']);
 });

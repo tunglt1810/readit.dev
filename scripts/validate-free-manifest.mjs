@@ -4,9 +4,25 @@ import { fileURLToPath } from 'node:url';
 
 // `tabs` exposes the active tab's address and title without granting access to page contents,
 // which is what names a page whose content script is missing (see src/background/page_info.ts).
-const CHROME_PERMISSIONS = ['activeTab', 'contextMenus', 'offscreen', 'scripting', 'sidePanel', 'storage', 'tabs'];
+// declarativeNetRequestWithHostAccess forges the Edg/ User-Agent the edge-tts handshake requires;
+// see docs/adr/0003-edge-tts-provider.md.
+const CHROME_PERMISSIONS = [
+	'activeTab',
+	'contextMenus',
+	'declarativeNetRequestWithHostAccess',
+	'offscreen',
+	'scripting',
+	'sidePanel',
+	'storage',
+	'tabs',
+];
 const FIREFOX_PERMISSIONS = ['activeTab', 'contextMenus', 'downloads', 'scripting', 'storage', 'tabs'];
-const CHROME_HOST_PERMISSIONS = ['file://*/*', 'https://huggingface.co/*'];
+const CHROME_HOST_PERMISSIONS = [
+	'file://*/*',
+	'https://huggingface.co/*',
+	'https://speech.platform.bing.com/*',
+	'wss://speech.platform.bing.com/*',
+];
 const FIREFOX_HOST_PERMISSIONS = ['https://huggingface.co/*'];
 const REQUIRED_MINIMUM_CHROME_VERSION = '127';
 const REQUIRED_SIDE_PANEL_PATH = 'src/sidepanel/sidepanel.html';

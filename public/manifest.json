@@ -11,8 +11,31 @@
 		"48": "assets/icon48.png",
 		"128": "assets/icon128.png"
 	},
-	"permissions": ["activeTab", "scripting", "storage", "offscreen", "contextMenus", "sidePanel", "tabs"],
-	"host_permissions": ["https://huggingface.co/*", "file://*/*"],
+	"permissions": [
+		"activeTab",
+		"scripting",
+		"storage",
+		"offscreen",
+		"contextMenus",
+		"sidePanel",
+		"tabs",
+		"declarativeNetRequestWithHostAccess"
+	],
+	"host_permissions": [
+		"https://huggingface.co/*",
+		"file://*/*",
+		"https://speech.platform.bing.com/*",
+		"wss://speech.platform.bing.com/*"
+	],
+	"declarative_net_request": {
+		"rule_resources": [
+			{
+				"id": "edge_tts_ua",
+				"enabled": true,
+				"path": "rules.json"
+			}
+		]
+	},
 	"content_security_policy": {
 		"extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
 	},

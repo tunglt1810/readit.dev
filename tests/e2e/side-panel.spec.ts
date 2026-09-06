@@ -466,7 +466,7 @@ test('live-syncs voice and speed when the popup updates shared preferences', asy
 		await installExtensionUiRuntimeMock(popup, { session: null, currentTabId: 7 });
 		await openPopup(popup);
 
-		await popup.locator('.form-select').selectOption('F2');
+		await popup.getByLabel('Giọng đọc', { exact: true }).selectOption('F2');
 		await popup.locator('.form-slider').fill('1.3');
 
 		await expect(sidePanelVoice).toHaveValue('F2');

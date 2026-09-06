@@ -8,13 +8,14 @@ import { PlaybackIcon } from '../shared/components/PlaybackIcon';
 import { SettingsCard } from '../shared/components/SettingsCard';
 import { TranslateReadButton } from '../shared/components/TranslateReadButton';
 import { BUY_ME_A_COFFEE_URL, DEFAULT_SPEED, PRIVACY_POLICY_URL, resolveStoredPlaybackSpeed, STORAGE_KEYS } from '../shared/constants';
-import { getLocalizedPlaybackError, t } from '../shared/i18n';
-import { requestPlaybackState, sendPlaybackCommand, subscribePlaybackState } from '../shared/playback_client';
+import { resolveEdgeVoice, type TtsProviderId, writeEdgeVoice, writeTtsProvider } from '../shared/edge_voice_preferences';
+import { getLocalizedPlaybackError, t, uiLang } from '../shared/i18n';
+import { requestPlaybackState, sendPlaybackCommand, sendRuntimeRequest, subscribePlaybackState } from '../shared/playback_client';
 import { resolvePlaybackStatus } from '../shared/playback_status';
 import { isSelectionButtonEnabled } from '../shared/selection_button';
 import { isTranslationAvailable } from '../shared/translation_availability';
 import { readTranslationTarget, writeTranslationTarget } from '../shared/translation_target_store';
-import type { PlaybackSessionSnapshot, PlaybackStatus, ThemeName, TranslationTarget } from '../shared/types';
+import type { PageInfoResponse, PlaybackSessionSnapshot, PlaybackStatus, ThemeName, TranslationTarget } from '../shared/types';
 import { getDisplayVersion } from '../shared/version';
 import { isWordHighlightEnabled } from '../shared/word_highlight';
 import { buildFeedbackUrl } from './feedback';
@@ -24,12 +25,15 @@ export default function App() {
 	// Playback state is owned by the background coordinator.
 	const [session, setSession] = useState<PlaybackSessionSnapshot | null>(null);
 	const [currentTabId, setCurrentTabId] = useState<number | undefined>();
+	const [pageInfo, setPageInfo] = useState<PageInfoResponse>({ available: false });
 	const [sidePanelWindowId, setSidePanelWindowId] = useState<number | undefined>();
 	const [activeTheme, setActiveTheme] = useState<ThemeName>('default');
 	const primaryButtonRef = useRef<HTMLButtonElement>(null);
 
 	// Settings States
 	const [activeVoice, setActiveVoice] = useState('M1');
+	const [ttsProvider, setTtsProvider] = useState<TtsProviderId>('edge');
+	const [edgeVoices, setEdgeVoices] = useState<Record<string, string>>({});
 	const [speed, setSpeed] = useState(DEFAULT_SPEED);
 	const [selectionButtonEnabled, setSelectionButtonEnabled] = useState(true);
 	const [wordHighlightEnabled, setWordHighlightEnabled] = useState(true);
@@ -58,6 +62,24 @@ export default function App() {
 	const displayVersion = getDisplayVersion();
 	const feedbackUrl = buildFeedbackUrl(displayVersion);
 
+	// The active tab's declared language, used only to decide which voices to offer.
+	useEffect(() => {
+		let disposed = false;
+		void (async () => {
+			try {
+				const info = await sendRuntimeRequest<PageInfoResponse>({ action: 'GET_CURRENT_PAGE_INFO' });
+				if (!disposed) {
+					setPageInfo(info);
+				}
+			} catch {
+				// No reachable service worker; the voice list falls back to the UI language.
+			}
+		})();
+		return () => {
+			disposed = true;
+		};
+	}, []);
+
 	// Fetch initial states on mount
 	useEffect(() => {
 		let isMounted = true;
@@ -72,8 +94,13 @@ export default function App() {
 				STORAGE_KEYS.THEME,
 				STORAGE_KEYS.SELECTION_BUTTON_ENABLED,
 				STORAGE_KEYS.WORD_HIGHLIGHT_ENABLED,
+				STORAGE_KEYS.TTS_PROVIDER,
+				STORAGE_KEYS.EDGE_VOICES,
 			],
 			(result: { [key: string]: unknown }) => {
+				const storedProvider = result[STORAGE_KEYS.TTS_PROVIDER] === 'supertonic' ? 'supertonic' : 'edge';
+				setTtsProvider(storedProvider);
+				setEdgeVoices((result[STORAGE_KEYS.EDGE_VOICES] as Record<string, string> | undefined) ?? {});
 				if (!hasUserChangedVoiceRef.current && result[STORAGE_KEYS.ACTIVE_VOICE]) {
 					setActiveVoice(result[STORAGE_KEYS.ACTIVE_VOICE] as string);
 				}
@@ -83,6 +110,7 @@ export default function App() {
 							latestSessionLanguage,
 							result[STORAGE_KEYS.SPEED],
 							result[STORAGE_KEYS.HAS_CUSTOM_SPEED_OVERRIDE],
+							storedProvider,
 						),
 					);
 				}
@@ -343,6 +371,26 @@ export default function App() {
 		}
 	};
 
+	// The voice list follows the content being read, so a Vietnamese article offers Vietnamese
+	// voices; with nothing playing there is no content language to follow, so the UI language is
+	// the least surprising stand-in.
+	// The voice list follows what is about to be read. With nothing playing there is no session
+	// language, and the browser's UI language says nothing about the page — falling back to it put
+	// English voices in front of a Vietnamese article. The page's own declared language is the
+	// closest thing available; playback itself re-resolves the voice from the detected language.
+	const contentLang = session?.lang ?? (pageInfo.available ? pageInfo.lang : null) ?? uiLang;
+	const edgeVoice = resolveEdgeVoice(edgeVoices, contentLang);
+
+	const handleTtsProviderChange = (provider: TtsProviderId) => {
+		setTtsProvider(provider);
+		void writeTtsProvider(provider);
+	};
+
+	const handleEdgeVoiceChange = (voice: string) => {
+		setEdgeVoices((previous) => ({ ...previous, [contentLang.split('-')[0].toLowerCase()]: voice }));
+		void writeEdgeVoice(contentLang, voice);
+	};
+
 	// Handler: Change Voice
 	const handleVoiceChange = (val: string) => {
 		hasUserChangedVoiceRef.current = true;
@@ -593,12 +641,17 @@ export default function App() {
 				collapsible={false}
 				theme={activeTheme}
 				activeVoice={activeVoice}
+				ttsProvider={ttsProvider}
+				contentLang={contentLang}
+				edgeVoice={edgeVoice}
 				speed={speed}
 				selectionButtonEnabled={selectionButtonEnabled}
 				wordHighlightEnabled={wordHighlightEnabled}
 				playbackStatus={status}
 				translationTarget={translationTarget}
 				onVoiceChange={handleVoiceChange}
+				onTtsProviderChange={handleTtsProviderChange}
+				onEdgeVoiceChange={handleEdgeVoiceChange}
 				onSpeedChange={handleSpeedChange}
 				onSelectionButtonEnabledChange={handleSelectionButtonEnabledChange}
 				onWordHighlightEnabledChange={handleWordHighlightEnabledChange}

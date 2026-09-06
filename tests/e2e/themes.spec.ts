@@ -274,9 +274,9 @@ test.describe('English popup locale', () => {
 		await expect(page.locator('.status-text')).toHaveText('Preparing voice...');
 		await expect(page.locator('.session-context')).toContainText('Paragraph 1/5 • 20%');
 		await expect(page.locator('.session-context')).toContainText('Reading in this tab');
-		await expect(page.getByRole('note')).toContainText('Content is processed on your device and is not sent to a server.');
+		await expect(page.getByRole('note')).toContainText('Online voices send the text being read to Microsoft.');
 		await expect(page.getByRole('link', { name: 'Learn more' })).toBeVisible();
-		await expect(page.locator('.form-select option').first()).toHaveText('♂️ Male 1 (Deep)');
+		await expect(page.getByLabel('Voice', { exact: true }).locator('option').first()).toHaveText('♂️ Male 1 (Deep)');
 		await expect(page.getByRole('link', { name: 'Buy me a coffee' })).toBeVisible();
 		await expect(page.getByRole('link', { name: 'Feedback' })).toBeVisible();
 		await expect(page.getByRole('link', { name: 'Privacy Policy' })).toBeVisible();

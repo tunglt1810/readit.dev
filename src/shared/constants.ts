@@ -69,6 +69,8 @@ export const STORAGE_KEYS = {
 	TRANSLATION_TARGET: 'readit_translation_target',
 	EPUB_PROGRESS: 'readit_epub_progress',
 	PLAYBACK_METRICS: 'readit_playback_metrics',
+	TTS_PROVIDER: 'readit_tts_provider',
+	EDGE_VOICES: 'readit_edge_voices',
 };
 
 export const PRIVACY_POLICY_URL = 'https://tunglt1810.github.io/readit.dev/privacy-policy/';
@@ -76,12 +78,22 @@ export const PRIVACY_POLICY_URL = 'https://tunglt1810.github.io/readit.dev/priva
 export const BUY_ME_A_COFFEE_URL = 'https://buymeacoffee.com/bbeeezzzzz';
 
 export const DEFAULT_FALLBACK_SPEED = 1.1;
+/** Compensates for how slowly Supertonic reads Vietnamese; it is not a preference about Vietnamese. */
 export const DEFAULT_VIETNAMESE_SPEED = 1.5;
+/**
+ * Microsoft's vi-VN voices need no such compensation. Measured against vi-VN-HoaiMyNeural: rate
+ * +0% reads 4.3 words/s, while the +50% that 1.5 translates to reaches 6.4 words/s — far past
+ * comfortable listening.
+ */
+export const DEFAULT_EDGE_VIETNAMESE_SPEED = 1;
 export const DEFAULT_SPEED = DEFAULT_FALLBACK_SPEED;
 
-export function getDefaultSpeedForLanguage(lang?: string): number {
+/** Which engine the speed is meant for; the same number means different things to each. */
+export type SpeechEngineId = 'edge' | 'supertonic';
+
+export function getDefaultSpeedForLanguage(lang: string | undefined, engine: SpeechEngineId): number {
 	if (typeof lang === 'string' && /^vi(?:$|[-_])/iu.test(lang.trim())) {
-		return DEFAULT_VIETNAMESE_SPEED;
+		return engine === 'edge' ? DEFAULT_EDGE_VIETNAMESE_SPEED : DEFAULT_VIETNAMESE_SPEED;
 	}
 	return DEFAULT_FALLBACK_SPEED;
 }
@@ -96,9 +108,14 @@ export function isLegacySpeedPreference(storedSpeed: unknown, hasCustomSpeedOver
 }
 
 /** Resolve an explicit or migrated speed preference, otherwise use the content language default. */
-export function resolveStoredPlaybackSpeed(lang: string | undefined, storedSpeed: unknown, hasCustomSpeedOverride: unknown): number {
+export function resolveStoredPlaybackSpeed(
+	lang: string | undefined,
+	storedSpeed: unknown,
+	hasCustomSpeedOverride: unknown,
+	engine: SpeechEngineId,
+): number {
 	if ((hasCustomSpeedOverride === true || isLegacySpeedPreference(storedSpeed, hasCustomSpeedOverride)) && isFiniteSpeed(storedSpeed)) {
 		return storedSpeed;
 	}
-	return getDefaultSpeedForLanguage(lang);
+	return getDefaultSpeedForLanguage(lang, engine);
 }

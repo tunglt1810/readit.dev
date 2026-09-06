@@ -65,7 +65,12 @@ async function getCoordinatorCommands(page: Page): Promise<string[]> {
 	return page.evaluate(() =>
 		(window as any).sentMessages
 			.map((message: { action: string }) => message.action)
-			.filter((action: string) => action !== 'GET_PLAYBACK_STATE' && action !== 'GET_AUDIO_EXPORT_STATE'),
+			// Read-only queries are not coordinator commands; the popup asks for page info to decide
+			// which voices to offer.
+			.filter(
+				(action: string) =>
+					action !== 'GET_PLAYBACK_STATE' && action !== 'GET_AUDIO_EXPORT_STATE' && action !== 'GET_CURRENT_PAGE_INFO',
+			),
 	);
 }
 

@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { PreparedAudioExport } from '../../src/offscreen/audio_export_engine.ts';
 import { ExportSnapshotDiagnostics } from '../../src/offscreen/export_snapshot_diagnostics.ts';
-import type { Style } from '../../src/offscreen/supertonic_helper.ts';
 
 function preparedExport(): PreparedAudioExport {
 	return {
@@ -12,7 +11,6 @@ function preparedExport(): PreparedAudioExport {
 		units: [{ text: 'Prepared text must not be exposed.', pauseAfterMs: 0 }],
 		language: 'en',
 		voiceStyleId: 'voice-1',
-		style: { privateStyleData: true } as unknown as Style,
 		speed: 1.5,
 		estimate: { durationSeconds: 12, estimatedBytes: 148_096 },
 	};

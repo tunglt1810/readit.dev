@@ -228,9 +228,24 @@ export async function opfsFileSizeOrNull(page: Page, filename: string): Promise<
 	}, filename);
 }
 
+/** Pins the voice engine before any page in this context starts a reading session. */
+export async function seedTtsProvider(context: BrowserContext, provider: 'edge' | 'supertonic'): Promise<void> {
+	let worker = context.serviceWorkers().find((candidate) => candidate.url().startsWith('chrome-extension://'));
+	if (!worker) {
+		worker = await context.waitForEvent('serviceworker', {
+			predicate: (candidate) => candidate.url().startsWith('chrome-extension://'),
+		});
+	}
+	await worker.evaluate(
+		(value) => new Promise<void>((resolve) => chrome.storage.local.set({ readit_tts_provider: value }, () => resolve())),
+		provider,
+	);
+}
+
 export const test = base.extend<{
 	context: BrowserContext;
 	extensionId: string;
+	ttsProvider: 'edge' | 'supertonic';
 	openPopup: (page: Page) => Promise<void>;
 	openSidePanel: (page: Page) => Promise<void>;
 	getRecordedRequests: () => readonly RecordedRequest[];
@@ -334,6 +349,19 @@ export const test = base.extend<{
 	extensionId: async ({ context }, use) => {
 		await use(await resolveExtensionId(context));
 	},
+	/**
+	 * These specs exercise the on-device engine against the seeded model cache, so they pin the
+	 * provider rather than inheriting the shipped default of online voices — otherwise every
+	 * playback assertion would depend on Microsoft's availability. The live endpoint has its own
+	 * spec (edge-tts-live.spec.ts) in the chromium-live project.
+	 */
+	ttsProvider: [
+		async ({ context }, use) => {
+			await seedTtsProvider(context, 'supertonic');
+			await use('supertonic');
+		},
+		{ auto: true },
+	],
 	openPopup: async ({ extensionId }, use) => {
 		// Hàm helper để mở trang Popup UI của extension
 		const openPopup = async (page: Page) => {

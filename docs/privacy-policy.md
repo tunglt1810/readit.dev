@@ -6,13 +6,15 @@ permalink: /privacy-policy/
 
 # Privacy Policy
 
-**Last updated: July 19, 2026**
+**Last updated: September 6, 2026**
 
-readit.dev is a Chrome extension that turns the readable content of the current web page into audio. This policy explains what the extension accesses, what is processed locally, and what information is sent to our services.
+readit.dev is a Chrome extension that turns the readable content of the current web page into audio. This policy explains what the extension accesses, what is processed on your device, what is sent to Microsoft's speech service, and what is sent to our services.
 
 ## Summary
 
-- Page content and text you explicitly paste into the Side Panel are processed locally on your device for text-to-speech.
+- The extension offers two voice engines. **Online voices** are the default and send the text being read to Microsoft's speech service to be
+  synthesized. **On-device voices** run entirely in your browser and send nothing.
+- You can switch to on-device voices at any time in Settings, under **Voice engine**. That choice is remembered.
 - Article and pasted text are not uploaded to the readit.dev backend, telemetry, or crash-reporting services by the current version of the
   extension.
 - We do not sell user data or use page or pasted content for advertising, profiling, analytics, or crash reporting.
@@ -24,8 +26,8 @@ when the extension was activated or updated, the extension may inject that
 content script into the active tab after you click **Read current page**. The
 extension extracts article content only after that user action.
 
-You may also explicitly paste or type text into the Side Panel and ask the extension to read it. That text is passed only between extension
-contexts in the browser for local playback and is not persisted.
+You may also explicitly paste or type text into the Side Panel and ask the extension to read it. That text is passed between extension contexts
+in the browser and is not persisted. With online voices selected, it is also sent to Microsoft to be synthesized, exactly as article text is.
 
 For that feature, the extension may temporarily access:
 
@@ -61,6 +63,10 @@ Do not use the extension on pages containing information that you are not permit
 
 The extension may contact these services:
 
+- **Microsoft**, when online voices are selected, to synthesize speech. The extension sends the text being read, one passage at a time, together
+  with the chosen voice and reading speed, and receives audio back. No account, sign-in, or identifier of yours accompanies those requests, and
+  we neither operate nor control that service; Microsoft's handling of the data is governed by its own terms. Selecting on-device voices in
+  Settings stops these requests entirely;
 - **Hugging Face**, to download the Supertonic model files the first time they are needed. Article and pasted content are not included in those
   model requests. The model is subject to the [OpenRAIL-M license](https://huggingface.co/Supertone/supertonic-3/blob/main/LICENSE);
 - **GitHub Pages**, to display this privacy policy when you follow the policy link.
@@ -69,12 +75,13 @@ The extension may also open the Buy Me a Coffee website when you explicitly sele
 
 ## Information we do not collect
 
-The current version does not intentionally collect or transmit article text, pasted text, audio generated from that text, browsing history,
+Beyond the speech synthesis described above, the current version does not intentionally collect or transmit article text, pasted text, audio
+generated from that text, browsing history,
 passwords, form submissions, email addresses, license keys, device identifiers, advertising profiles, analytics events, or crash reports.
 
 ## Security and retention
 
-Article and pasted text are processed locally and are not retained by a readit.dev backend. Pasted-text drafts are discarded when their Side
+Article and pasted text are not retained by a readit.dev backend. Pasted-text drafts are discarded when their Side
 Panel document closes or reloads. During a same-document web-reading
 preemption, a decoded manual-audio checkpoint may exist only in live extension
 memory until it is resumed, discarded, or the Side Panel closes or reloads.

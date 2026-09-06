@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react';
 
 import { VOICE_STYLES } from '../constants';
+import type { TtsProviderId } from '../edge_voice_preferences';
+import { voicesForLanguage } from '../edge_voices';
 import { t, translationTargetLabel, uiLang, VOICE_STYLE_TRANSLATIONS } from '../i18n';
 import { isTranslationTarget, TRANSLATION_TARGETS } from '../translation_policy';
 import type { PlaybackStatus, ThemeName, TranslationTarget } from '../types';
@@ -9,6 +11,10 @@ import { PlaybackIcon } from './PlaybackIcon';
 export interface SettingsCardProps {
 	theme: ThemeName;
 	activeVoice: string;
+	ttsProvider: TtsProviderId;
+	/** Language of the content being read; decides which edge voices are on offer. */
+	contentLang: string;
+	edgeVoice: string | null;
 	speed: number;
 	selectionButtonEnabled: boolean;
 	wordHighlightEnabled: boolean;
@@ -18,6 +24,8 @@ export interface SettingsCardProps {
 	collapsible?: boolean;
 	defaultExpanded?: boolean;
 	onVoiceChange: (voice: string) => void;
+	onTtsProviderChange: (provider: TtsProviderId) => void;
+	onEdgeVoiceChange: (voice: string) => void;
 	onSpeedChange: (speed: number) => void;
 	onSelectionButtonEnabledChange: (enabled: boolean) => void;
 	onWordHighlightEnabledChange: (enabled: boolean) => void;
@@ -28,6 +36,9 @@ export interface SettingsCardProps {
 export function SettingsCard({
 	theme,
 	activeVoice,
+	ttsProvider,
+	contentLang,
+	edgeVoice,
 	speed,
 	selectionButtonEnabled,
 	wordHighlightEnabled,
@@ -36,6 +47,8 @@ export function SettingsCard({
 	collapsible = false,
 	defaultExpanded = true,
 	onVoiceChange,
+	onTtsProviderChange,
+	onEdgeVoiceChange,
 	onSpeedChange,
 	onSelectionButtonEnabledChange,
 	onWordHighlightEnabledChange,
@@ -51,7 +64,11 @@ export function SettingsCard({
 
 	const activeThemeName = theme === 'winamp' ? t('themeWinampName') : theme === 'wmp12' ? t('themeWmp12Name') : t('themeDefaultName');
 
+	// Switching engine or voice mid-read is not supported: the units in flight were planned for
+	// whichever engine started the session.
 	const isVoiceDisabled = playbackStatus === 'playing' || playbackStatus === 'loading';
+	const edgeVoices = voicesForLanguage(contentLang);
+	const usingEdge = ttsProvider === 'edge' && edgeVoices.length > 0;
 
 	return (
 		<section className={`settings-card ${collapsible ? 'collapsible' : ''}`} data-theme={theme}>
@@ -85,21 +102,53 @@ export function SettingsCard({
 			{(!collapsible || expanded) && (
 				<div className="settings-card-body">
 					<label className="selection-button-setting voice-setting">
-						<span className="setting-label">{t('selectVoice')}</span>
+						<span className="setting-label">{t('ttsProvider')}</span>
 						<select
 							className="form-select inline-select"
-							aria-label={t('selectVoice')}
-							value={activeVoice}
-							onChange={(e) => onVoiceChange(e.target.value)}
+							aria-label={t('ttsProvider')}
+							value={ttsProvider}
+							onChange={(e) => onTtsProviderChange(e.target.value as TtsProviderId)}
 							disabled={isVoiceDisabled}
 						>
-							{VOICE_STYLES.map((voiceStyle) => (
-								<option key={voiceStyle.id} value={voiceStyle.id}>
-									{voiceStyle.gender === 'male' ? '♂️' : '♀️'}{' '}
-									{VOICE_STYLE_TRANSLATIONS[uiLang][voiceStyle.id as keyof typeof VOICE_STYLE_TRANSLATIONS.en]}
-								</option>
-							))}
+							<option value="edge">{t('ttsProviderEdge')}</option>
+							<option value="supertonic">{t('ttsProviderSupertonic')}</option>
 						</select>
+					</label>
+
+					{ttsProvider === 'edge' && <p className="setting-note">{t('ttsProviderEdgeNote')}</p>}
+
+					<label className="selection-button-setting voice-setting">
+						<span className="setting-label">{t('selectVoice')}</span>
+						{usingEdge ? (
+							<select
+								className="form-select inline-select"
+								aria-label={t('selectVoice')}
+								value={edgeVoice ?? ''}
+								onChange={(e) => onEdgeVoiceChange(e.target.value)}
+								disabled={isVoiceDisabled}
+							>
+								{edgeVoices.map((voice) => (
+									<option key={voice.shortName} value={voice.shortName}>
+										{voice.gender === 'male' ? '♂️' : '♀️'} {voice.friendlyName}
+									</option>
+								))}
+							</select>
+						) : (
+							<select
+								className="form-select inline-select"
+								aria-label={t('selectVoice')}
+								value={activeVoice}
+								onChange={(e) => onVoiceChange(e.target.value)}
+								disabled={isVoiceDisabled}
+							>
+								{VOICE_STYLES.map((voiceStyle) => (
+									<option key={voiceStyle.id} value={voiceStyle.id}>
+										{voiceStyle.gender === 'male' ? '♂️' : '♀️'}{' '}
+										{VOICE_STYLE_TRANSLATIONS[uiLang][voiceStyle.id as keyof typeof VOICE_STYLE_TRANSLATIONS.en]}
+									</option>
+								))}
+							</select>
+						)}
 					</label>
 
 					<label className="selection-button-setting speed-setting">

@@ -15,6 +15,7 @@ import {
 	WORD_ONLINE_DOWNLOAD_UNAVAILABLE,
 } from '../shared/constants';
 import { DOCUMENT_READER_PORT_NAME } from '../shared/document_reader.ts';
+import { readEdgeVoice, readTtsProvider } from '../shared/edge_voice_preferences.ts';
 import { t } from '../shared/i18n.ts';
 import { isManualPlaybackControlMessage } from '../shared/manual_playback';
 import { buildMediaSessionMetadata } from '../shared/media_session_metadata.ts';
@@ -934,7 +935,13 @@ async function startPlayback(initialInput: StartPlaybackInput): Promise<CommandR
 		}
 	}
 	const voiceStyleId = typeof storedVoiceStyleId === 'string' ? storedVoiceStyleId : DEFAULT_VOICE_STYLE_ID;
-	const speed = resolveStoredPlaybackSpeed(input.content.lang, storedSpeed, speedOverrideMarker);
+	// Read here, not in the offscreen document: `chrome.storage` is not reliably available there
+	// (see storage.ts). The engine is resolved before the speed because the two are calibrated
+	// together — 1.5 means "compensate for Supertonic", not "read Vietnamese fast".
+	const preferredProvider = await readTtsProvider();
+	const edgeVoiceId = preferredProvider === 'edge' ? await readEdgeVoice(input.content.lang) : null;
+	const ttsProvider = preferredProvider === 'edge' && edgeVoiceId ? 'edge' : 'supertonic';
+	const speed = resolveStoredPlaybackSpeed(input.content.lang, storedSpeed, speedOverrideMarker, ttsProvider);
 	const sessionInput = {
 		sessionId: crypto.randomUUID(),
 		lang: input.content.lang,
@@ -993,6 +1000,8 @@ async function startPlayback(initialInput: StartPlaybackInput): Promise<CommandR
 		speed,
 		readableSurface: input.readableSurface,
 		pronunciationRules,
+		ttsProvider,
+		edgeVoiceId,
 		...(input.source.kind === 'tab' ? { contentScope: input.contentScope } : {}),
 		...(input.contentScope === 'manual' ? { panelInstanceId: input.source.panelInstanceId } : {}),
 		...(input.readableSurface === 'document-reader'

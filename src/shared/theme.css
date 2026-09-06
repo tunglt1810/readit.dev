@@ -700,6 +700,14 @@
 	text-overflow: ellipsis;
 }
 
+.setting-note {
+	margin: 0 0 4px;
+	color: var(--color-text-secondary, var(--color-text-primary));
+	font-size: 11px;
+	line-height: 1.4;
+	opacity: 0.75;
+}
+
 .selection-button-toggle {
 	appearance: none;
 	-webkit-appearance: none;

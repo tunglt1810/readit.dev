@@ -6,6 +6,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Online neural voices from Microsoft's Edge read-aloud service, covering 74 languages including Vietnamese, as the default voice engine. The
+  voice list follows the language of the content being read, and each language remembers its own voice.
+- Per-word highlight timings reported by the online engine, replacing the syllable-weight estimate for passages it can align.
+
+### Changed
+
+- Text is sent to Microsoft to be synthesized when online voices are selected. Choose **On-device voices** under **Voice engine** in Settings to
+  keep synthesis entirely local, as in previous releases. See the privacy policy for details.
+- On-device Supertonic synthesis now takes over automatically if the online engine fails mid-article, re-planning the remaining Vietnamese text
+  so numbers and dates are still spoken correctly.
+- The Firefox build continues to use on-device Supertonic exclusively.
+
 ## [1.2.4] - 2026-08-26
 
 ### Fixed

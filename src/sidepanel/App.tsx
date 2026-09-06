@@ -9,7 +9,8 @@ import { PlaybackIcon } from '../shared/components/PlaybackIcon.tsx';
 import { SettingsCard } from '../shared/components/SettingsCard.tsx';
 import { TranslateReadButton } from '../shared/components/TranslateReadButton.tsx';
 import { BUY_ME_A_COFFEE_URL, DEFAULT_SPEED, resolveStoredPlaybackSpeed, STORAGE_KEYS } from '../shared/constants.ts';
-import { getLocalizedPlaybackError, t } from '../shared/i18n.ts';
+import { resolveEdgeVoice, type TtsProviderId, writeEdgeVoice, writeTtsProvider } from '../shared/edge_voice_preferences.ts';
+import { getLocalizedPlaybackError, t, uiLang } from '../shared/i18n.ts';
 import { isLocalBookSession } from '../shared/local_book_session.ts';
 import { normalizeManualText } from '../shared/manual_text.ts';
 import { requestPlaybackState, sendPlaybackCommand, sendRuntimeRequest, subscribePlaybackState } from '../shared/playback_client.ts';
@@ -77,6 +78,8 @@ export default function App() {
 	const [urlInput, setUrlInput] = useState('');
 	const [queueError, setQueueError] = useState('');
 	const [activeVoice, setActiveVoice] = useState('M1');
+	const [ttsProvider, setTtsProvider] = useState<TtsProviderId>('edge');
+	const [edgeVoices, setEdgeVoices] = useState<Record<string, string>>({});
 	const [speed, setSpeed] = useState(DEFAULT_SPEED);
 	const [theme, setTheme] = useState<ThemeName>('default');
 	const [selectionButtonEnabled, setSelectionButtonEnabled] = useState(true);
@@ -169,17 +172,29 @@ export default function App() {
 				STORAGE_KEYS.THEME,
 				STORAGE_KEYS.SELECTION_BUTTON_ENABLED,
 				STORAGE_KEYS.WORD_HIGHLIGHT_ENABLED,
+				STORAGE_KEYS.TTS_PROVIDER,
+				STORAGE_KEYS.EDGE_VOICES,
 			],
 			(result) => {
 				const storedVoice = result[STORAGE_KEYS.ACTIVE_VOICE];
 				const storedSpeed = result[STORAGE_KEYS.SPEED];
 				const storedTheme = result[STORAGE_KEYS.THEME];
+				// Read in the same pass as the speed: the two are calibrated together, so resolving
+				// the speed before the provider lands would briefly show the wrong number.
+				const storedProvider = result[STORAGE_KEYS.TTS_PROVIDER] === 'supertonic' ? 'supertonic' : 'edge';
+				setTtsProvider(storedProvider);
+				setEdgeVoices((result[STORAGE_KEYS.EDGE_VOICES] as Record<string, string> | undefined) ?? {});
 				if (typeof storedVoice === 'string') {
 					setActiveVoice(storedVoice);
 				}
 				if (latestSessionSpeed === undefined) {
 					setSpeed(
-						resolveStoredPlaybackSpeed(latestSessionLanguage, storedSpeed, result[STORAGE_KEYS.HAS_CUSTOM_SPEED_OVERRIDE]),
+						resolveStoredPlaybackSpeed(
+							latestSessionLanguage,
+							storedSpeed,
+							result[STORAGE_KEYS.HAS_CUSTOM_SPEED_OVERRIDE],
+							storedProvider,
+						),
 					);
 				}
 				if (storedTheme === 'default' || storedTheme === 'winamp' || storedTheme === 'wmp12') {
@@ -572,6 +587,26 @@ export default function App() {
 		}
 	};
 
+	// The voice list follows the content being read, so a Vietnamese article offers Vietnamese
+	// voices; with nothing playing there is no content language to follow, so the UI language is
+	// the least surprising stand-in.
+	// The voice list follows what is about to be read. With nothing playing there is no session
+	// language, and the browser's UI language says nothing about the page — falling back to it put
+	// English voices in front of a Vietnamese article. The page's own declared language is the
+	// closest thing available; playback itself re-resolves the voice from the detected language.
+	const contentLang = session?.lang ?? (pageInfo.available ? pageInfo.lang : null) ?? uiLang;
+	const edgeVoice = resolveEdgeVoice(edgeVoices, contentLang);
+
+	const handleTtsProviderChange = (provider: TtsProviderId) => {
+		setTtsProvider(provider);
+		void writeTtsProvider(provider);
+	};
+
+	const handleEdgeVoiceChange = (voice: string) => {
+		setEdgeVoices((previous) => ({ ...previous, [contentLang.split('-')[0].toLowerCase()]: voice }));
+		void writeEdgeVoice(contentLang, voice);
+	};
+
 	const handleVoiceChange = (voice: string) => {
 		setActiveVoice(voice);
 		void chrome.storage.local.set({ [STORAGE_KEYS.ACTIVE_VOICE]: voice });
@@ -957,12 +992,17 @@ export default function App() {
 				defaultExpanded={false}
 				theme={theme}
 				activeVoice={activeVoice}
+				ttsProvider={ttsProvider}
+				contentLang={contentLang}
+				edgeVoice={edgeVoice}
 				speed={speed}
 				selectionButtonEnabled={selectionButtonEnabled}
 				wordHighlightEnabled={wordHighlightEnabled}
 				playbackStatus={session?.status ?? 'stopped'}
 				translationTarget={translationTarget}
 				onVoiceChange={handleVoiceChange}
+				onTtsProviderChange={handleTtsProviderChange}
+				onEdgeVoiceChange={handleEdgeVoiceChange}
 				onSpeedChange={handleSpeedChange}
 				onSelectionButtonEnabledChange={handleSelectionButtonEnabledChange}
 				onWordHighlightEnabledChange={handleWordHighlightEnabledChange}

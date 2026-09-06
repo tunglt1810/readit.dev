@@ -38,9 +38,16 @@ export default defineConfig({
 							manifest.background = {
 								scripts: ['background.js'],
 							};
+							// The edge-tts path is Chrome-only until a probe shows Firefox can rewrite a
+							// WebSocket handshake's User-Agent; the Firefox build reads with Supertonic.
+							delete manifest.declarative_net_request;
+							fs.rmSync(path.join(distPath, 'rules.json'), { force: true });
 							if (Array.isArray(manifest.permissions)) {
 								manifest.permissions = manifest.permissions.filter(
-									(permission: string) => permission !== 'sidePanel' && permission !== 'offscreen',
+									(permission: string) =>
+										permission !== 'sidePanel' &&
+										permission !== 'offscreen' &&
+										permission !== 'declarativeNetRequestWithHostAccess',
 								);
 								if (!manifest.permissions.includes('downloads')) {
 									manifest.permissions.push('downloads');
@@ -48,7 +55,7 @@ export default defineConfig({
 							}
 							if (Array.isArray(manifest.host_permissions)) {
 								manifest.host_permissions = manifest.host_permissions.filter(
-									(permission: string) => permission !== 'file://*/*',
+									(permission: string) => permission !== 'file://*/*' && !permission.includes('speech.platform.bing.com'),
 								);
 							}
 							if (manifest.side_panel) {
@@ -72,6 +79,8 @@ export default defineConfig({
 								gecko: {
 									id: 'readit-dev@readit.dev',
 									strict_min_version: '115.0',
+									// Still 'none': the Firefox build strips the edge-tts path above, so it
+									// synthesizes entirely on-device and transmits no page content.
 									data_collection_permissions: {
 										required: ['none'],
 									},

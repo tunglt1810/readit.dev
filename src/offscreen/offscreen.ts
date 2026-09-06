@@ -2,6 +2,8 @@ import { isAudioExportEstimate, isAudioExportOffscreenAction, unwrapAudioExportO
 import { deleteAudioExportHandle, takeAudioExportHandle } from '../shared/audio_export_handle_store.ts';
 import { MODEL_FILES, VOICE_STYLES } from '../shared/constants';
 import type { DocumentReaderSnapshot } from '../shared/document_reader.ts';
+import type { TtsProviderId } from '../shared/edge_voice_preferences.ts';
+import { t } from '../shared/i18n.ts';
 import { isPanelInstanceId } from '../shared/manual_playback';
 import type { MediaSessionMetadata } from '../shared/media_session_metadata.ts';
 import { buildReadableSurfaceInitMessage, buildReadableSurfaceWords } from '../shared/readable_surface.ts';
@@ -15,12 +17,15 @@ import type {
 	PronunciationRule,
 	ReadableSurfaceKind,
 } from '../shared/types';
-import { createSpeechAudioBuffer, synthesizeSpeechUnitSamples } from './audio';
+import { createSpeechAudioBuffer } from './audio';
 import { createAudioExportEncoder } from './audio_export_encoder.ts';
 import { AudioExportEngine } from './audio_export_engine.ts';
 import { estimateSpeechUnits } from './audio_export_estimate';
 import { canStartBackgroundSynthesis, type PlaybackRunway } from './audio_export_runway';
 import { emitAudioHostMessage, requestAudioHostMessage } from './audio_host_messages.ts';
+import { createEdgeProvider, EdgeUnsupportedLanguageError } from './edge/edge_provider.ts';
+import { EDGE_SYNTHESIS_ATTEMPTS, edgeRetryDelayMs, retryEdgeSynthesis } from './edge/edge_retry.ts';
+import { EdgeSocket, EdgeSocketError } from './edge/edge_socket.ts';
 import { EngineBoundaryDiagnostics } from './engine_boundary_diagnostics.ts';
 import { ExportPreparationDiagnostics } from './export_prepare_diagnostics.ts';
 import { ExportSnapshotDiagnostics } from './export_snapshot_diagnostics.ts';
@@ -28,9 +33,11 @@ import { captureManualCheckpoint, isCheckpointOwner, type ManualCheckpoint, resu
 import { createMediaSessionController } from './media_session';
 import { createPauseKeepalive } from './pause_keepalive';
 import { PlaybackMetricsRecorder, summarizePlaybackMetrics } from './playback_metrics';
-import { isVietnameseLanguage, preparePlaybackUnits, VietnameseTextNormalizer } from './playback_preparation';
+import { isVietnameseLanguage, preparePlaybackUnits, replanRemainingUnits, VietnameseTextNormalizer } from './playback_preparation';
+import type { SpeechProvider, SynthesizedPlayback, SynthesizedUnit } from './speech_provider.ts';
 import type { SpeechUnit } from './speech_unit';
 import { loadTextToSpeech, loadVoiceStyle, Style, TextToSpeech } from './supertonic_helper';
+import { createSupertonicProvider } from './supertonic_provider.ts';
 import { SynthesisArbiter } from './synthesis_arbiter';
 import { IndexedSynthesisCoordinator, type SynthesisKey } from './synthesis_coordinator';
 import { loadVietnameseNormalizerAssets } from './vietnamese/assets';
@@ -360,18 +367,167 @@ async function getVoiceStyle(styleId: string): Promise<Style> {
  */
 type SynthesisOwner = 'playback' | 'export';
 
+/** Which engine this reading session speaks with. A downgrade flips it for the rest of the session. */
+let sessionProviderId: 'edge' | 'supertonic' = 'edge';
+/**
+ * The voice the current session speaks with — an edge short name or a Supertonic style id.
+ * Session state rather than a parameter because a mid-article downgrade has to change it for units
+ * already queued behind closures that captured the previous value.
+ */
+let sessionVoiceId = '';
+let edgeSocket: EdgeSocket | null = null;
+
+const supertonicProvider = createSupertonicProvider({
+	engine: () => {
+		if (!ttsEngine) {
+			throw new Error('TTS Engine is not initialized');
+		}
+		return ttsEngine;
+	},
+	style: (voiceId) => getVoiceStyle(voiceId),
+});
+
+/**
+ * The socket has to be created from this document. Opened from the service worker, Chrome never
+ * applies the declarativeNetRequest User-Agent rewrite to the handshake (crbug 1285664) and
+ * Microsoft answers 403.
+ */
+function edgeProvider(): SpeechProvider {
+	edgeSocket ??= new EdgeSocket({
+		createSocket: (url) => new WebSocket(url),
+		now: () => Date.now(),
+		requestId: () => crypto.randomUUID().replaceAll('-', ''),
+	});
+	return createEdgeProvider({
+		socket: edgeSocket,
+		decode: async (audio) => {
+			if (!audioCtx) {
+				audioCtx = new (
+					window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+				)();
+			}
+			// decodeAudioData detaches the buffer it is given, so hand it a copy of the socket's bytes.
+			const decoded = await audioCtx.decodeAudioData(audio.slice().buffer as ArrayBuffer);
+			return { samples: decoded.getChannelData(0), sampleRate: decoded.sampleRate };
+		},
+	});
+}
+
+function activeProvider(): SpeechProvider {
+	return sessionProviderId === 'edge' ? edgeProvider() : supertonicProvider;
+}
+
+/** Kept so a mid-article downgrade can re-plan the tail the way the session would have. */
+let sessionNormalizer: VietnameseTextNormalizer | null = null;
+let sessionPronunciationRules: readonly PronunciationRule[] = [];
+
+/**
+ * Decide how this session speaks, and hand back the normalizer its text pipeline should use.
+ *
+ * The preference arrives on the play payload rather than being read here: `chrome.storage` is not
+ * reliably available inside the Chrome offscreen document (see shared/storage.ts and
+ * background/offscreen_transport.ts), and reading it here leaves the session stuck in `loading`.
+ *
+ * The normalizer is a step of the Supertonic flow: Microsoft's frontend expands numbers, dates and
+ * abbreviations itself, so running ours first would expand the same string twice. Returning null
+ * takes the plain planning branch in preparePlaybackUnits.
+ */
+function beginSessionProvider(
+	preferred: TtsProviderId,
+	edgeVoice: string | null,
+	normalizer: VietnameseTextNormalizer | null,
+): VietnameseTextNormalizer | null {
+	sessionNormalizer = normalizer;
+	sessionPronunciationRules = [];
+	if (preferred === 'edge' && edgeVoice) {
+		sessionProviderId = 'edge';
+		sessionVoiceId = edgeVoice;
+		return null;
+	}
+	// Either the reader chose on-device voices, or Microsoft has none for this language.
+	sessionProviderId = 'supertonic';
+	sessionVoiceId = currentVoiceStyleId;
+	return normalizer;
+}
+
+function isEdgeFailure(error: unknown): boolean {
+	return error instanceof EdgeSocketError || error instanceof EdgeUnsupportedLanguageError;
+}
+
+/**
+ * Move the rest of this session on-device.
+ *
+ * The units after the one playing were planned without the normalizer, so Supertonic would read
+ * their numbers and dates wrong. They are re-planned through the normalizer and swapped in; the
+ * unit currently playing is already a decoded buffer and is left to finish.
+ */
+async function downgradeToSupertonic(lang: string): Promise<void> {
+	sessionProviderId = 'supertonic';
+	sessionVoiceId = currentVoiceStyleId;
+	edgeSocket?.close();
+	edgeSocket = null;
+	synthesisCoordinator.clear();
+
+	if (sessionNormalizer && speechUnits.length > currentUnitIndex + 1) {
+		const replanned = await replanRemainingUnits(speechUnits, currentUnitIndex, lang, sessionNormalizer, sessionPronunciationRules);
+		if (replanned.length > 0) {
+			speechUnits = [...speechUnits.slice(0, currentUnitIndex + 1), ...replanned];
+		}
+	}
+	if (!ttsEngine) {
+		await initModels();
+	}
+	reportProgress(playbackStatus, { error: t('ttsProviderFallbackNotice') });
+}
+
+/**
+ * One retry, then downgrade for the rest of the session.
+ *
+ * Retrying per unit turns a flaky network into a silent gap before every sentence, which is worse
+ * than switching voice once and saying so.
+ */
+async function synthesizeWithFallback(input: SynthesisInput): Promise<SynthesizedPlayback> {
+	const speak = () => synthesizeUnit(input.unit, input.lang, input.speed, input.owner, input.probeId);
+	if (sessionProviderId !== 'edge') {
+		return await speak();
+	}
+	const unitIndex = input.unit.synthesisIndex ?? speechUnits.indexOf(input.unit);
+	try {
+		return await retryEdgeSynthesis(speak, {
+			attempts: EDGE_SYNTHESIS_ATTEMPTS,
+			isRetryable: isEdgeFailure,
+			onRetry: async (error, attempt) => {
+				// Recorded even when a later attempt succeeds: a downgrade that leaves no trace is
+				// indistinguishable from the engine simply sounding different.
+				playbackMetrics.recordSynthError(
+					unitIndex,
+					`edge attempt ${attempt}: ${error instanceof Error ? error.message : String(error)}`,
+				);
+				// The connection is spent either way; the next attempt opens a fresh one.
+				edgeSocket?.close();
+				edgeSocket = null;
+				await new Promise((resolve) => setTimeout(resolve, edgeRetryDelayMs(attempt)));
+			},
+		});
+	} catch (error) {
+		if (!isEdgeFailure(error)) {
+			throw error;
+		}
+		playbackMetrics.recordSynthError(unitIndex, `edge exhausted: ${error instanceof Error ? error.message : String(error)}`);
+		await downgradeToSupertonic(input.lang);
+		return await speak();
+	}
+}
+
 async function synthesizeUnit(
 	unit: SpeechUnit,
 	lang: string,
-	style: Style,
 	speed: number,
 	owner: SynthesisOwner,
 	probeId: string | null = currentExtensionSessionId,
-): Promise<AudioBuffer> {
-	if (!ttsEngine) {
-		throw new Error('TTS Engine is not initialized');
-	}
-	const engine = ttsEngine;
+): Promise<SynthesizedPlayback> {
+	const provider = activeProvider();
+	const voiceId = sessionVoiceId || currentVoiceStyleId;
 	const synthesisStartedAtMs = performance.now();
 	if (!audioCtx) {
 		audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
@@ -379,22 +535,14 @@ async function synthesizeUnit(
 	const inferStartedAtMs = performance.now();
 	const synthesisIndex = unit.synthesisIndex ?? speechUnits.indexOf(unit);
 	const unitIndex = synthesisIndex >= 0 ? synthesisIndex : null;
-	let wav: Float32Array;
+	let synthesized: SynthesizedUnit;
 	try {
-		wav = await synthesizeSpeechUnitSamples(
+		synthesized = await provider.synthesize({
 			unit,
 			lang,
+			voiceId,
 			speed,
-			async (text, requestedLang, steps, requestedSpeed, silenceDuration) => {
-				const result = await engine.call(text, requestedLang, style, steps, requestedSpeed, silenceDuration);
-				if (owner === 'export' && forceNextExportRawFailure) {
-					forceNextExportRawFailure = false;
-					return new Float32Array(128);
-				}
-				return result.wav;
-			},
-			{ unitIndex: unitIndex ?? undefined, unitText: unit.text },
-			(samples) =>
+			onRawEngineSamples: (samples) =>
 				engineBoundaryDiagnostics.record({
 					probeId,
 					unitIndex,
@@ -405,7 +553,7 @@ async function synthesizeUnit(
 					requestedSpeed: speed,
 					samples,
 				}),
-		);
+		});
 	} catch (error) {
 		if (owner === 'export') {
 			lastExportProbeFailure = {
@@ -415,11 +563,18 @@ async function synthesizeUnit(
 		}
 		throw error;
 	}
+	if (owner === 'export' && forceNextExportRawFailure) {
+		// Export probe hook: prove the unvoiced-audio guard still rejects a silent export unit.
+		forceNextExportRawFailure = false;
+		const failure = new VoicedAudioError('materially-silent', { unitIndex: unitIndex ?? undefined, unitText: unit.text });
+		lastExportProbeFailure = { name: failure.name, reason: failure.reason };
+		throw failure;
+	}
 	if (owner === 'playback') {
 		playbackMetrics.recordInferDuration(performance.now() - inferStartedAtMs);
 	}
 
-	const buffer = createSpeechAudioBuffer(audioCtx, wav, engine.sampleRate, unit.pauseAfterMs ?? 0);
+	const buffer = createSpeechAudioBuffer(audioCtx, synthesized.samples, synthesized.sampleRate, unit.pauseAfterMs ?? 0);
 	if (owner === 'playback') {
 		const synthesisMilliseconds = performance.now() - synthesisStartedAtMs;
 		playbackMetrics.recordSynthDuration(synthesisMilliseconds);
@@ -428,25 +583,23 @@ async function synthesizeUnit(
 			recentSynthesisMilliseconds.shift();
 		}
 	}
-	return buffer;
+	return { buffer, wordTimings: synthesized.wordTimings };
 }
 
 interface SynthesisInput {
 	unit: SpeechUnit;
 	lang: string;
-	style: Style;
 	speed: number;
 	owner: SynthesisOwner;
 	probeId?: string | null;
 }
 
-const synthesisArbiter = new SynthesisArbiter<SynthesisInput, AudioBuffer>(({ unit, lang, style, speed, owner, probeId }) =>
-	synthesizeUnit(unit, lang, style, speed, owner, probeId),
-);
+const synthesisArbiter = new SynthesisArbiter<SynthesisInput, SynthesizedPlayback>((input) => synthesizeWithFallback(input));
 
-const synthesisCoordinator = new IndexedSynthesisCoordinator<SynthesisInput, AudioBuffer>((input) => synthesisArbiter.foreground(input), {
-	onResolved: () => notifyExportRunway(),
-});
+const synthesisCoordinator = new IndexedSynthesisCoordinator<SynthesisInput, SynthesizedPlayback>(
+	(input) => synthesisArbiter.foreground(input),
+	{ onResolved: () => notifyExportRunway() },
+);
 
 function synthesisKey(session: number, unitIndex: number): SynthesisKey {
 	return { session, unitIndex, speedVersion };
@@ -473,7 +626,7 @@ function playbackRunway(): PlaybackRunway {
 	const nextUnitIndex = currentUnitIndex + 1;
 	const nextBuffer =
 		currentExtensionSessionId !== null && nextUnitIndex < speechUnits.length
-			? (synthesisCoordinator.peekResolved(synthesisKey(playbackSession, nextUnitIndex))?.duration ?? null)
+			? (synthesisCoordinator.peekResolved(synthesisKey(playbackSession, nextUnitIndex))?.buffer.duration ?? null)
 			: null;
 	return {
 		active: currentExtensionSessionId !== null,
@@ -495,8 +648,8 @@ const audioExportEngine = new AudioExportEngine({
 		return audioExportDownload(blob, filename);
 	},
 	canDownload: () => audioExportDownload !== null,
-	synthesize: ({ unit, language, style, speed, playbackSessionId }) =>
-		synthesisArbiter.background({ unit, lang: language, style, speed, owner: 'export', probeId: playbackSessionId }),
+	synthesize: ({ unit, language, speed, playbackSessionId }) =>
+		synthesisArbiter.background({ unit, lang: language, speed, owner: 'export', probeId: playbackSessionId }),
 	canStartBackgroundSynthesis: () => canStartBackgroundSynthesis(playbackRunway()),
 	waitForRunway: waitForExportRunway,
 	wakeRunway: notifyExportRunway,
@@ -506,7 +659,7 @@ const audioExportEngine = new AudioExportEngine({
 	now: () => performance.now(),
 });
 
-function prefetchUnit(unitIndex: number, lang: string, style: Style, session: number): void {
+function prefetchUnit(unitIndex: number, lang: string, session: number): void {
 	if (unitIndex >= speechUnits.length) {
 		return;
 	}
@@ -514,15 +667,14 @@ function prefetchUnit(unitIndex: number, lang: string, style: Style, session: nu
 	synthesisCoordinator.prefetch(key, {
 		unit: speechUnits[unitIndex],
 		lang,
-		style,
 		speed: currentSpeed,
 		owner: 'playback',
 		probeId: currentExtensionSessionId,
 	});
 }
 
-function prefetchNextUnit(lang: string, style: Style, session: number): void {
-	prefetchUnit(currentUnitIndex + 1, lang, style, session);
+function prefetchNextUnit(lang: string, session: number): void {
+	prefetchUnit(currentUnitIndex + 1, lang, session);
 }
 
 function stopCurrentSource() {
@@ -738,7 +890,14 @@ function reportMediaSessionPosition(offsetInUnitSec: number): void {
 /**
  * Play a synthesized AudioBuffer
  */
-function playAudioBuffer(buffer: AudioBuffer, lang: string, style: Style, session: number, unitIndex: number, offsetSec = 0) {
+function playAudioBuffer(
+	buffer: AudioBuffer,
+	lang: string,
+	session: number,
+	unitIndex: number,
+	offsetSec = 0,
+	providerWordTimings: WordTimingWindow[] | null = null,
+) {
 	// Split from one combined guard so a refusal names its cause: each of these silently drops
 	// a whole unit, which is heard as missing text.
 	if (!audioCtx) {
@@ -791,7 +950,7 @@ function playAudioBuffer(buffer: AudioBuffer, lang: string, style: Style, sessio
 		playedSecondsBeforeCurrentUnit += buffer.duration;
 		currentUnitIndex = unitIndex + 1;
 		if (currentUnitIndex < speechUnits.length) {
-			void playNextUnit(lang, style, session);
+			void playNextUnit(lang, session);
 		} else {
 			stopAudio({ completedNaturally: true });
 		}
@@ -799,7 +958,12 @@ function playAudioBuffer(buffer: AudioBuffer, lang: string, style: Style, sessio
 
 	const unit = speechUnits[unitIndex];
 	const spokenDurationSec = Math.max(buffer.duration - (unit?.pauseAfterMs ?? 0) / 1000, 0);
-	const windows = computeReadableSurfaceWordTimings(currentReadableSurface, unit?.wordMap ?? [], spokenDurationSec);
+	// Real timings only exist when the provider reported them and they reconciled with the word
+	// map; otherwise they are estimated from syllable weights as they always were.
+	const windows =
+		currentReadableSurface === 'none'
+			? []
+			: (providerWordTimings ?? computeReadableSurfaceWordTimings(currentReadableSurface, unit?.wordMap ?? [], spokenDurationSec));
 	const unitStartTime = audioCtx.currentTime;
 	source.start(0, sourceOffsetSec);
 	reportMediaSessionPosition(sourceOffsetSec);
@@ -810,7 +974,7 @@ function playAudioBuffer(buffer: AudioBuffer, lang: string, style: Style, sessio
 	flushPlaybackMetrics();
 }
 
-async function playNextUnit(lang: string, style: Style, session: number) {
+async function playNextUnit(lang: string, session: number) {
 	if (session !== playbackSession) {
 		return;
 	}
@@ -825,7 +989,6 @@ async function playNextUnit(lang: string, style: Style, session: number) {
 	const input: SynthesisInput = {
 		unit: speechUnits[unitIndex],
 		lang,
-		style,
 		speed: currentSpeed,
 		owner: 'playback',
 		probeId: currentExtensionSessionId,
@@ -834,10 +997,10 @@ async function playNextUnit(lang: string, style: Style, session: number) {
 	reportProgress('loading');
 
 	try {
-		const buffer = await synthesisCoordinator.get(key, input);
+		const playback = await synthesisCoordinator.get(key, input);
 		if (!isCurrentSynthesisKey(key)) {
 			if (key.session === playbackSession && key.unitIndex === currentUnitIndex && key.speedVersion !== speedVersion) {
-				void playNextUnit(lang, style, session);
+				void playNextUnit(lang, session);
 			}
 			return;
 		}
@@ -849,12 +1012,11 @@ async function playNextUnit(lang: string, style: Style, session: number) {
 		// one-unit look-ahead continues for all later units without changing speed or pause
 		// ownership.
 		if (unitIndex === 0 && speechUnits.length > 1) {
-			prefetchNextUnit(lang, style, session);
+			prefetchNextUnit(lang, session);
 			const successorKey = synthesisKey(session, 1);
 			const successorInput: SynthesisInput = {
 				unit: speechUnits[1],
 				lang,
-				style,
 				speed: currentSpeed,
 				owner: 'playback',
 				probeId: currentExtensionSessionId,
@@ -862,21 +1024,21 @@ async function playNextUnit(lang: string, style: Style, session: number) {
 			await synthesisCoordinator.get(successorKey, successorInput);
 			if (!isCurrentSynthesisKey(key)) {
 				if (key.session === playbackSession && key.unitIndex === currentUnitIndex && key.speedVersion !== speedVersion) {
-					void playNextUnit(lang, style, session);
+					void playNextUnit(lang, session);
 				}
 				return;
 			}
 			// Multi-boundary runs need one more synthesis request in flight before the first source starts.
 			// The regular one-unit look-ahead then keeps that request retained and advances the runway.
 			if (speechUnits.length > 3) {
-				prefetchUnit(2, lang, style, session);
+				prefetchUnit(2, lang, session);
 			}
 		}
-		playAudioBuffer(buffer, lang, style, session, unitIndex);
-		prefetchNextUnit(lang, style, session);
+		playAudioBuffer(playback.buffer, lang, session, unitIndex, 0, playback.wordTimings);
+		prefetchNextUnit(lang, session);
 	} catch (error) {
 		if (key.session === playbackSession && key.unitIndex === currentUnitIndex && key.speedVersion !== speedVersion) {
-			void playNextUnit(lang, style, session);
+			void playNextUnit(lang, session);
 			return;
 		}
 		playbackMetrics.recordSynthError(unitIndex, (error as Error).message);
@@ -920,7 +1082,9 @@ async function resumePendingManualPlayback(checkpoint: RuntimeManualCheckpoint, 
 			normalize: (text) => normalizeVietnameseText(text, { assets, now: () => performance.now() }),
 		};
 	}
-	const preparedUnits = await preparePlaybackUnits(article.content, article.lang, normalizer);
+	// A resumed manual checkpoint keeps whatever the session was already using.
+	const planningNormalizer = beginSessionProvider(sessionProviderId, sessionProviderId === 'edge' ? sessionVoiceId : null, normalizer);
+	const preparedUnits = await preparePlaybackUnits(article.content, article.lang, planningNormalizer);
 	if (session !== playbackSession) {
 		return;
 	}
@@ -945,7 +1109,7 @@ async function resumePendingManualPlayback(checkpoint: RuntimeManualCheckpoint, 
 		await audioCtx.resume();
 	}
 	if (session === playbackSession) {
-		void playNextUnit(article.lang, style, session);
+		void playNextUnit(article.lang, session);
 	}
 }
 
@@ -1041,12 +1205,12 @@ async function resumeManualCheckpoint(payload: unknown): Promise<{ success: bool
 	}
 
 	if (checkpoint.buffer && checkpoint.style && checkpoint.sourceOffsetSec < checkpoint.buffer.duration) {
-		playAudioBuffer(checkpoint.buffer, checkpoint.lang, checkpoint.style, session, checkpoint.unitIndex, checkpoint.sourceOffsetSec);
+		playAudioBuffer(checkpoint.buffer, checkpoint.lang, session, checkpoint.unitIndex, checkpoint.sourceOffsetSec);
 	} else if (checkpoint.style && checkpoint.speechUnits.length > 0) {
 		if (checkpoint.buffer) {
 			currentUnitIndex++;
 		}
-		void playNextUnit(checkpoint.lang, checkpoint.style, session);
+		void playNextUnit(checkpoint.lang, session);
 	} else if (checkpoint.pendingArticle) {
 		void resumePendingManualPlayback(checkpoint, session).catch((error: Error) => {
 			if (session === playbackSession) {
@@ -1140,7 +1304,6 @@ function prepareAudioExport(payload: unknown): { success: boolean; error?: strin
 			units: speechUnits,
 			language: currentPlaybackLanguage!,
 			voiceStyleId: currentVoiceStyleId,
-			style: currentPlaybackStyle!,
 			speed: currentSpeed,
 			estimate: acceptedInput.estimate as AudioExportEstimate,
 		};
@@ -1298,6 +1461,8 @@ export const handleOffscreenMessage = (
 					mediaSession?: MediaSessionMetadata;
 					hasNextQueueItem?: boolean;
 					pronunciationRules?: PronunciationRule[];
+					ttsProvider?: TtsProviderId;
+					edgeVoiceId?: string | null;
 				};
 				const { article, voiceStyleId, speed } = data;
 				if (!isReadableSurfaceKind(data.readableSurface)) {
@@ -1359,10 +1524,16 @@ export const handleOffscreenMessage = (
 								normalize: (text) => normalizeVietnameseText(text, { assets, now: () => performance.now() }),
 							};
 						}
+						const planningNormalizer = beginSessionProvider(
+							data.ttsProvider === 'supertonic' ? 'supertonic' : 'edge',
+							typeof data.edgeVoiceId === 'string' ? data.edgeVoiceId : null,
+							normalizer,
+						);
+						sessionPronunciationRules = data.pronunciationRules ?? [];
 						const preparedUnits = await preparePlaybackUnits(
 							article.content,
 							article.lang,
-							normalizer,
+							planningNormalizer,
 							data.pronunciationRules ?? [],
 						);
 
@@ -1417,7 +1588,7 @@ export const handleOffscreenMessage = (
 						sendResponse({ success: true, audioExportEstimate });
 
 						// Trigger first chunk playback
-						void playNextUnit(article.lang, style, session);
+						void playNextUnit(article.lang, session);
 					} catch (err) {
 						const error = err as Error;
 						if (session === playbackSession) {
@@ -1521,7 +1692,7 @@ export const handleOffscreenMessage = (
 			synthesisCoordinator.clear();
 			if (playbackStatus === 'playing' && currentPlaybackLanguage && currentPlaybackStyle) {
 				synthesisCoordinator.retain(retainedSynthesisKeys(playbackSession));
-				prefetchNextUnit(currentPlaybackLanguage, currentPlaybackStyle, playbackSession);
+				prefetchNextUnit(currentPlaybackLanguage, playbackSession);
 			}
 			reportProgress(playbackStatus);
 			sendResponse({ success: true, audioExportEstimate: estimateSpeechUnits(speechUnits, currentPlaybackLanguage ?? '', speed) });

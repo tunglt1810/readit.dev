@@ -1,6 +1,6 @@
 # readit.dev
 
-`readit.dev` is a free Chrome extension that reads the current web page aloud with on-device Text-to-Speech (TTS). The current extension release uses the local Supertonic WASM/WebGPU engine; the backend folder is reserved for future Pro features and is not used by the Free release.
+`readit.dev` is a free Chrome extension that reads the current web page aloud. It speaks through one of two engines: online neural voices by default, or the local Supertonic WASM/WebGPU engine, which also takes over automatically if the online path fails. The backend folder is reserved for future Pro features and is not used by the Free release. See [ADR 0003](docs/adr/0003-edge-tts-provider.md) for how the online path works and [the privacy policy](docs/privacy-policy.md) for what it sends.
 
 ## Features
 

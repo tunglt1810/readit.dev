@@ -108,7 +108,10 @@ test('THEME_TRANSLATIONS dịch ngôn ngữ vi và en hoạt động chính xác
 	assert.strictEqual(vi.readingThisTab, 'Đang đọc ở tab này');
 	assert.strictEqual(vi.pastedText, 'Văn bản đã dán');
 	assert.strictEqual(vi.manualSession, 'Phiên đọc văn bản');
-	assert.strictEqual(vi.privacyDisclosure, 'Nội dung được xử lý trên thiết bị, không gửi lên server.');
+	assert.strictEqual(
+		vi.privacyDisclosure,
+		'Giọng trực tuyến gửi nội dung đang đọc tới Microsoft. Chuyển sang giọng trên máy để giữ mọi thứ cục bộ.',
+	);
 	assert.strictEqual(vi.learnMore, 'Tìm hiểu thêm');
 	assert.strictEqual(vi.buyMeCoffee, 'Ủng hộ tôi một ly cà phê');
 	assert.strictEqual(vi.feedback, 'Phản hồi');
@@ -124,7 +127,10 @@ test('THEME_TRANSLATIONS dịch ngôn ngữ vi và en hoạt động chính xác
 	assert.strictEqual(en.readingThisTab, 'Reading in this tab');
 	assert.strictEqual(en.pastedText, 'Pasted text');
 	assert.strictEqual(en.manualSession, 'Manual text session');
-	assert.strictEqual(en.privacyDisclosure, 'Content is processed on your device and is not sent to a server.');
+	assert.strictEqual(
+		en.privacyDisclosure,
+		'Online voices send the text being read to Microsoft. Switch to on-device voices to keep it local.',
+	);
 	assert.strictEqual(en.learnMore, 'Learn more');
 	assert.strictEqual(en.buyMeCoffee, 'Buy me a coffee');
 	assert.strictEqual(en.feedback, 'Feedback');

@@ -1,8 +1,8 @@
 import type { AudioExportEstimate } from '../shared/types.ts';
 import type { AudioExportEncoder } from './audio_export_encoder.ts';
 import { estimateSpeechUnitDurations } from './audio_export_estimate.ts';
+import type { SynthesizedPlayback } from './speech_provider.ts';
 import type { SpeechUnit } from './speech_unit.ts';
-import type { Style } from './supertonic_helper.ts';
 
 export interface PreparedAudioExport {
 	jobId: string;
@@ -11,7 +11,6 @@ export interface PreparedAudioExport {
 	units: readonly SpeechUnit[];
 	language: string;
 	voiceStyleId: string;
-	style: Style;
 	speed: number;
 	estimate: AudioExportEstimate;
 }
@@ -31,7 +30,13 @@ export interface AudioExportEngineDependencies {
 	createEncoder(handle: FileSystemFileHandle | null): Promise<AudioExportEncoder>;
 	download?: (blob: Blob, filename: string) => Promise<void>;
 	canDownload?: () => boolean;
-	synthesize(input: { unit: SpeechUnit; language: string; style: Style; speed: number; playbackSessionId: string }): Promise<AudioBuffer>;
+	synthesize(input: {
+		unit: SpeechUnit;
+		language: string;
+		voiceStyleId: string;
+		speed: number;
+		playbackSessionId: string;
+	}): Promise<SynthesizedPlayback>;
 	canStartBackgroundSynthesis(): boolean;
 	waitForRunway(): Promise<void>;
 	wakeRunway(): void;
@@ -237,13 +242,17 @@ export class AudioExportEngine implements AudioExportEngine {
 				this.throwIfCancelled(work);
 				await this.waitForSafeRunway(work, processedDurationSeconds, startedAt);
 				this.throwIfCancelled(work);
-				let buffer: AudioBuffer | null = await this.dependencies.synthesize({
-					unit,
-					language: work.input.language,
-					style: work.input.style,
-					speed: work.input.speed,
-					playbackSessionId: work.input.playbackSessionId,
-				});
+				// Export only needs the audio; any word timings the provider reported are for
+				// highlighting a live read, which an export has no notion of.
+				let buffer: AudioBuffer | null = (
+					await this.dependencies.synthesize({
+						unit,
+						language: work.input.language,
+						voiceStyleId: work.input.voiceStyleId,
+						speed: work.input.speed,
+						playbackSessionId: work.input.playbackSessionId,
+					})
+				).buffer;
 				this.throwIfCancelled(work);
 				await work.encoder.add(buffer);
 				buffer = null;

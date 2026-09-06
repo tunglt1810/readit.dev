@@ -27,7 +27,7 @@ test('hides unavailable Pro UI and does not request license status', async ({ pa
 	await expect(page.locator('.tier-badge-container')).not.toBeVisible();
 	await expect(page.locator('.license-section')).not.toBeAttached();
 	await expect(page.getByText('Kích hoạt bản quyền Pro')).not.toBeAttached();
-	await expect(page.locator('.privacy-disclosure')).toContainText('không gửi lên server');
+	await expect(page.locator('.privacy-disclosure')).toContainText('Chuyển sang giọng trên máy để giữ mọi thứ cục bộ');
 
 	const sentActions = await page.evaluate(() => (window as any).sentMessages.map((message: { action: string }) => message.action));
 	expect(sentActions).not.toContain('CHECK_LICENSE');
@@ -92,6 +92,8 @@ test('Side Panel stays within the Free runtime and storage boundary', async ({ g
 		STORAGE_KEYS.THEME,
 		STORAGE_KEYS.SELECTION_BUTTON_ENABLED,
 		STORAGE_KEYS.WORD_HIGHLIGHT_ENABLED,
+		STORAGE_KEYS.TTS_PROVIDER,
+		STORAGE_KEYS.EDGE_VOICES,
 		'readit_open_sidepanel_windows',
 	];
 	expect(Object.keys(stored.local).every((key) => approvedLocalKeys.includes(key))).toBe(true);
@@ -121,9 +123,20 @@ test('Side Panel stays within the Free runtime and storage boundary', async ({ g
 	expect(snapshot).not.toHaveProperty('tabId');
 	expect(snapshot.source).toEqual({ kind: 'manual', panelInstanceId: expect.any(String) });
 	expect([...stored.permissions].sort()).toEqual(
-		['activeTab', 'contextMenus', 'offscreen', 'scripting', 'sidePanel', 'storage', 'tabs'].sort(),
+		[
+			'activeTab',
+			'contextMenus',
+			'declarativeNetRequestWithHostAccess',
+			'offscreen',
+			'scripting',
+			'sidePanel',
+			'storage',
+			'tabs',
+		].sort(),
 	);
-	expect([...stored.hostPermissions].sort()).toEqual(['https://huggingface.co/*', 'file://*/*'].sort());
+	expect([...stored.hostPermissions].sort()).toEqual(
+		['https://huggingface.co/*', 'file://*/*', 'https://speech.platform.bing.com/*', 'wss://speech.platform.bing.com/*'].sort(),
+	);
 	expect(stored.sidePanelDefaultPath).toBe('src/sidepanel/sidepanel.html');
 
 	const sentActions = await page.evaluate(() =>
