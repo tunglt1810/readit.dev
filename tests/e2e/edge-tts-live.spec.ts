@@ -95,3 +95,63 @@ test('reaches the live edge-tts endpoint and returns audio with word boundaries'
 	expect(result.bytes).toBeGreaterThan(1000);
 	expect(result.words).toBeGreaterThan(3);
 });
+
+// If Microsoft ever starts accepting <break>, this test fails and the padding in
+// edge_provider.ts can be reconsidered. Until then it documents why the padding exists.
+test('the live endpoint still rejects a <break> tag', async ({ context, extensionId }) => {
+	const page = await context.newPage();
+	await page.goto(`chrome-extension://${extensionId}/src/offscreen/offscreen.html`);
+
+	const closeCode = await page.evaluate(async () => {
+		const TRUSTED_CLIENT_TOKEN = '6A5AA1D4EAFF4E9FB37E23D68491D6F4';
+		const ticks = Math.floor((Date.now() / 1000 + 11_644_473_600) * 10_000_000);
+		const digest = await crypto.subtle.digest(
+			'SHA-256',
+			new TextEncoder().encode(`${ticks - (ticks % 3_000_000_000)}${TRUSTED_CLIENT_TOKEN}`),
+		);
+		const gec = Array.from(new Uint8Array(digest))
+			.map((byte) => byte.toString(16).padStart(2, '0'))
+			.join('')
+			.toUpperCase();
+
+		const url =
+			`wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1` +
+			`?TrustedClientToken=${TRUSTED_CLIENT_TOKEN}&Sec-MS-GEC=${gec}&Sec-MS-GEC-Version=1-141.0.3537.57`;
+
+		return await new Promise<number | null>((resolve) => {
+			const socket = new WebSocket(url);
+			socket.binaryType = 'arraybuffer';
+			const timer = setTimeout(() => resolve(null), 20_000);
+			socket.addEventListener('open', () => {
+				const stamp = new Date().toString();
+				socket.send(
+					`X-Timestamp:${stamp}\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n` +
+						JSON.stringify({
+							context: {
+								synthesis: {
+									audio: {
+										metadataoptions: { sentenceBoundaryEnabled: 'false', wordBoundaryEnabled: 'true' },
+										outputFormat: 'audio-24khz-48kbitrate-mono-mp3',
+									},
+								},
+							},
+						}),
+				);
+				const ssml =
+					`<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='vi-VN'>` +
+					`<voice name='vi-VN-HoaiMyNeural'><prosody pitch='+0Hz' rate='+0%' volume='+0%'>` +
+					`Xin chào.<break time='300ms'/></prosody></voice></speak>`;
+				socket.send(
+					`X-RequestId:${crypto.randomUUID().replaceAll('-', '')}\r\nContent-Type:application/ssml+xml\r\n` +
+						`X-Timestamp:${stamp}Z\r\nPath:ssml\r\n\r\n${ssml}`,
+				);
+			});
+			socket.addEventListener('close', (event) => {
+				clearTimeout(timer);
+				resolve(event.code);
+			});
+		});
+	});
+
+	expect(closeCode, 'a <break> tag must still be rejected with 1007').toBe(1007);
+});

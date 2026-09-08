@@ -19,16 +19,16 @@ function prosodyRate(speed: number): string {
 /**
  * One synthesis request.
  *
- * `internalSilenceMs` is the pause Supertonic renders inside the unit for units with no
- * `pauseAfterMs`; here it becomes a trailing `<break>` so both engines produce the same cadence.
+ * The readaloud endpoint accepts only `speak > voice > prosody > text`; every structural tag,
+ * `<break>` included, closes the connection with 1007. Trailing silence is added to the decoded
+ * samples instead — see edge_provider.ts.
  */
-export function buildSsml(input: { text: string; voice: string; locale: string; speed: number; internalSilenceMs: number }): string {
-	const pause = input.internalSilenceMs > 0 ? `<break time='${Math.round(input.internalSilenceMs)}ms'/>` : '';
+export function buildSsml(input: { text: string; voice: string; locale: string; speed: number }): string {
 	return (
 		`<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='${input.locale}'>` +
 		`<voice name='${input.voice}'>` +
 		`<prosody pitch='+0Hz' rate='${prosodyRate(input.speed)}' volume='+0%'>` +
-		`${escapeXml(input.text)}${pause}` +
+		`${escapeXml(input.text)}` +
 		`</prosody></voice></speak>`
 	);
 }

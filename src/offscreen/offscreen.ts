@@ -23,9 +23,10 @@ import { AudioExportEngine } from './audio_export_engine.ts';
 import { estimateSpeechUnits } from './audio_export_estimate';
 import { canStartBackgroundSynthesis, type PlaybackRunway } from './audio_export_runway';
 import { emitAudioHostMessage, requestAudioHostMessage } from './audio_host_messages.ts';
-import { createEdgeProvider, EdgeUnsupportedLanguageError } from './edge/edge_provider.ts';
-import { EDGE_SYNTHESIS_ATTEMPTS, edgeRetryDelayMs, retryEdgeSynthesis } from './edge/edge_retry.ts';
-import { EdgeSocket, EdgeSocketError } from './edge/edge_socket.ts';
+import { classifyEdgeFailure } from './edge/edge_failure.ts';
+import { createEdgeProvider } from './edge/edge_provider.ts';
+import { EDGE_STARVATION_GRACE_MS, retryEdgeSynthesis } from './edge/edge_retry.ts';
+import { EdgeSocket } from './edge/edge_socket.ts';
 import { EngineBoundaryDiagnostics } from './engine_boundary_diagnostics.ts';
 import { ExportPreparationDiagnostics } from './export_prepare_diagnostics.ts';
 import { ExportSnapshotDiagnostics } from './export_snapshot_diagnostics.ts';
@@ -34,6 +35,7 @@ import { createMediaSessionController } from './media_session';
 import { createPauseKeepalive } from './pause_keepalive';
 import { PlaybackMetricsRecorder, summarizePlaybackMetrics } from './playback_metrics';
 import { isVietnameseLanguage, preparePlaybackUnits, replanRemainingUnits, VietnameseTextNormalizer } from './playback_preparation';
+import { type PrefetchState, prefetchCap, prefetchStarts, prefetchWindow, shouldPrimeSuccessor } from './prefetch_window.ts';
 import type { SpeechProvider, SynthesizedPlayback, SynthesizedUnit } from './speech_provider.ts';
 import type { SpeechUnit } from './speech_unit';
 import { loadTextToSpeech, loadVoiceStyle, Style, TextToSpeech } from './supertonic_helper';
@@ -450,10 +452,6 @@ function beginSessionProvider(
 	return normalizer;
 }
 
-function isEdgeFailure(error: unknown): boolean {
-	return error instanceof EdgeSocketError || error instanceof EdgeUnsupportedLanguageError;
-}
-
 /**
  * Move the rest of this session on-device.
  *
@@ -480,43 +478,47 @@ async function downgradeToSupertonic(lang: string): Promise<void> {
 	reportProgress(playbackStatus, { error: t('ttsProviderFallbackNotice') });
 }
 
+/** One attempt, inside the arbiter slot. Retrying happens around it — see synthesizeWithEdgeRetry. */
+async function synthesizeOnce(input: SynthesisInput): Promise<SynthesizedPlayback> {
+	return await synthesizeUnit(input.unit, input.lang, input.speed, input.owner, input.probeId);
+}
+
 /**
- * One retry, then downgrade for the rest of the session.
+ * Retry around the arbiter rather than inside it.
  *
- * Retrying per unit turns a flaky network into a silent gap before every sentence, which is worse
- * than switching voice once and saying so.
+ * `SynthesisArbiter.drain` awaits one task at a time, so sleeping inside the slot would stall
+ * every other unit — including the prefetch that keeps the buffer deep enough to make waiting
+ * safe in the first place. Each attempt therefore takes a fresh slot and the backoff happens
+ * between them, leaving the queue free to advance.
  */
-async function synthesizeWithFallback(input: SynthesisInput): Promise<SynthesizedPlayback> {
-	const speak = () => synthesizeUnit(input.unit, input.lang, input.speed, input.owner, input.probeId);
+async function synthesizeWithEdgeRetry(input: SynthesisInput): Promise<SynthesizedPlayback> {
 	if (sessionProviderId !== 'edge') {
-		return await speak();
+		return await synthesisArbiter.foreground(input);
 	}
 	const unitIndex = input.unit.synthesisIndex ?? speechUnits.indexOf(input.unit);
-	try {
-		return await retryEdgeSynthesis(speak, {
-			attempts: EDGE_SYNTHESIS_ATTEMPTS,
-			isRetryable: isEdgeFailure,
-			onRetry: async (error, attempt) => {
-				// Recorded even when a later attempt succeeds: a downgrade that leaves no trace is
-				// indistinguishable from the engine simply sounding different.
-				playbackMetrics.recordSynthError(
-					unitIndex,
-					`edge attempt ${attempt}: ${error instanceof Error ? error.message : String(error)}`,
-				);
-				// The connection is spent either way; the next attempt opens a fresh one.
-				edgeSocket?.close();
-				edgeSocket = null;
-				await new Promise((resolve) => setTimeout(resolve, edgeRetryDelayMs(attempt)));
-			},
-		});
-	} catch (error) {
-		if (!isEdgeFailure(error)) {
-			throw error;
-		}
-		playbackMetrics.recordSynthError(unitIndex, `edge exhausted: ${error instanceof Error ? error.message : String(error)}`);
-		await downgradeToSupertonic(input.lang);
-		return await speak();
-	}
+	return await retryEdgeSynthesis(() => synthesisArbiter.foreground(input), {
+		classify: classifyEdgeFailure,
+		headroomMs: bufferedHeadroomMs,
+		graceMs: EDGE_STARVATION_GRACE_MS,
+		now: () => performance.now(),
+		sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+		onAttemptFailed: (error, attempt) => {
+			// Recorded even when a later attempt succeeds: a downgrade that leaves no trace is
+			// indistinguishable from the engine simply sounding different.
+			playbackMetrics.recordSynthError(
+				unitIndex,
+				`edge attempt ${attempt}: ${error instanceof Error ? error.message : String(error)}`,
+			);
+			// The connection is spent either way; the next attempt opens a fresh one.
+			edgeSocket?.close();
+			edgeSocket = null;
+		},
+		fallback: async (error) => {
+			playbackMetrics.recordSynthError(unitIndex, `edge exhausted: ${error instanceof Error ? error.message : String(error)}`);
+			await downgradeToSupertonic(input.lang);
+			return await synthesisArbiter.foreground(input);
+		},
+	});
 }
 
 async function synthesizeUnit(
@@ -594,11 +596,16 @@ interface SynthesisInput {
 	probeId?: string | null;
 }
 
-const synthesisArbiter = new SynthesisArbiter<SynthesisInput, SynthesizedPlayback>((input) => synthesizeWithFallback(input));
+const synthesisArbiter = new SynthesisArbiter<SynthesisInput, SynthesizedPlayback>((input) => synthesizeOnce(input));
 
 const synthesisCoordinator = new IndexedSynthesisCoordinator<SynthesisInput, SynthesizedPlayback>(
-	(input) => synthesisArbiter.foreground(input),
-	{ onResolved: () => notifyExportRunway() },
+	(input) => synthesizeWithEdgeRetry(input),
+	{
+		onResolved: () => {
+			notifyExportRunway();
+			refillPrefetch();
+		},
+	},
 );
 
 function synthesisKey(session: number, unitIndex: number): SynthesisKey {
@@ -616,10 +623,32 @@ function isCurrentSynthesisKey(key: SynthesisKey): boolean {
 
 function retainedSynthesisKeys(session: number): SynthesisKey[] {
 	const keys = [synthesisKey(session, currentUnitIndex)];
-	for (let unitIndex = currentUnitIndex + 1; unitIndex <= currentUnitIndex + 2 && unitIndex < speechUnits.length; unitIndex++) {
+	// `currentPlaybackLanguage` is null between sessions. The estimate only sizes a buffer, and an
+	// empty language means the non-Chinese words-per-minute rate, which is the right default for a
+	// window nothing is playing into yet.
+	for (const unitIndex of prefetchWindow(speechUnits, currentUnitIndex, currentPlaybackLanguage ?? '', currentSpeed)) {
 		keys.push(synthesisKey(session, unitIndex));
 	}
 	return keys;
+}
+
+/**
+ * Audio already synthesized ahead of the playhead, in milliseconds.
+ *
+ * Counted over the contiguous run after the current unit: a hole means the reader reaches silence
+ * there regardless of what is buffered past it, so anything beyond the hole is not headroom. This
+ * is what bounds how patiently a failed unit may be retried.
+ */
+function bufferedHeadroomMs(): number {
+	let seconds = 0;
+	for (let unitIndex = currentUnitIndex + 1; unitIndex < speechUnits.length; unitIndex += 1) {
+		const resolved = synthesisCoordinator.peekResolved(synthesisKey(playbackSession, unitIndex));
+		if (!resolved) {
+			break;
+		}
+		seconds += resolved.buffer.duration;
+	}
+	return seconds * 1_000;
 }
 
 function playbackRunway(): PlaybackRunway {
@@ -673,8 +702,37 @@ function prefetchUnit(unitIndex: number, lang: string, session: number): void {
 	});
 }
 
+function prefetchStateOf(session: number, unitIndex: number): PrefetchState {
+	const key = synthesisKey(session, unitIndex);
+	if (!synthesisCoordinator.has(key)) {
+		return 'idle';
+	}
+	return synthesisCoordinator.peekResolved(key) === undefined ? 'inFlight' : 'resolved';
+}
+
+/**
+ * Keep synthesizing forward until the buffer reaches the target, so a bad window stays inaudible.
+ *
+ * Only a few requests are queued at a time. The arbiter serves one at a time regardless, so the
+ * bound costs no throughput, and it keeps a retry — which rejoins the queue at the back — from
+ * waiting behind the whole window. Refilling happens from the coordinator's onResolved.
+ */
 function prefetchNextUnit(lang: string, session: number): void {
-	prefetchUnit(currentUnitIndex + 1, lang, session);
+	const window = prefetchWindow(speechUnits, currentUnitIndex, lang, currentSpeed);
+	// `loading` is exactly the state where the reader is on silence waiting for a unit, whether
+	// that is the first one or a mid-article gap, so it is what narrows the queue.
+	const cap = prefetchCap(playbackStatus === 'loading');
+	for (const unitIndex of prefetchStarts(window, (candidate) => prefetchStateOf(session, candidate), cap)) {
+		prefetchUnit(unitIndex, lang, session);
+	}
+}
+
+/** Start the next prefetch as soon as one lands, so the bounded queue keeps refilling. */
+function refillPrefetch(): void {
+	if (currentPlaybackLanguage === null || playbackStatus === 'stopped') {
+		return;
+	}
+	prefetchNextUnit(currentPlaybackLanguage, playbackSession);
 }
 
 function stopCurrentSource() {
@@ -1005,13 +1063,15 @@ async function playNextUnit(lang: string, session: number) {
 			return;
 		}
 
-		// WASM inference runs on this document's main thread. Starting the first source as
-		// soon as its buffer resolves can therefore leave its short audio unable to cover
-		// the successor inference, delaying the `onended` callback and creating audible
-		// silence. Prime exactly one successor before the initial source starts; normal
-		// one-unit look-ahead continues for all later units without changing speed or pause
-		// ownership.
-		if (unitIndex === 0 && speechUnits.length > 1) {
+		// Prime exactly one successor before the initial source starts, so its audio is not left
+		// uncovered while the second unit is still being produced. On the on-device path that
+		// production is WASM inference on this document's main thread, which a short first source
+		// cannot cover: the `onended` callback arrives late and leaves audible silence. On the
+		// cloud path it is a socket round trip, and a first unit long enough to absorb the worst
+		// case does not need the insurance — paying for it there costs the reader an extra round
+		// trip before they hear anything. Normal one-unit look-ahead continues for all later units
+		// without changing speed or pause ownership.
+		if (unitIndex === 0 && speechUnits.length > 1 && shouldPrimeSuccessor(sessionProviderId, playback.buffer.duration)) {
 			prefetchNextUnit(lang, session);
 			const successorKey = synthesisKey(session, 1);
 			const successorInput: SynthesisInput = {
@@ -1027,11 +1087,6 @@ async function playNextUnit(lang: string, session: number) {
 					void playNextUnit(lang, session);
 				}
 				return;
-			}
-			// Multi-boundary runs need one more synthesis request in flight before the first source starts.
-			// The regular one-unit look-ahead then keeps that request retained and advances the runway.
-			if (speechUnits.length > 3) {
-				prefetchUnit(2, lang, session);
 			}
 		}
 		playAudioBuffer(playback.buffer, lang, session, unitIndex, 0, playback.wordTimings);

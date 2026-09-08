@@ -49,15 +49,16 @@ test('indexes canonical text, never the cadence-preserving synthesis rendering',
 
 test('attaches word maps only after consolidation, so every entry resolves against the merged unit', async () => {
 	const prepared = await preparePlaybackUnits(
-		'Heading\n\nThe paragraph continues with enough content to be independently reliable.',
+		'A leading sentence that is long enough to stand on its own.\n\nHeading\n\nThe paragraph continues with enough content to be independently reliable.',
 		'en',
 		null,
 	);
 
-	// The short heading fuses into the paragraph, so a map attached before consolidation would now
-	// be pointing at text that no longer exists as its own unit.
-	assert.equal(prepared.length, 1);
-	assert.equal(prepared[0].text.startsWith('Heading The paragraph'), true);
+	// The short heading fuses into its neighbour, so a map attached before consolidation would now
+	// be pointing at text that no longer exists as its own unit. The heading is not the leading
+	// unit here, because that one is pinned and would never merge.
+	assert.equal(prepared.length, 2);
+	assert.equal(prepared[0].text.endsWith('on its own. Heading'), true);
 	for (const entry of prepared[0].wordMap ?? []) {
 		assert.equal(prepared[0].text.slice(entry.start, entry.end), entry.text);
 	}

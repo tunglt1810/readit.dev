@@ -82,15 +82,33 @@ test('rejects a language Microsoft has no voices for', async () => {
 	);
 });
 
-test('requests a trailing break for units with no pause', async () => {
+test('pads units with no pause with 300ms of trailing silence', async () => {
 	const { provider, sent } = makeProvider();
-	await provider.synthesize({
+	const result = await provider.synthesize({
 		unit: { text: 'hello', pauseAfterMs: null, wordMap: [{ text: 'hello', start: 0, end: 5 }] },
 		lang: 'en',
 		voiceId: 'en-US-AvaNeural',
 		speed: 1,
 	});
-	assert.match(sent[0], /<break time='300ms'\/>/u);
+	// The endpoint rejects <break>, so the cadence Supertonic renders internally is added here.
+	assert.doesNotMatch(sent[0], /<break/u);
+	assert.equal(result.samples.length, 2 + 0.3 * 24_000);
+	assert.deepEqual(Array.from(result.samples.slice(0, 2)), [0.5, -0.5]);
+	assert.ok(
+		result.samples.slice(2).every((sample) => sample === 0),
+		'the padding must be silent',
+	);
+});
+
+test('leaves units with a numeric pause unpadded', async () => {
+	const { provider } = makeProvider();
+	const result = await provider.synthesize({
+		unit: { text: 'hello', pauseAfterMs: 0, wordMap: [{ text: 'hello', start: 0, end: 5 }] },
+		lang: 'en',
+		voiceId: 'en-US-AvaNeural',
+		speed: 1,
+	});
+	assert.equal(result.samples.length, 2);
 });
 
 test('reports decoded samples to the diagnostics callback', async () => {

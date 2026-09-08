@@ -1,3 +1,4 @@
+import { LATIN_PAUSE_MS } from './latin/speech_units.ts';
 import type { SpeechUnit } from './speech_unit.ts';
 import { synthesisTextLimitForLanguage } from './supertonic_helper.ts';
 
@@ -26,6 +27,19 @@ function hasNaturalTerminalCadence(text: string): boolean {
 
 function hasAudiblePause(unit: Pick<SpeechUnit, 'pauseAfterMs'>): boolean {
 	return typeof unit.pauseAfterMs === 'number' && unit.pauseAfterMs > 0;
+}
+
+/**
+ * A leading unit that is a whole paragraph without terminal punctuation is the article headline.
+ * Merging it into the body adopts the body's `pauseAfterMs`, so the headline's paragraph pause is
+ * destroyed and the reader runs the title straight into the first sentence. Vietnamese headlines
+ * are almost never long enough to escape the short-unit threshold, so this is otherwise the norm.
+ *
+ * Only the leading unit qualifies. Pinning every punctuation-free paragraph would break bullet
+ * lists back into the unreliably short units consolidation exists to prevent.
+ */
+function isLeadingHeadline(unit: SpeechUnit): boolean {
+	return (unit.pauseAfterMs ?? 0) >= LATIN_PAUSE_MS.paragraphEnd && !hasNaturalTerminalCadence(unit.text);
 }
 
 function joinUnitText(left: string, right: string): string {
@@ -81,7 +95,7 @@ function buildFeasibleRanges(units: readonly SpeechUnit[], limit: number, thresh
 				renderingLength,
 				isShort: nonWhitespaceCodePointCount(merged.text) < threshold,
 			});
-			merged = end < units.length ? mergeSpeechUnits(merged, units[end]) : null;
+			merged = end < units.length && !(start === 0 && isLeadingHeadline(units[0])) ? mergeSpeechUnits(merged, units[end]) : null;
 		}
 		if (ranges.length === 0) {
 			throw new RangeError(`Source Unit ${start + 1} exceeds synthesis capacity ${limit}`);

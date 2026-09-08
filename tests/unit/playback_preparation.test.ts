@@ -132,23 +132,20 @@ test('attaches a word map for both normalized Vietnamese text and plain Latin te
 
 test('consolidates bare Latin, Vietnamese, fallback, and compatibility units before attaching word maps', async () => {
 	const latinBody = 'The paragraph continues with enough content to be independently reliable.';
-	const [latin] = await preparePlaybackUnits(`Heading\n\n${latinBody}`, 'en', null);
-	assert.deepEqual(withoutWordMap([latin]), [
-		{
-			text: `Heading ${latinBody}`,
-			synthesisText: `Heading. ${latinBody}`,
-			pauseAfterMs: 180,
-		},
+	const latinUnits = await preparePlaybackUnits(`Heading\n\n${latinBody}`, 'en', null);
+	assert.deepEqual(withoutWordMap(latinUnits), [
+		{ text: 'Heading', pauseAfterMs: 260 },
+		{ text: latinBody, pauseAfterMs: 180 },
 	]);
 	assert.deepEqual(
-		latin.wordMap?.map((entry) => latin.text.slice(entry.start, entry.end)),
+		latinUnits.flatMap((unit) => unit.wordMap?.map((entry) => unit.text.slice(entry.start, entry.end)) ?? []),
 		`Heading ${latinBody}`.split(' '),
 	);
 
 	const vietnameseHeading = 'Đề mục';
 	const vietnameseBody = 'Nội dung đã chuẩn hóa tiếp tục đủ dài để giữ ánh xạ theo thứ tự.';
 	const vietnameseSpoken = `${vietnameseHeading}\n\n${vietnameseBody}`;
-	const [normalized] = await preparePlaybackUnits('Nguồn gốc', 'vi', {
+	const normalizedUnits = await preparePlaybackUnits('Nguồn gốc', 'vi', {
 		async normalize() {
 			return {
 				text: vietnameseSpoken,
@@ -172,37 +169,25 @@ test('consolidates bare Latin, Vietnamese, fallback, and compatibility units bef
 			};
 		},
 	});
-	assert.deepEqual(withoutWordMap([normalized]), [
-		{
-			text: `${vietnameseHeading} ${vietnameseBody}`,
-			synthesisText: `${vietnameseHeading}. ${vietnameseBody}`,
-			pauseAfterMs: 180,
-		},
+	assert.deepEqual(withoutWordMap(normalizedUnits), [
+		{ text: vietnameseHeading, pauseAfterMs: 260 },
+		{ text: vietnameseBody, pauseAfterMs: 180 },
 	]);
-	assert.deepEqual(normalized.wordMap, [
-		{ text: vietnameseHeading, start: 0, end: vietnameseHeading.length },
-		{
-			text: vietnameseBody,
-			start: vietnameseHeading.length + 1,
-			end: vietnameseHeading.length + 1 + vietnameseBody.length,
-		},
-	]);
+	assert.deepEqual(normalizedUnits[0].wordMap, [{ text: vietnameseHeading, start: 0, end: vietnameseHeading.length }]);
+	assert.deepEqual(normalizedUnits[1].wordMap, [{ text: vietnameseBody, start: 0, end: vietnameseBody.length }]);
 
 	const fallbackBody = 'Nội dung dự phòng tiếp tục đủ dài để giữ ánh xạ theo thứ tự.';
-	const [fallback] = await preparePlaybackUnits(`Tiêu đề\n\n${fallbackBody}`, 'vi', {
+	const fallbackUnits = await preparePlaybackUnits(`Tiêu đề\n\n${fallbackBody}`, 'vi', {
 		async normalize() {
 			throw new Error('expected fallback');
 		},
 	});
-	assert.deepEqual(withoutWordMap([fallback]), [
-		{
-			text: `Tiêu đề ${fallbackBody}`,
-			synthesisText: `Tiêu đề. ${fallbackBody}`,
-			pauseAfterMs: 180,
-		},
+	assert.deepEqual(withoutWordMap(fallbackUnits), [
+		{ text: 'Tiêu đề', pauseAfterMs: 260 },
+		{ text: fallbackBody, pauseAfterMs: 180 },
 	]);
 	assert.deepEqual(
-		fallback.wordMap?.map((entry) => fallback.text.slice(entry.start, entry.end)),
+		fallbackUnits.flatMap((unit) => unit.wordMap?.map((entry) => unit.text.slice(entry.start, entry.end)) ?? []),
 		`Tiêu đề ${fallbackBody}`.split(' '),
 	);
 
@@ -224,7 +209,10 @@ test('consolidates short English lines into merged speech units with proper synt
 	const text = `DATA STRATEGY\n\nData & Analytics Enablement for Business Growth\n\n1. Purpose\n\nThe Data Strategy provides the analytics.`;
 	const units = await preparePlaybackUnits(text, 'en', null);
 	assert.ok(units.length < 4, `Expected fewer than 4 units due to consolidation, got ${units.length}`);
-	assert.ok(units[0].synthesisText?.includes('DATA STRATEGY. Data & Analytics Enablement'));
+	// The leading headline stays whole; the mid-document lines behind it still merge with synthetic
+	// punctuation standing in for the paragraph boundaries they absorb.
+	assert.equal(units[0].text, 'DATA STRATEGY');
+	assert.ok(units[1].synthesisText?.includes('Business Growth. 1. Purpose'));
 	// Verify "1. Purpose" is kept intact as one unit or merged without splitting "1."
 	assert.ok(!units.some((u) => u.text === '1.' || u.text === '1'));
 
@@ -233,6 +221,23 @@ test('consolidates short English lines into merged speech units with proper synt
 	assert.ok(listUnits.length <= 3, `Expected at most 3 units for list items, got ${listUnits.length}`);
 	assert.equal(listUnits.map((unit) => unit.text).join(' '), listText.replace(/\s+/gu, ' ').trim());
 	assert.ok(listUnits.every((unit) => (unit.synthesisText ?? unit.text).length <= 300));
+});
+
+test('keeps a leading headline as its own unit so its paragraph pause survives', async () => {
+	const title = 'Mua giày ở Nha Trang gửi sang Nga mới phát hiện hàng giả';
+	const sapo =
+		'Khánh Hòa Một phụ nữ mua hai đôi giày Nike, Adidas tại cửa hàng ở Nha Trang với giá 1,3 triệu đồng, gửi sang Nga cho bạn trai thì được xác định là hàng giả.';
+	const units = await preparePlaybackUnits(`${title}\n\n${sapo}`, 'vi', null);
+
+	assert.equal(units[0].text, title);
+	assert.equal(units[0].pauseAfterMs, 260);
+	assert.equal(units[1].text, sapo);
+
+	// A leading paragraph that already ends a sentence is ordinary prose, not a headline, so it
+	// keeps merging exactly as before.
+	const lead = 'Một câu dẫn ngắn.';
+	const prose = await preparePlaybackUnits(`${lead}\n\n${sapo}`, 'vi', null);
+	assert.equal(prose[0].text, `${lead} ${sapo}`);
 });
 
 test('merges short CJK units without injecting ASCII punctuation into null-pause compatibility paths', async () => {

@@ -38,9 +38,18 @@ function canonicalText(units: readonly SpeechUnit[]): string {
 	return units.map((unit) => unit.text.trim()).join(' ');
 }
 
+/**
+ * The leading headline is deliberately exempt from consolidation: merging it into the body
+ * destroys the paragraph pause that separates the title from the article, which is audible on
+ * every engine. It is therefore allowed to stay short even when a neighbour could absorb it.
+ */
+function isPinnedLeadingHeadline(units: readonly SpeechUnit[], index: number): boolean {
+	return index === 0 && (units[0].pauseAfterMs ?? 0) >= 260 && !/[.!?…]$/u.test(units[0].text.trimEnd());
+}
+
 function mergeableShortIndexes(units: readonly SpeechUnit[], limit: number): number[] {
 	return units.flatMap((unit, index) => {
-		if (nonWhitespaceCodePointCount(unit.text) >= MIN_RELIABLE_SYNTHESIS_CHARACTERS) {
+		if (nonWhitespaceCodePointCount(unit.text) >= MIN_RELIABLE_SYNTHESIS_CHARACTERS || isPinnedLeadingHeadline(units, index)) {
 			return [];
 		}
 		const fitsPrevious = index > 0 && canonicalText([units[index - 1], unit]).length <= limit;
@@ -107,7 +116,11 @@ function assertExpectedBehavior(scenario: Scenario, planned: readonly SpeechUnit
 	}
 
 	for (const [index, unit] of result.prepared.entries()) {
-		if (nonWhitespaceCodePointCount(unit.text) >= MIN_RELIABLE_SYNTHESIS_CHARACTERS || mergeable.includes(index)) {
+		if (
+			nonWhitespaceCodePointCount(unit.text) >= MIN_RELIABLE_SYNTHESIS_CHARACTERS ||
+			mergeable.includes(index) ||
+			isPinnedLeadingHeadline(result.prepared, index)
+		) {
 			continue;
 		}
 		const raw = result.rawWaveforms.find((waveform) => waveform.index === index)?.samples;

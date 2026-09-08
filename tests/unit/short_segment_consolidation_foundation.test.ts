@@ -13,6 +13,13 @@ function unit(text: string, pauseAfterMs: number | null): SpeechUnit {
 	return { text, pauseAfterMs };
 }
 
+/**
+ * A leading unit that fills the synthesis limit, so the short unit after it cannot be absorbed
+ * leftward and these cases stay about the rightward merge they are testing. It also keeps the
+ * short unit off index 0, where a punctuationless headline is pinned and never merges at all.
+ */
+const capacityFillingLead = unit(`L${'a'.repeat(294)}.`, 260);
+
 test('counts trimmed non-whitespace Unicode code points for the reliability policy', () => {
 	assert.equal(MIN_RELIABLE_SYNTHESIS_CHARACTERS, 50);
 	assert.equal(nonWhitespaceCodePointCount(` \t${'𐐷'.repeat(49)}\n `), 49);
@@ -53,10 +60,11 @@ test('retains capacity-blocked and singleton short units without fabrication or 
 
 test('uses synthetic punctuation only for absorbed numeric audible boundaries', () => {
 	const audible = consolidateShortSpeechUnits(
-		[unit('Heading', 260), unit('The paragraph continues with enough content to be reliable on its own.', 180)],
+		[capacityFillingLead, unit('Heading', 260), unit('The paragraph continues with enough content to be reliable on its own.', 180)],
 		'en',
 	);
 	assert.deepEqual(audible, [
+		capacityFillingLead,
 		{
 			text: 'Heading The paragraph continues with enough content to be reliable on its own.',
 			synthesisText: 'Heading. The paragraph continues with enough content to be reliable on its own.',
@@ -82,7 +90,7 @@ test('preserves protected forms in canonical text across feasible merges', () =>
 	for (const [index, form] of forms.entries()) {
 		const short = unit(`Note${index}`, 260);
 		const follower = unit(`${form} remains intact in the following reliably long speech unit.`, 180);
-		const [merged] = consolidateShortSpeechUnits([short, follower], 'en');
+		const [, merged] = consolidateShortSpeechUnits([capacityFillingLead, short, follower], 'en');
 
 		assert.equal(merged.text, `${short.text} ${follower.text}`);
 		assert.equal(merged.text.includes(form), true, form);
