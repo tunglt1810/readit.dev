@@ -99,16 +99,17 @@ input {
 	z-index: 2;
 	display: grid;
 	/*
-	 * A grid track never shrinks below its own minimum, so if the four minimums plus the gaps
-	 * outgrow the card the last column simply hangs off the right edge. This layout only runs
-	 * above an 860px window — narrower goes to the two-column rule below — so the tightest frame
-	 * is 813px, leaving 727px inside the padding and gaps. Playback takes 250px, so the three
-	 * minimums here have to stay under 477.
+	 * A grid track never shrinks below its own minimum, so if the minimums plus the gaps outgrow
+	 * the card the last column simply hangs off the right edge. This layout only runs above an
+	 * 860px window — narrower goes to the two-column rule below — so the tightest frame is 813px,
+	 * leaving 727px inside the padding and gaps. The engine column added a fifth track and with it
+	 * a fifth gap, so the budget is 727 - 16 - 250 for playback: the four minimums here have to
+	 * stay under 461.
 	 *
 	 * Speed and progress both share the slack: they read as a pair of horizontal tracks, and a
 	 * long one beside a short one looks like a mistake rather than a difference.
 	 */
-	grid-template-columns: auto minmax(120px, 200px) minmax(140px, 1fr) minmax(110px, 1fr);
+	grid-template-columns: auto minmax(96px, 150px) minmax(110px, 180px) minmax(130px, 1fr) minmax(105px, 1fr);
 	align-items: stretch;
 	gap: 16px;
 	width: 100%;

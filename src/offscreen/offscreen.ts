@@ -35,7 +35,14 @@ import { createMediaSessionController } from './media_session';
 import { createPauseKeepalive } from './pause_keepalive';
 import { PlaybackMetricsRecorder, summarizePlaybackMetrics } from './playback_metrics';
 import { isVietnameseLanguage, preparePlaybackUnits, replanRemainingUnits, VietnameseTextNormalizer } from './playback_preparation';
-import { type PrefetchState, prefetchCap, prefetchStarts, prefetchWindow, shouldPrimeSuccessor } from './prefetch_window.ts';
+import {
+	bufferedHeadroomMs,
+	type PrefetchState,
+	prefetchCap,
+	prefetchStarts,
+	prefetchWindow,
+	shouldPrimeSuccessor,
+} from './prefetch_window.ts';
 import type { SpeechProvider, SynthesizedPlayback, SynthesizedUnit } from './speech_provider.ts';
 import type { SpeechUnit } from './speech_unit';
 import { loadTextToSpeech, loadVoiceStyle, Style, TextToSpeech } from './supertonic_helper';
@@ -498,7 +505,7 @@ async function synthesizeWithEdgeRetry(input: SynthesisInput): Promise<Synthesiz
 	const unitIndex = input.unit.synthesisIndex ?? speechUnits.indexOf(input.unit);
 	return await retryEdgeSynthesis(() => synthesisArbiter.foreground(input), {
 		classify: classifyEdgeFailure,
-		headroomMs: bufferedHeadroomMs,
+		headroomMs: playbackHeadroomMs,
 		graceMs: EDGE_STARVATION_GRACE_MS,
 		now: () => performance.now(),
 		sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
@@ -636,10 +643,11 @@ function retainedSynthesisKeys(session: number): SynthesisKey[] {
  * Audio already synthesized ahead of the playhead, in milliseconds.
  *
  * Counted over the contiguous run after the current unit: a hole means the reader reaches silence
- * there regardless of what is buffered past it, so anything beyond the hole is not headroom. This
- * is what bounds how patiently a failed unit may be retried.
+ * there regardless of what is buffered past it, so anything beyond the hole is not headroom. A
+ * reader who is already waiting has none at all — see bufferedHeadroomMs. This is what bounds how
+ * patiently a failed unit may be retried.
  */
-function bufferedHeadroomMs(): number {
+function playbackHeadroomMs(): number {
 	let seconds = 0;
 	for (let unitIndex = currentUnitIndex + 1; unitIndex < speechUnits.length; unitIndex += 1) {
 		const resolved = synthesisCoordinator.peekResolved(synthesisKey(playbackSession, unitIndex));
@@ -648,7 +656,7 @@ function bufferedHeadroomMs(): number {
 		}
 		seconds += resolved.buffer.duration;
 	}
-	return seconds * 1_000;
+	return bufferedHeadroomMs(playbackStatus === 'loading', seconds);
 }
 
 function playbackRunway(): PlaybackRunway {

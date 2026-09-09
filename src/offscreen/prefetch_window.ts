@@ -84,6 +84,18 @@ export function shouldPrimeSuccessor(providerId: TtsProviderId, firstUnitSeconds
 	return firstUnitSeconds < SUCCESSOR_RECOVERY_SECONDS;
 }
 
+/**
+ * Audio the reader can still hear before they reach silence.
+ *
+ * Zero while they are waiting, however much sits buffered behind the gap: playback cannot skip the
+ * unit it is stuck on, so audio queued after that unit buys the reader nothing. Counting it was
+ * enough to keep the starvation deadline resetting forever — a unit that would never synthesize
+ * retried indefinitely while the buffer behind it looked healthy and the reader heard nothing.
+ */
+export function bufferedHeadroomMs(readerIsWaiting: boolean, resolvedSecondsAhead: number): number {
+	return readerIsWaiting ? 0 : resolvedSecondsAhead * 1_000;
+}
+
 export type PrefetchState = 'idle' | 'inFlight' | 'resolved';
 
 /** Which of the window's units to start now, keeping the queue under the in-flight bound. */

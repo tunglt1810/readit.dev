@@ -184,7 +184,7 @@ test('uses shared playback controls with toolbar and content aligned', async ({ 
 	expect(Math.abs(layout.toolbar.right - layout.content.right)).toBeLessThan(1);
 	// Each toolbar column holds a different amount, so anything that sizes a column to its own
 	// content drops its label onto its own line.
-	expect(layout.labelTops).toHaveLength(3);
+	expect(layout.labelTops).toHaveLength(4);
 	expect(Math.max(...layout.labelTops) - Math.min(...layout.labelTops)).toBe(0);
 	expect(layout.speedSlider.top).toBeGreaterThanOrEqual(layout.speedHeader.bottom);
 	expect(layout.progressBar.top).toBeGreaterThanOrEqual(layout.progressHeader.bottom);

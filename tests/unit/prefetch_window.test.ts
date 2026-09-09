@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { PREFETCH_TARGET_SECONDS, prefetchWindow, shouldPrimeSuccessor } from '../../src/offscreen/prefetch_window.ts';
+import { bufferedHeadroomMs, PREFETCH_TARGET_SECONDS, prefetchWindow, shouldPrimeSuccessor } from '../../src/offscreen/prefetch_window.ts';
 import type { SpeechUnit } from '../../src/offscreen/speech_unit.ts';
 
 /** 160 words per minute at speed 1, so 16 words is exactly six seconds of speech. */
@@ -35,6 +35,19 @@ test('accounts for playback speed', () => {
 test('targets three minutes by default', () => {
 	assert.equal(PREFETCH_TARGET_SECONDS, 180);
 	assert.equal(prefetchWindow(units, 0, 'en', 1).length, 30, 'thirty six-second units cover three minutes');
+});
+
+// The starvation deadline resets whenever there is headroom. Counting audio that sits *behind* a
+// unit that will not synthesize made the deadline reset forever: playback cannot skip the unit it
+// is stuck on, so the reader heard silence while the buffer looked healthy.
+test('reports no headroom while the reader is waiting, however much is buffered behind', () => {
+	assert.equal(bufferedHeadroomMs(true, 120), 0);
+	assert.equal(bufferedHeadroomMs(true, 0), 0);
+});
+
+test('reports the buffered audio once playback is actually running', () => {
+	assert.equal(bufferedHeadroomMs(false, 120), 120_000);
+	assert.equal(bufferedHeadroomMs(false, 0), 0);
 });
 
 // Supertonic runs WASM inference on the offscreen document's main thread, so its successor has to

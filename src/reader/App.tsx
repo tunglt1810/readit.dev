@@ -11,14 +11,7 @@ import {
 } from '../shared/book_progress_store.ts';
 import { AudioExportButton } from '../shared/components/AudioExportButton.tsx';
 import { PlaybackIcon } from '../shared/components/PlaybackIcon.tsx';
-import {
-	DEFAULT_SPEED,
-	DOCX_ERROR_CODES,
-	EPUB_ERROR_CODES,
-	resolveStoredPlaybackSpeed,
-	STORAGE_KEYS,
-	VOICE_STYLES,
-} from '../shared/constants.ts';
+import { DEFAULT_SPEED, DOCX_ERROR_CODES, EPUB_ERROR_CODES, resolveStoredPlaybackSpeed, STORAGE_KEYS } from '../shared/constants.ts';
 import {
 	DOCUMENT_READER_PORT_NAME,
 	type DocumentReaderPortMessage,
@@ -27,6 +20,7 @@ import {
 	mapDocumentReaderWords,
 } from '../shared/document_reader.ts';
 import { DocxError } from '../shared/docx_extractor.ts';
+import { resolveEdgeVoice, type TtsProviderId, writeEdgeVoice, writeTtsProvider } from '../shared/edge_voice_preferences.ts';
 import { EpubError } from '../shared/epub_extractor.ts';
 import { getLocalizedPlaybackError, t } from '../shared/i18n.ts';
 import { isLocalBookSession } from '../shared/local_book_session.ts';
@@ -35,6 +29,7 @@ import { resolvePlaybackStatus } from '../shared/playback_status.ts';
 import { performCenteredScroll, UserScrollPauseManager } from '../shared/scroll_helper.ts';
 import type { PlaybackSessionSnapshot, TabPlaybackSessionSnapshot, ThemeName } from '../shared/types.ts';
 import { getDisplayVersion } from '../shared/version.ts';
+import { voiceOptionsFor } from '../shared/voice_options.ts';
 import {
 	type BookKind,
 	detectBookKind,
@@ -66,6 +61,8 @@ export default function App() {
 	const [currentWordIndex, setCurrentWordIndex] = useState(-1);
 	const [sourceTabId, setSourceTabId] = useState<number | null>(null);
 	const [activeVoice, setActiveVoice] = useState('M1');
+	const [ttsProvider, setTtsProvider] = useState<TtsProviderId>('edge');
+	const [edgeVoices, setEdgeVoices] = useState<Record<string, string>>({});
 	const [speed, setSpeed] = useState(DEFAULT_SPEED);
 	const [bookError, setBookError] = useState('');
 	const [isLoadingBook, setIsLoadingBook] = useState(false);
@@ -122,12 +119,20 @@ export default function App() {
 		let latestSessionSpeed: number | undefined;
 		let latestSessionLanguage: string | undefined;
 		chrome.storage.local.get(
-			[STORAGE_KEYS.ACTIVE_VOICE, STORAGE_KEYS.SPEED, STORAGE_KEYS.HAS_CUSTOM_SPEED_OVERRIDE, STORAGE_KEYS.TTS_PROVIDER],
+			[
+				STORAGE_KEYS.ACTIVE_VOICE,
+				STORAGE_KEYS.SPEED,
+				STORAGE_KEYS.HAS_CUSTOM_SPEED_OVERRIDE,
+				STORAGE_KEYS.TTS_PROVIDER,
+				STORAGE_KEYS.EDGE_VOICES,
+			],
 			(result) => {
 				const storedVoice = result[STORAGE_KEYS.ACTIVE_VOICE];
 				const storedSpeed = result[STORAGE_KEYS.SPEED];
 				// The speed default is calibrated per engine, so it is read in the same pass.
 				const storedProvider = result[STORAGE_KEYS.TTS_PROVIDER] === 'supertonic' ? 'supertonic' : 'edge';
+				setTtsProvider(storedProvider);
+				setEdgeVoices((result[STORAGE_KEYS.EDGE_VOICES] as Record<string, string> | undefined) ?? {});
 				if (typeof storedVoice === 'string') {
 					setActiveVoice(storedVoice);
 				}
@@ -525,9 +530,32 @@ export default function App() {
 		})();
 	};
 
+	// Which voices are on offer follows the engine and the language, exactly as it does in the
+	// popup and side panel — the shared helper is what keeps the three surfaces from drifting.
+	const contentLang = session?.lang ?? 'vi';
+	const { usingEdge, options: voiceChoices } = voiceOptionsFor(ttsProvider, contentLang);
+	const selectedVoice = usingEdge ? (resolveEdgeVoice(edgeVoices, contentLang) ?? '') : activeVoice;
+	// Switching engine or voice mid-read is not supported: the units in flight were planned for
+	// whichever engine started the session.
+	const isVoiceDisabled = playbackStatus === 'playing' || playbackStatus === 'loading';
+
+	/**
+	 * The two engines store a voice differently: edge keys it by language because Microsoft's
+	 * catalogue is per-locale, while the on-device engine has one global choice.
+	 */
 	const handleVoiceChange = (voice: string) => {
+		if (usingEdge) {
+			setEdgeVoices((previous) => ({ ...previous, [contentLang.split('-')[0].toLowerCase()]: voice }));
+			void writeEdgeVoice(contentLang, voice);
+			return;
+		}
 		setActiveVoice(voice);
 		void chrome.storage.local.set({ [STORAGE_KEYS.ACTIVE_VOICE]: voice });
+	};
+
+	const handleTtsProviderChange = (provider: TtsProviderId) => {
+		setTtsProvider(provider);
+		void writeTtsProvider(provider);
 	};
 
 	const handleSpeedChange = (nextSpeed: number) => {
@@ -651,16 +679,32 @@ export default function App() {
 							<AudioExportButton session={documentSession} />
 						</div>
 						<div className="form-group">
+							<label className="form-label" htmlFor="reader-tts-provider-select">
+								{t('ttsProvider')}
+							</label>
+							<select
+								id="reader-tts-provider-select"
+								className="form-select"
+								value={ttsProvider}
+								disabled={isVoiceDisabled}
+								onChange={(event) => handleTtsProviderChange(event.target.value as TtsProviderId)}
+							>
+								<option value="edge">{t('ttsProviderEdge')}</option>
+								<option value="supertonic">{t('ttsProviderSupertonic')}</option>
+							</select>
+						</div>
+						<div className="form-group">
 							<label className="form-label" htmlFor="reader-voice-select">
 								{t('selectVoice')}
 							</label>
 							<select
 								id="reader-voice-select"
 								className="form-select"
-								value={activeVoice}
+								value={selectedVoice}
+								disabled={isVoiceDisabled}
 								onChange={(event) => handleVoiceChange(event.target.value)}
 							>
-								{VOICE_STYLES.map((voice) => (
+								{voiceChoices.map((voice) => (
 									<option key={voice.id} value={voice.id}>
 										{voice.name}
 									</option>
