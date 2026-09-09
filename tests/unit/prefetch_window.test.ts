@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { bufferedHeadroomMs, PREFETCH_TARGET_SECONDS, prefetchWindow, shouldPrimeSuccessor } from '../../src/offscreen/prefetch_window.ts';
+import {
+	bufferedHeadroomMs,
+	PREFETCH_TARGET_SECONDS,
+	prefetchTargetSeconds,
+	prefetchWindow,
+	shouldPrimeSuccessor,
+} from '../../src/offscreen/prefetch_window.ts';
 import type { SpeechUnit } from '../../src/offscreen/speech_unit.ts';
 
 /** 160 words per minute at speed 1, so 16 words is exactly six seconds of speech. */
@@ -35,6 +41,23 @@ test('accounts for playback speed', () => {
 test('targets three minutes by default', () => {
 	assert.equal(PREFETCH_TARGET_SECONDS, 180);
 	assert.equal(prefetchWindow(units, 0, 'en', 1).length, 30, 'thirty six-second units cover three minutes');
+});
+
+// A deep buffer is worth three minutes of socket waits and nothing at all on the on-device path,
+// where each unit is seconds of blocking main-thread inference that the reader's own audio, and
+// the `playing` report every surface waits on, have to queue behind.
+test('buffers deep for the cloud and one unit ahead on-device', () => {
+	assert.equal(prefetchWindow(units, 0, 'en', 1, prefetchTargetSeconds('edge')).length, 30);
+	assert.deepEqual(prefetchWindow(units, 0, 'en', 1, prefetchTargetSeconds('supertonic')), [1]);
+});
+
+// Sub-second units admit a second one, which is the point: the bound is the inference the reader
+// waits behind, not the unit count.
+test('keeps the on-device cover to about a second whatever the units weigh', () => {
+	const shortUnits = Array.from({ length: 60 }, () => unitOfWords(2));
+	const window = prefetchWindow(shortUnits, 4, 'en', 1, prefetchTargetSeconds('supertonic'));
+	assert.deepEqual(window, [5, 6]);
+	assert.equal(prefetchWindow(shortUnits, 4, 'en', 1, PREFETCH_TARGET_SECONDS).length, 55);
 });
 
 // The starvation deadline resets whenever there is headroom. Counting audio that sits *behind* a

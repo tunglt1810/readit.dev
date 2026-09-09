@@ -40,6 +40,7 @@ import {
 	type PrefetchState,
 	prefetchCap,
 	prefetchStarts,
+	prefetchTargetSeconds,
 	prefetchWindow,
 	shouldPrimeSuccessor,
 } from './prefetch_window.ts';
@@ -633,7 +634,14 @@ function retainedSynthesisKeys(session: number): SynthesisKey[] {
 	// `currentPlaybackLanguage` is null between sessions. The estimate only sizes a buffer, and an
 	// empty language means the non-Chinese words-per-minute rate, which is the right default for a
 	// window nothing is playing into yet.
-	for (const unitIndex of prefetchWindow(speechUnits, currentUnitIndex, currentPlaybackLanguage ?? '', currentSpeed)) {
+	const window = prefetchWindow(
+		speechUnits,
+		currentUnitIndex,
+		currentPlaybackLanguage ?? '',
+		currentSpeed,
+		prefetchTargetSeconds(sessionProviderId),
+	);
+	for (const unitIndex of window) {
 		keys.push(synthesisKey(session, unitIndex));
 	}
 	return keys;
@@ -726,7 +734,7 @@ function prefetchStateOf(session: number, unitIndex: number): PrefetchState {
  * waiting behind the whole window. Refilling happens from the coordinator's onResolved.
  */
 function prefetchNextUnit(lang: string, session: number): void {
-	const window = prefetchWindow(speechUnits, currentUnitIndex, lang, currentSpeed);
+	const window = prefetchWindow(speechUnits, currentUnitIndex, lang, currentSpeed, prefetchTargetSeconds(sessionProviderId));
 	// `loading` is exactly the state where the reader is on silence waiting for a unit, whether
 	// that is the first one or a mid-article gap, so it is what narrows the queue.
 	const cap = prefetchCap(playbackStatus === 'loading');

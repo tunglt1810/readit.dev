@@ -1,16 +1,7 @@
 import type * as Ort from 'onnxruntime-web';
-import * as browserOrt from 'onnxruntime-web/webgpu';
 
+import * as browserOrt from '../ort_runtime.ts';
 import type { AbbreviationScorer } from './abbreviations.ts';
-
-if (typeof chrome !== 'undefined' && chrome.runtime) {
-	browserOrt.env.wasm.wasmPaths = {
-		mjs: chrome.runtime.getURL('ort-wasm-simd-threaded.asyncify.mjs'),
-		wasm: chrome.runtime.getURL('ort-wasm-simd-threaded.asyncify.wasm'),
-	};
-	browserOrt.env.wasm.numThreads = 1;
-	browserOrt.env.wasm.proxy = false;
-}
 
 export interface AbbreviationScorerConfig {
 	window_size: number;

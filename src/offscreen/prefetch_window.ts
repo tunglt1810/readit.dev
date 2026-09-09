@@ -3,7 +3,7 @@ import { estimateSpeechUnitDurations } from './audio_export_estimate.ts';
 import type { SpeechUnit } from './speech_unit.ts';
 
 /**
- * How much audio to keep synthesized ahead of the playhead.
+ * How much audio to keep synthesized ahead of the playhead on the cloud path.
  *
  * Microsoft's endpoint drops requests in windows lasting around two minutes; three minutes of
  * buffer rides one out without the reader hearing a gap. Filling it costs about ten seconds,
@@ -11,6 +11,30 @@ import type { SpeechUnit } from './speech_unit.ts';
  * second, and about 33MB of decoded audio in the offscreen document.
  */
 export const PREFETCH_TARGET_SECONDS = 180;
+
+/**
+ * The on-device target: about a second of cover, which for any ordinary unit is the one unit ahead
+ * this path buffered before the window existed.
+ */
+const ON_DEVICE_PREFETCH_TARGET_SECONDS = 1;
+
+/**
+ * How deep a buffer this engine has a reason to build.
+ *
+ * Only the cloud path does. Its requests are socket waits, so filling three minutes costs three
+ * minutes of nothing much. On the on-device path a request is seconds of synchronous WASM
+ * inference on the offscreen document's main thread, and everything that thread owns waits behind
+ * it: the `onended` that starts the next unit, and the `playing` report the background and every
+ * surface read their state from. Measured on a five-unit article, audio started at 9.5s while the
+ * report did not arrive until 36.6s, stuck behind four speculative units — far enough back that a
+ * slower machine crosses the background's startup deadline and fails a session already playing.
+ *
+ * Inference runs ahead of playback on this path, so one unit of cover is all it needs to stay
+ * ahead; the successor priming in `shouldPrimeSuccessor` covers the one place it cannot.
+ */
+export function prefetchTargetSeconds(providerId: TtsProviderId): number {
+	return providerId === 'edge' ? PREFETCH_TARGET_SECONDS : ON_DEVICE_PREFETCH_TARGET_SECONDS;
+}
 
 /**
  * The unit indices that must be synthesized, in order, to buffer `targetSeconds` past the unit

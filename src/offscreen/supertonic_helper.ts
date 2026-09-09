@@ -1,13 +1,5 @@
-import * as ort from 'onnxruntime-web/webgpu';
-
 import { fetchWithCache } from '../shared/model_cache.ts';
-
-// Set WebAssembly paths to the extension root where the .wasm files are copied
-ort.env.wasm.wasmPaths = typeof chrome !== 'undefined' && chrome.runtime ? chrome.runtime.getURL('/') : '/';
-
-// Disable multi-threading in Chrome Extension environment to avoid Blob URL CSP / importScripts errors
-ort.env.wasm.numThreads = 1;
-ort.env.wasm.proxy = false;
+import * as ort from './ort_runtime.ts';
 
 // Available languages for multilingual TTS
 export const AVAILABLE_LANGS = [
@@ -242,6 +234,20 @@ export class Style {
 	}
 }
 
+/**
+ * A private copy of a tensor, for an input that more than one run reads.
+ *
+ * Inference runs in a worker (see ort_runtime.ts), and ORT hands an input's ArrayBuffer over by
+ * transfer rather than by copy — which leaves the original detached on this side. The text ids, the
+ * masks, the style and the text embedding are all read by several runs, so each run gets its own.
+ * The latent is the one input exempt from this: every step's input is the previous step's output,
+ * read once, and it is the only buffer large enough for a copy per step to be worth avoiding.
+ */
+function copyTensor(tensor: ort.Tensor): ort.Tensor {
+	const data = tensor.data as { slice(): ort.Tensor['data'] };
+	return new ort.Tensor(tensor.type, data.slice() as never, tensor.dims);
+}
+
 function repeatStyleBatch(tensor: ort.Tensor, batchSize: number): ort.Tensor {
 	if (tensor.dims[0] === batchSize) {
 		return tensor;
@@ -298,9 +304,9 @@ export class TextToSpeech {
 		const textMaskTensor = new ort.Tensor('float32', textMaskFlat, textMaskShape);
 
 		const dpOutputs = await this.dpOrt.run({
-			text_ids: textIdsTensor,
-			style_dp: repeatStyleBatch(style.dp, bsz),
-			text_mask: textMaskTensor,
+			text_ids: copyTensor(textIdsTensor),
+			style_dp: copyTensor(repeatStyleBatch(style.dp, bsz)),
+			text_mask: copyTensor(textMaskTensor),
 		});
 		const duration = Array.from(dpOutputs.duration.data as Float32Array, (value) => value / speed);
 
@@ -325,9 +331,9 @@ export class TextToSpeech {
 
 		// Encode text
 		const textEncOutputs = await this.textEncOrt.run({
-			text_ids: textIdsTensor,
-			style_ttl: style.ttl,
-			text_mask: textMaskTensor,
+			text_ids: copyTensor(textIdsTensor),
+			style_ttl: copyTensor(style.ttl),
+			text_mask: copyTensor(textMaskTensor),
 		});
 		const textEmb = textEncOutputs.text_emb;
 
@@ -370,12 +376,12 @@ export class TextToSpeech {
 
 			const vectorEstOutputs = await this.vectorEstOrt.run({
 				noisy_latent: xtTensor,
-				text_emb: textEmb,
-				style_ttl: style.ttl,
-				latent_mask: latentMaskTensor,
-				text_mask: textMaskTensor,
+				text_emb: copyTensor(textEmb),
+				style_ttl: copyTensor(style.ttl),
+				latent_mask: copyTensor(latentMaskTensor),
+				text_mask: copyTensor(textMaskTensor),
 				current_step: currentStepTensor,
-				total_step: totalStepTensor,
+				total_step: copyTensor(totalStepTensor),
 			});
 
 			// The denoiser returns the shape it was handed, already flat and row-major, so it becomes
