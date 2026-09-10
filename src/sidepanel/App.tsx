@@ -11,6 +11,7 @@ import { TranslateReadButton } from '../shared/components/TranslateReadButton.ts
 import { BUY_ME_A_COFFEE_URL, DEFAULT_SPEED, resolveStoredPlaybackSpeed, STORAGE_KEYS } from '../shared/constants.ts';
 import { resolveEdgeVoice, type TtsProviderId, writeEdgeVoice, writeTtsProvider } from '../shared/edge_voice_preferences.ts';
 import { getLocalizedPlaybackError, t, uiLang } from '../shared/i18n.ts';
+import { allOfferableLanguages } from '../shared/language_options.ts';
 import { isLocalBookSession } from '../shared/local_book_session.ts';
 import { normalizeManualText } from '../shared/manual_text.ts';
 import { requestPlaybackState, sendPlaybackCommand, sendRuntimeRequest, subscribePlaybackState } from '../shared/playback_client.ts';
@@ -85,6 +86,14 @@ export default function App() {
 	const [selectionButtonEnabled, setSelectionButtonEnabled] = useState(true);
 	const [wordHighlightEnabled, setWordHighlightEnabled] = useState(true);
 	const [pageInfo, setPageInfo] = useState<PageInfoResponse>(EMPTY_PAGE_INFO);
+	// Carries the page it was chosen for, so it lapses when the reader moves on instead of needing an
+	// effect to clear it — the reset is then a property of the data, not a side effect that can misfire.
+	const [chosenLanguage, setChosenLanguage] = useState<{ pageKey: string; code: string | null }>({ pageKey: '', code: null });
+	// The choice is about the page in front of the reader, so it does not follow them to the next one.
+	const pageKey = pageInfo.available ? pageInfo.url : '';
+	const languageOverride = chosenLanguage.pageKey === pageKey ? chosenLanguage.code : null;
+	const setLanguageOverride = (code: string | null) => setChosenLanguage({ pageKey, code });
+
 	const readerRef = useRef<HTMLDivElement>(null);
 	const primaryButtonRef = useRef<HTMLButtonElement>(null);
 	const manualHighlightCursorRef = useRef<ReturnType<typeof createManualHighlightCursor> | null>(null);
@@ -427,7 +436,7 @@ export default function App() {
 
 	const handleReadCurrentPage = async () => {
 		setCommandError('');
-		const response = await sendPlaybackCommand({ action: 'START_CURRENT_PAGE' });
+		const response = await sendPlaybackCommand({ action: 'START_CURRENT_PAGE', payload: { languageOverride } });
 		if (!response.success) {
 			setCommandError(
 				response.transportError
@@ -468,7 +477,7 @@ export default function App() {
 	const handleTranslateAndRead = async () => {
 		setCommandError('');
 		setTranslationNotice('');
-		const response = await sendPlaybackCommand({ action: 'START_CURRENT_PAGE_TRANSLATED' });
+		const response = await sendPlaybackCommand({ action: 'START_CURRENT_PAGE_TRANSLATED', payload: { languageOverride } });
 		if (!response.success) {
 			setCommandError(
 				response.transportError ? t('startReadingFailed') : (getLocalizedPlaybackError(response.error) ?? t('startReadingFailed')),
@@ -594,7 +603,9 @@ export default function App() {
 	// language, and the browser's UI language says nothing about the page — falling back to it put
 	// English voices in front of a Vietnamese article. The page's own declared language is the
 	// closest thing available; playback itself re-resolves the voice from the detected language.
-	const contentLang = session?.lang ?? (pageInfo.available ? pageInfo.lang : null) ?? uiLang;
+	// An explicit choice outranks both: it exists precisely because detection got it wrong, and a
+	// starting session must not pull the panel back to what it detected.
+	const contentLang = languageOverride ?? session?.lang ?? (pageInfo.available ? pageInfo.lang : null) ?? uiLang;
 	const edgeVoice = resolveEdgeVoice(edgeVoices, contentLang);
 
 	const handleTtsProviderChange = (provider: TtsProviderId) => {
@@ -801,14 +812,17 @@ export default function App() {
 				<label className="field-label">
 					<span>{t('manualLanguage')}</span>
 					<select
+						id="manual-language-select"
 						disabled={manualReaderLocked}
 						value={language}
-						onChange={(event) => setLanguage(event.target.value as ManualTextLanguage)}
+						onChange={(event) => setLanguage(event.target.value)}
 					>
 						<option value="auto">{t('languageAuto')}</option>
-						<option value="en">{t('languageEnglish')}</option>
-						<option value="vi">{t('languageVietnamese')}</option>
-						<option value="zh">{t('languageChinese')}</option>
+						{allOfferableLanguages().map((option) => (
+							<option key={option.code} value={option.code}>
+								{option.name}
+							</option>
+						))}
 					</select>
 				</label>
 				<div className="manual-actions">
@@ -994,6 +1008,8 @@ export default function App() {
 				activeVoice={activeVoice}
 				ttsProvider={ttsProvider}
 				contentLang={contentLang}
+				languageOverride={languageOverride}
+				onLanguageOverrideChange={setLanguageOverride}
 				edgeVoice={edgeVoice}
 				speed={speed}
 				selectionButtonEnabled={selectionButtonEnabled}

@@ -19,6 +19,8 @@
 	"errorState": "Lỗi hoạt động",
 	"resumeStatus": "Tiếp tục",
 	"selectVoice": "Giọng đọc",
+	"contentLanguage": "Ngôn ngữ nội dung",
+	"contentLanguageAuto": "Tự động ({language})",
 	"readingSpeed": "Tốc độ",
 	"loadingModel": "Đang tải model",
 	"modelLoadFailed": "Không thể tải model",

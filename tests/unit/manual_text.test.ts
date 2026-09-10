@@ -18,7 +18,9 @@ test('rejects malformed, unsupported, and whitespace-only payloads', () => {
 	assert.equal(prepareManualText(null), null);
 	assert.equal(prepareManualText({ text: 42, language: 'auto' }), null);
 	assert.equal(prepareManualText({ text: '   \n ', language: 'auto' }), null);
-	assert.equal(prepareManualText({ text: 'Hello', language: 'fr' }), null);
+	// 'fr' used to land here only because the list was four languages long; the rejection that still
+	// matters is a code no engine has a voice for.
+	assert.equal(prepareManualText({ text: 'Hello', language: 'xh' }), null);
 });
 
 test('explicit language bypasses automatic detection', () => {
@@ -54,4 +56,22 @@ test('keeps a valid Side Panel owner ID while preparing manual text', () => {
 		},
 	);
 	assert.equal(prepareManualStart({ text: 'Read this locally.', language: 'en', panelInstanceId: 'stale' }), null);
+});
+
+test('accepts a language outside the original four', () => {
+	const prepared = prepareManualText({ text: 'Guten Tag, wie geht es Ihnen heute?', language: 'de' });
+	assert.equal(prepared?.lang, 'de');
+});
+
+test('rejects a language no engine can speak', () => {
+	assert.equal(prepareManualText({ text: 'hello there', language: 'xx' }), null);
+});
+
+test('auto detection reaches languages the old heuristic could not name', () => {
+	assert.equal(detectManualTextLanguage('日本語のテキストはひらがなとカタカナを混ぜて書かれています。'), 'ja');
+	assert.equal(detectManualTextLanguage('인공지능은 사람들이 지식을 얻는 방식을 바꾸고 있습니다.'), 'ko');
+});
+
+test('auto detection still recognises unaccented Vietnamese', () => {
+	assert.equal(detectManualTextLanguage('toi va cac ban khong duoc mot cho nao trong danh sach'), 'vi');
 });

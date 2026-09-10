@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 
 import type { TtsProviderId } from '../edge_voice_preferences';
 import { t, translationTargetLabel } from '../i18n';
+import { languageDisplayName, languageOptionsFor } from '../language_options';
 import { isTranslationTarget, TRANSLATION_TARGETS } from '../translation_policy';
 import type { PlaybackStatus, ThemeName, TranslationTarget } from '../types';
 import { voiceOptionsFor } from '../voice_options';
@@ -13,6 +14,9 @@ export interface SettingsCardProps {
 	ttsProvider: TtsProviderId;
 	/** Language of the content being read; decides which edge voices are on offer. */
 	contentLang: string;
+	/** The reader's explicit language choice, or `null` while it follows detection. */
+	languageOverride: string | null;
+	onLanguageOverrideChange: (language: string | null) => void;
 	edgeVoice: string | null;
 	speed: number;
 	selectionButtonEnabled: boolean;
@@ -37,6 +41,8 @@ export function SettingsCard({
 	activeVoice,
 	ttsProvider,
 	contentLang,
+	languageOverride,
+	onLanguageOverrideChange,
 	edgeVoice,
 	speed,
 	selectionButtonEnabled,
@@ -116,8 +122,30 @@ export function SettingsCard({
 					{ttsProvider === 'edge' && <p className="setting-note">{t('ttsProviderEdgeNote')}</p>}
 
 					<label className="selection-button-setting voice-setting">
+						<span className="setting-label">{t('contentLanguage')}</span>
+						<select
+							id="content-language-select"
+							className="form-select inline-select"
+							aria-label={t('contentLanguage')}
+							value={languageOverride ?? 'auto'}
+							onChange={(e) => onLanguageOverrideChange(e.target.value === 'auto' ? null : e.target.value)}
+							disabled={isVoiceDisabled}
+						>
+							{/* The automatic option names what it resolved to, so a wrong detection is visible
+							    without opening the list. */}
+							<option value="auto">{t('contentLanguageAuto').replace('{language}', languageDisplayName(contentLang))}</option>
+							{languageOptionsFor(ttsProvider).map((language) => (
+								<option key={language.code} value={language.code}>
+									{language.name}
+								</option>
+							))}
+						</select>
+					</label>
+
+					<label className="selection-button-setting voice-setting">
 						<span className="setting-label">{t('selectVoice')}</span>
 						<select
+							id="voice-select"
 							className="form-select inline-select"
 							aria-label={t('selectVoice')}
 							value={usingEdge ? (edgeVoice ?? '') : activeVoice}

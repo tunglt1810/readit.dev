@@ -37,3 +37,31 @@ test('detects Vietnamese in a mostly-English document that quotes Vietnamese pro
 	const mostlyEnglish = `${ENGLISH} ${ENGLISH} ${ENGLISH} ${ENGLISH} Một câu tiếng Việt.`;
 	assert.equal(detectContentLanguage(mostlyEnglish, 'en'), 'en');
 });
+
+const JAPANESE = '日本語のテキストはひらがなとカタカナと漢字を混ぜて書かれています。とても読みやすいです。';
+const RUSSIAN = 'Искусственный интеллект меняет способ получения знаний людьми каждый день.';
+const PERSIAN = 'هوش مصنوعی روش دسترسی مردم به دانش را تغییر می‌دهد و ابزارهای تازه‌ای می‌سازد.';
+const UKRAINIAN = 'Штучний інтелект змінює спосіб, у який люди отримують знання щодня.';
+
+test('replaces a declared locale whose script the text contradicts', () => {
+	// A Japanese newspaper served under an English locale: the declaration is about the site chrome.
+	assert.equal(detectContentLanguage(JAPANESE, 'en'), 'ja');
+	assert.equal(detectContentLanguage(RUSSIAN, 'na'), 'ru');
+});
+
+test('keeps a declared locale that agrees with the observed script', () => {
+	// Persian and Arabic share a script; overriding would swap a correct declaration for a wrong one.
+	assert.equal(detectContentLanguage(PERSIAN, 'fa'), 'fa');
+	assert.equal(detectContentLanguage(UKRAINIAN, 'uk'), 'uk');
+});
+
+test('leaves Latin-script text to the declared locale', () => {
+	// Latin cannot separate en/fr/de, so the script layer must not answer for them at all.
+	assert.equal(detectContentLanguage(ENGLISH, 'na'), 'na');
+	assert.equal(detectContentLanguage(FRENCH, 'na'), 'na');
+	assert.equal(detectContentLanguage(`${ENGLISH} The author is 王小明.`, 'en'), 'en');
+});
+
+test('the Vietnamese layer still runs before the script layer', () => {
+	assert.equal(detectContentLanguage(VIETNAMESE, 'ru'), 'vi');
+});

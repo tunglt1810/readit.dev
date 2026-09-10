@@ -26,6 +26,8 @@ export default function App() {
 	const [session, setSession] = useState<PlaybackSessionSnapshot | null>(null);
 	const [currentTabId, setCurrentTabId] = useState<number | undefined>();
 	const [pageInfo, setPageInfo] = useState<PageInfoResponse>({ available: false });
+	// The popup is torn down and rebuilt on every open, so its lifetime is already "this page".
+	const [languageOverride, setLanguageOverride] = useState<string | null>(null);
 	const [sidePanelWindowId, setSidePanelWindowId] = useState<number | undefined>();
 	const [activeTheme, setActiveTheme] = useState<ThemeName>('default');
 	const primaryButtonRef = useRef<HTMLButtonElement>(null);
@@ -251,7 +253,7 @@ export default function App() {
 		setCommandError('');
 		void (async () => {
 			// sendPlaybackCommand reports transport failures in the response instead of rejecting.
-			const response = await sendPlaybackCommand({ action: 'START_CURRENT_PAGE' });
+			const response = await sendPlaybackCommand({ action: 'START_CURRENT_PAGE', payload: { languageOverride } });
 			if (response?.success === false) {
 				setCommandError(
 					response.transportError
@@ -331,7 +333,7 @@ export default function App() {
 		setCommandError('');
 		setTranslationNotice('');
 		void (async () => {
-			const response = await sendPlaybackCommand({ action: 'START_CURRENT_PAGE_TRANSLATED' });
+			const response = await sendPlaybackCommand({ action: 'START_CURRENT_PAGE_TRANSLATED', payload: { languageOverride } });
 			if (!response?.success) {
 				setCommandError(getLocalizedPlaybackError(response?.error) ?? t('startReadingFailed'));
 				return;
@@ -378,7 +380,9 @@ export default function App() {
 	// language, and the browser's UI language says nothing about the page — falling back to it put
 	// English voices in front of a Vietnamese article. The page's own declared language is the
 	// closest thing available; playback itself re-resolves the voice from the detected language.
-	const contentLang = session?.lang ?? (pageInfo.available ? pageInfo.lang : null) ?? uiLang;
+	// An explicit choice outranks both: it exists precisely because detection got it wrong, and a
+	// starting session must not pull the panel back to what it detected.
+	const contentLang = languageOverride ?? session?.lang ?? (pageInfo.available ? pageInfo.lang : null) ?? uiLang;
 	const edgeVoice = resolveEdgeVoice(edgeVoices, contentLang);
 
 	const handleTtsProviderChange = (provider: TtsProviderId) => {
@@ -643,6 +647,8 @@ export default function App() {
 				activeVoice={activeVoice}
 				ttsProvider={ttsProvider}
 				contentLang={contentLang}
+				languageOverride={languageOverride}
+				onLanguageOverrideChange={setLanguageOverride}
 				edgeVoice={edgeVoice}
 				speed={speed}
 				selectionButtonEnabled={selectionButtonEnabled}

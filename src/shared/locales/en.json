@@ -19,6 +19,8 @@
 	"errorState": "Playback Error",
 	"resumeStatus": "Resume",
 	"selectVoice": "Voice",
+	"contentLanguage": "Content language",
+	"contentLanguageAuto": "Auto ({language})",
 	"readingSpeed": "Speed",
 	"loadingModel": "Loading model",
 	"modelLoadFailed": "Unable to load model",

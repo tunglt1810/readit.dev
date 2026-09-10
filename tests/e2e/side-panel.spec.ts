@@ -1,7 +1,9 @@
+import type { BrowserContext, Page } from '@playwright/test';
+
 import { normalizeVietnameseText } from '../../src/offscreen/vietnamese/normalizer';
 import type { NormalizationDependencies } from '../../src/offscreen/vietnamese/types';
 import type { PlaybackSessionSnapshot, ThemeName } from '../../src/shared/types';
-import { expect, installExtensionUiRuntimeMock, test } from './fixtures';
+import { expect, installExtensionUiRuntimeMock, seedTtsProvider, test } from './fixtures';
 
 const pageInfo = {
 	available: true as const,
@@ -130,9 +132,12 @@ test('orders current-page reading before a document-local manual draft', async (
 
 	const language = page.getByRole('combobox', { name: 'Ngôn ngữ văn bản' });
 	await expect(language).toHaveValue('auto');
-	expect(await language.locator('option').evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value))).toEqual(
-		['auto', 'en', 'vi', 'zh'],
-	);
+	// The manual tab now offers the same languages as the page tab rather than its own four.
+	const manualCodes = await language
+		.locator('option')
+		.evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value));
+	expect(manualCodes[0]).toBe('auto');
+	expect(manualCodes).toEqual(expect.arrayContaining(['en', 'vi', 'zh', 'ja']));
 	await expect(page.getByRole('button', { name: 'Đọc văn bản đã dán' })).toBeDisabled();
 
 	const draft = 'Xin chào\n\nĐây là đoạn thứ hai.';
@@ -290,7 +295,11 @@ test('shows advisory page metadata and resolves reading through START_CURRENT_PA
 	await expect(page.locator('.page-info strong')).toHaveText('Bài viết thử nghiệm');
 	await expect(page.locator('.page-info')).toContainText('example.com · vi');
 	await page.getByRole('button', { name: 'Đọc trang hiện tại' }).click();
-	expect(await page.evaluate(() => (window as any).sentMessages.at(-1))).toEqual({ action: 'START_CURRENT_PAGE' });
+	// The command now carries the panel's language choice; `null` is "follow detection".
+	expect(await page.evaluate(() => (window as any).sentMessages.at(-1))).toEqual({
+		action: 'START_CURRENT_PAGE',
+		payload: { languageOverride: null },
+	});
 });
 
 const secondPageInfo = {
@@ -838,4 +847,55 @@ test('multi-window isolation: popup shows active sidepanel button in window A (o
 
 	await popupWinA.close();
 	await popupWinB.close();
+});
+
+// The panel used to read `<html lang>` before playback, so a Vietnamese article on a page declaring
+// English listed English voices until the first paragraph was already being spoken.
+const vietnamesePageInfo = {
+	available: true as const,
+	title: 'Bài viết tiếng Việt',
+	url: 'https://example.com/vi/bai-viet',
+	lang: 'vi',
+	langSource: 'detected' as const,
+};
+
+/**
+ * The engine is seeded to edge-tts because only the cloud engine has per-language voices: the
+ * on-device engine offers the same ten styles whatever the language, so it cannot show whether the
+ * panel resolved the language correctly.
+ */
+async function openVoiceSettings(page: Page, context: BrowserContext) {
+	await seedTtsProvider(context, 'edge');
+	await page.reload();
+	await page.locator('.settings-card-header.clickable').click();
+	await expect(page.locator('#content-language-select')).toBeVisible();
+}
+
+test('offers Vietnamese voices before anything is read, on a page that declares English', async ({ page, context, openSidePanel }) => {
+	await installExtensionUiRuntimeMock(page, { session: null }, vietnamesePageInfo);
+	await openSidePanel(page);
+	await openVoiceSettings(page, context);
+
+	await expect(page.locator('#content-language-select')).toHaveValue('auto');
+	const voices = await page.locator('#voice-select option').allTextContents();
+	expect(voices.length).toBeGreaterThan(0);
+	expect(voices.some((name) => /HoaiMy|NamMinh/u.test(name))).toBe(true);
+});
+
+test('an explicit language choice re-lists the voices', async ({ page, context, openSidePanel }) => {
+	await installExtensionUiRuntimeMock(page, { session: null }, vietnamesePageInfo);
+	await openSidePanel(page);
+	await openVoiceSettings(page, context);
+
+	await page.locator('#content-language-select').selectOption('ja');
+	const voices = await page.locator('#voice-select option').allTextContents();
+	expect(voices.some((name) => /Nanami|Keita/u.test(name))).toBe(true);
+});
+
+test('locks the language while a session is playing', async ({ page, context, openSidePanel }) => {
+	await installExtensionUiRuntimeMock(page, { session: documentSession }, vietnamesePageInfo);
+	await openSidePanel(page);
+	await openVoiceSettings(page, context);
+
+	await expect(page.locator('#content-language-select')).toBeDisabled();
 });

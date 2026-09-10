@@ -1,9 +1,10 @@
+import { isOfferableLanguage } from '../shared/language_options.ts';
 import type { ManualPlaybackStartPayload } from '../shared/manual_playback.ts';
 import { isPanelInstanceId } from '../shared/manual_playback.ts';
 import { normalizeManualText } from '../shared/manual_text.ts';
-import type { ManualTextLanguage, PlaybackContent, ResolvedManualTextLanguage } from '../shared/types.ts';
+import { dominantScriptFamily } from '../shared/script_detection.ts';
+import type { PlaybackContent, ResolvedManualTextLanguage } from '../shared/types.ts';
 
-const MANUAL_LANGUAGES = new Set<ManualTextLanguage>(['auto', 'en', 'vi', 'zh']);
 const VIETNAMESE_EXCLUSIVE = /[ăằắẳẵặđơờớởỡợưừứửữự]/iu;
 const VIETNAMESE_FUNCTION_WORDS = new Set([
 	'va',
@@ -26,8 +27,28 @@ const VIETNAMESE_FUNCTION_WORDS = new Set([
 	'các',
 ]);
 
+/** Scripts that name a language on their own; Latin does not, so it falls through to the heuristics. */
+const LANGUAGE_BY_SCRIPT: Record<string, string> = {
+	ja: 'ja',
+	ko: 'ko',
+	cyrillic: 'ru',
+	arabic: 'ar',
+	thai: 'th',
+	devanagari: 'hi',
+	greek: 'el',
+	hebrew: 'he',
+};
+
 export function detectManualTextLanguage(text: string): ResolvedManualTextLanguage {
 	const normalized = text.normalize('NFKC').toLocaleLowerCase();
+
+	// Answered before the zh/vi/en heuristics below, which have no way to name any other language.
+	// `zh` deliberately falls through to the Han ratio those heuristics already apply.
+	const script = dominantScriptFamily(normalized);
+	if (script !== null && script !== 'latin' && script !== 'zh') {
+		return LANGUAGE_BY_SCRIPT[script];
+	}
+
 	const letters = normalized.match(/\p{L}/gu) ?? [];
 	const hanCount = (normalized.match(/\p{Script=Han}/gu) ?? []).length;
 	if (letters.length > 0 && hanCount / letters.length >= 0.2) {
@@ -43,18 +64,17 @@ export function prepareManualText(payload: unknown): PlaybackContent | null {
 		return null;
 	}
 	const input = payload as Record<string, unknown>;
-	if (
-		typeof input.text !== 'string' ||
-		typeof input.language !== 'string' ||
-		!MANUAL_LANGUAGES.has(input.language as ManualTextLanguage)
-	) {
+	if (typeof input.text !== 'string' || typeof input.language !== 'string') {
+		return null;
+	}
+	const language = input.language;
+	if (language !== 'auto' && !isOfferableLanguage(language)) {
 		return null;
 	}
 	const content = normalizeManualText(input.text);
 	if (!content) {
 		return null;
 	}
-	const language = input.language as ManualTextLanguage;
 	return { content, lang: language === 'auto' ? detectManualTextLanguage(content) : language };
 }
 

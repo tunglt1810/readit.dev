@@ -17,8 +17,9 @@ export interface ExtractedArticle {
 	readableSurface: Extract<ReadableSurfaceKind, 'website-dom' | 'document-reader' | 'none'>;
 }
 
-export type ManualTextLanguage = 'auto' | 'en' | 'vi' | 'zh';
-export type ResolvedManualTextLanguage = Exclude<ManualTextLanguage, 'auto'>;
+/** `auto` lets detection decide; any other value is a language code some engine can speak. */
+export type ManualTextLanguage = 'auto' | (string & {});
+export type ResolvedManualTextLanguage = string;
 
 /** The languages the Supertonic engine can speak, and therefore the only translation targets. */
 export type TranslationTarget = 'vi' | 'en' | 'zh';
@@ -28,7 +29,9 @@ export interface TranslationInfo {
 	targetLanguage: TranslationTarget;
 }
 
-export type PageInfoResponse = { available: true; title: string; url: string; lang: string } | { available: false };
+export type PageInfoResponse =
+	| { available: true; title: string; url: string; lang: string; langSource: 'detected' | 'unknown' }
+	| { available: false };
 
 export interface StartManualTextMessage {
 	action: 'START_MANUAL_TEXT';

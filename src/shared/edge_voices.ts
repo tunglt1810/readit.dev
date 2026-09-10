@@ -82,3 +82,8 @@ export function defaultVoiceForLanguage(lang: string): string | null {
 	const preferred = voices.find((voice) => voice.gender === 'female') ?? voices[0];
 	return preferred?.shortName ?? null;
 }
+
+/** The base languages edge-tts has at least one voice for, for offering as choices. */
+export function edgeBaseLanguages(): string[] {
+	return [...new Set(VOICES.map((voice) => voice.locale.split('-')[0].toLowerCase()))];
+}

@@ -1,41 +1,8 @@
 import { fetchWithCache } from '../shared/model_cache.ts';
+import { AVAILABLE_LANGS } from '../shared/supertonic_languages.ts';
 import * as ort from './ort_runtime.ts';
 
-// Available languages for multilingual TTS
-export const AVAILABLE_LANGS = [
-	'en',
-	'ko',
-	'ja',
-	'ar',
-	'bg',
-	'cs',
-	'da',
-	'de',
-	'el',
-	'es',
-	'et',
-	'fi',
-	'fr',
-	'hi',
-	'hr',
-	'hu',
-	'id',
-	'it',
-	'lt',
-	'lv',
-	'nl',
-	'pl',
-	'pt',
-	'ro',
-	'ru',
-	'sk',
-	'sl',
-	'sv',
-	'tr',
-	'uk',
-	'vi',
-	'na',
-];
+export { AVAILABLE_LANGS } from '../shared/supertonic_languages.ts';
 
 export function isValidLang(lang: string): boolean {
 	return AVAILABLE_LANGS.includes(lang);

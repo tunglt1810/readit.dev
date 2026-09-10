@@ -6,19 +6,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-09-10
+
+### Added
+
+- A content-language control in the panel and popup, so the language and voice can be chosen before reading starts rather than being reassigned
+  once playback begins. An explicit choice outranks detection and lasts for the page it was made on. - [@tunglt1810]
+
+### Changed
+
+- The language of a page is now read from its text as soon as the panel opens, instead of trusting the page's declared locale until playback.
+  Google Docs, Word Online and PDF report the language as undetermined rather than guessing from a declaration known to be wrong. - [@tunglt1810]
+- Language detection recognises Japanese, Chinese, Korean, Cyrillic, Arabic, Thai, Devanagari, Greek and Hebrew text, and only overrides a
+  declared locale when the observed script contradicts it — so a correctly declared Persian or Ukrainian page keeps its language. - [@tunglt1810]
+- The paste-text tab offers the same languages as the rest of the extension instead of its own four. - [@tunglt1810]
+
+### Fixed
+
+- Continuous integration and the end-to-end suite run green again. - [@tunglt1810]
+
+## [1.3.0] - 2026-09-09
+
+### Added
+
+- An engine selector in the Document Reader, which previously listed on-device voice names while the online engine was doing the speaking and
+  offered no way to switch. The rule for which voices to offer is now shared with the panel instead of hand-written in one place. - [@tunglt1810]
+
+### Fixed
+
+- Non-Latin-script languages were rejected by Microsoft's endpoint for every unit, because the pause markup the extension emitted is not accepted
+  there. Pauses are padded onto the decoded audio instead. - [@tunglt1810]
+- Playback survives the roughly two-minute congestion drops on Microsoft's side: it buffers further ahead, retries within that headroom, and falls
+  back to on-device synthesis only on a deterministic failure or after 30 seconds of silence. - [@tunglt1810]
+- Audio starts sooner — the online path no longer prepares a second unit when the first is long enough to cover it. - [@tunglt1810]
+- A headline at the start of an article keeps its paragraph pause instead of being merged into the text that follows. - [@tunglt1810]
+- A starvation deadlock where buffered audio behind the stalled unit counted as headroom, so the retry deadline reset forever while the reader
+  heard silence. - [@tunglt1810]
+
+## [1.2.5] - 2026-09-06
+
 ### Added
 
 - Online neural voices from Microsoft's Edge read-aloud service, covering 74 languages including Vietnamese, as the default voice engine. The
-  voice list follows the language of the content being read, and each language remembers its own voice.
-- Per-word highlight timings reported by the online engine, replacing the syllable-weight estimate for passages it can align.
+  voice list follows the language of the content being read, and each language remembers its own voice. - [@tunglt1810]
+- Per-word highlight timings reported by the online engine, replacing the syllable-weight estimate for passages it can align. - [@tunglt1810]
 
 ### Changed
 
 - Text is sent to Microsoft to be synthesized when online voices are selected. Choose **On-device voices** under **Voice engine** in Settings to
-  keep synthesis entirely local, as in previous releases. See the privacy policy for details.
+  keep synthesis entirely local, as in previous releases. See the privacy policy for details. - [@tunglt1810]
 - On-device Supertonic synthesis now takes over automatically if the online engine fails mid-article, re-planning the remaining Vietnamese text
-  so numbers and dates are still spoken correctly.
-- The Firefox build continues to use on-device Supertonic exclusively.
+  so numbers and dates are still spoken correctly. - [@tunglt1810]
+- The Firefox build continues to use on-device Supertonic exclusively. - [@tunglt1810]
 
 ## [1.2.4] - 2026-08-26
 

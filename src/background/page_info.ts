@@ -28,7 +28,7 @@ export function pageInfoFromTab(tab: { url?: string; title?: string }): PageInfo
 	if (!tab.url) {
 		return { available: false };
 	}
-	return { available: true, title: tab.title ?? '', url: tab.url, lang: 'na' };
+	return { available: true, title: tab.title ?? '', url: tab.url, lang: 'na', langSource: 'unknown' };
 }
 
 function isMissingReceiverError(error: unknown): boolean {

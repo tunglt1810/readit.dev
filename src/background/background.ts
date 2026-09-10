@@ -45,6 +45,7 @@ import { syncPlaybackBadge } from './badge';
 import { createCommandLane } from './command_queue.ts';
 import { setupContextMenus } from './context_menu.ts';
 import { checkIsFileSchemeAccessAllowed } from './file_access.ts';
+import { parseLanguageOverride } from './language_override.ts';
 import { prepareManualStart } from './manual_text';
 import { registerModelCacheWarmLifecycle } from './model_cache_lifecycle';
 import { createModelCacheWarmer } from './model_cache_warmer';
@@ -131,6 +132,8 @@ type StartPlaybackInput =
 			queueItemId?: string;
 			/** Translate before speaking. Only the article scope offers it today. */
 			translate?: boolean;
+			/** The reader's explicit language choice, which outranks whatever extraction detected. */
+			languageOverride?: string;
 	  }
 	| {
 			contentScope: 'selection';
@@ -878,6 +881,13 @@ async function startPlayback(initialInput: StartPlaybackInput): Promise<CommandR
 
 	// Translated before anything is torn down, so a failure leaves the current session playing.
 	let input = initialInput;
+
+	// Applied here and nowhere else: `content.lang` is the single field the voice, the speed, the
+	// segmentation and the Vietnamese normalizer all read, so one assignment covers every consumer.
+	if (input.contentScope === 'article' && input.languageOverride) {
+		input = { ...input, content: { ...input.content, lang: input.languageOverride } };
+	}
+
 	let translationForSession: { originalContent: string; translation: TranslationInfo } | null = null;
 	const translationRequested = initialInput.contentScope === 'article' && initialInput.translate === true;
 	if (input.contentScope === 'article' && input.translate) {
@@ -1089,12 +1099,17 @@ async function loadAndPlay(session: PlaybackSessionSnapshot, playPayload: Offscr
 	}, STARTUP_TIMEOUT_MS);
 }
 
-async function startCurrentPage(
-	targetTabId?: number,
-	queueItemId?: string,
-	fallbackUrl?: string,
-	translate = false,
-): Promise<CommandResponse> {
+interface StartCurrentPageOptions {
+	targetTabId?: number;
+	queueItemId?: string;
+	fallbackUrl?: string;
+	translate?: boolean;
+	/** The reader's explicit language choice; the queue and the context menu never carry one. */
+	languageOverride?: string;
+}
+
+async function startCurrentPage(options: StartCurrentPageOptions = {}): Promise<CommandResponse> {
+	const { targetTabId, queueItemId, fallbackUrl, translate = false, languageOverride } = options;
 	await ensureHydrated();
 	if (!queueItemId) {
 		await cancelPendingQueueNavigation();
@@ -1157,6 +1172,7 @@ async function startCurrentPage(
 		content: articleResponse.article,
 		readableSurface: articleResponse.readableSurface,
 		translate,
+		...(languageOverride ? { languageOverride } : {}),
 		...(queueItemId ? { queueItemId } : {}),
 	});
 }
@@ -1186,7 +1202,7 @@ async function playQueueItem(item: QueueItem, preferredTabId?: number): Promise<
 	await saveAndBroadcastQueue();
 
 	if (isAlreadyOnPage) {
-		const result = await startCurrentPage(targetTabId, item.id, item.url);
+		const result = await startCurrentPage({ targetTabId, queueItemId: item.id, fallbackUrl: item.url });
 		if (!result.success) {
 			await markQueueItemStatus(item.id, 'error');
 		}
@@ -1649,11 +1665,11 @@ async function handlePendingQueueNavigationUpdate(tabId: number, changeInfo: { s
 		return;
 	}
 	await clearPendingQueueNavigation(pending.itemId);
-	let result = await startCurrentPage(tabId, pending.itemId, pending.expectedUrl);
+	let result = await startCurrentPage({ targetTabId: tabId, queueItemId: pending.itemId, fallbackUrl: pending.expectedUrl });
 	if (!result.success && pendingItem && isSupportedPdfSource(pendingItem.url)) {
 		// Retry nhẹ cho file PDF local phòng trường hợp Chrome PDF Viewer chưa kịp ready.
 		await new Promise((resolve) => setTimeout(resolve, 350));
-		result = await startCurrentPage(tabId, pending.itemId, pending.expectedUrl);
+		result = await startCurrentPage({ targetTabId: tabId, queueItemId: pending.itemId, fallbackUrl: pending.expectedUrl });
 	}
 	if (!result.success) {
 		await markQueueItemStatus(pending.itemId, 'error');
@@ -1733,10 +1749,13 @@ export const handleBackgroundMessage = (
 			return respondFromQueue(() => getCurrentPageInfo(msg.payload), sendResponse);
 
 		case 'START_CURRENT_PAGE':
-			return respondFromQueue(startCurrentPage, sendResponse);
+			return respondFromQueue(() => startCurrentPage({ languageOverride: parseLanguageOverride(msg.payload) }), sendResponse);
 
 		case 'START_CURRENT_PAGE_TRANSLATED':
-			return respondFromQueue(() => startCurrentPage(undefined, undefined, undefined, true), sendResponse);
+			return respondFromQueue(
+				() => startCurrentPage({ translate: true, languageOverride: parseLanguageOverride(msg.payload) }),
+				sendResponse,
+			);
 
 		case 'START_READER_CONTENT': {
 			const readerRequest = parseReaderContentRequest(msg.payload, sender.tab?.id);

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildActiveTabQuery, pageInfoFromTab, requestPageInfoFromTab } from '../../src/background/page_info.ts';
 
-const info = { available: true as const, title: 'Article', url: 'https://example.com/a', lang: 'en' };
+const info = { available: true as const, title: 'Article', url: 'https://example.com/a', lang: 'en', langSource: 'detected' as const };
 
 test('scopes the active-tab lookup to the window that asked', () => {
 	assert.deepEqual(buildActiveTabQuery({ windowId: 7 }), { active: true, windowId: 7 });
@@ -25,6 +25,8 @@ test('falls back to what the tab itself reports when no content script answers',
 		url: 'https://example.com/a',
 		// The tab carries no document language; 'na' is what the content script reports for that too.
 		lang: 'na',
+		// Nothing looked at the page, so the value is a placeholder rather than a reading.
+		langSource: 'unknown',
 	});
 });
 
@@ -34,6 +36,7 @@ test('reports an untitled tab by its address alone', () => {
 		title: '',
 		url: 'https://example.com/a',
 		lang: 'na',
+		langSource: 'unknown',
 	});
 });
 

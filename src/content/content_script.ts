@@ -2,6 +2,7 @@ import { Article } from '../shared/types';
 import { extractArticleFromDocument } from './article_extractor';
 import { claimContentScriptInitialization } from './content_script_state';
 import { extractGoogleDocsArticle } from './google_docs_extractor';
+import { resolvePageLanguage } from './page_language';
 import { installSelectionButton } from './selection_button';
 import { installWordHighlight } from './word_highlight';
 import { extractWordOnlineDocx } from './word_online_extractor';
@@ -55,11 +56,17 @@ if (claimContentScriptInitialization(globalThis as unknown as Record<string, unk
 		(message: unknown, _sender: chrome.runtime.MessageSender, sendResponse: (response?: unknown) => void) => {
 			const msg = message as { action: string };
 			if (msg.action === 'GET_PAGE_INFO') {
+				const page = resolvePageLanguage({
+					url: document.location.href,
+					declared: getDocumentLanguage(),
+					sample: document.body?.innerText ?? '',
+				});
 				sendResponse({
 					available: true,
 					title: document.title,
 					url: document.location.href,
-					lang: getDocumentLanguage(),
+					lang: page.lang,
+					langSource: page.langSource,
 				});
 				return;
 			}
